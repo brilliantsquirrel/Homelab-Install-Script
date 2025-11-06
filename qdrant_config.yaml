@@ -1,0 +1,21 @@
+# Qdrant Configuration File
+# This file is read-only in the container and mounted as a configuration template
+
+# Server configuration
+server:
+  http_port: 6333
+  grpc_port: 6334
+
+# Database configuration
+storage:
+  # Path to the storage directory
+  storage_path: /qdrant/storage
+  # Whether to use snapshots
+  snapshots_path: /qdrant/snapshots
+  # Write-Ahead Log configuration
+  wal:
+    enabled: true
+    wal_capacity_mb: 200
+
+# Logging configuration
+log_level: info

@@ -50,12 +50,13 @@ The script executes these steps sequentially:
 
 1. **System Updates** (critical) - apt-get update/upgrade
 2. **SSH Server** (non-critical) - Enable remote access
-3. **Docker Engine** (non-critical) - From official Docker repository
-4. **NVIDIA GPU Support** (non-critical) - nvidia-docker for GPU acceleration
-5. **Docker Containers** (non-critical) - Starts Portainer, Ollama, OpenWebUI, LangChain, LangGraph, LangFlow, n8n
-6. **Ollama Models** (non-critical) - Pulls gpt-oss:20b, qwen3-vl:8b, qwen3-coder:30b, qwen3:8b
-7. **Utility Packages** (non-critical) - git, vim, htop, tree, unzip, build-essential, net-tools, jq
-8. **System Cleanup** (non-critical) - apt autoremove and autoclean
+3. **SQLite** (non-critical) - Install sqlite3 CLI and create database directory
+4. **Docker Engine** (non-critical) - From official Docker repository
+5. **NVIDIA GPU Support** (non-critical) - nvidia-docker for GPU acceleration
+6. **Docker Containers** (non-critical) - Starts Portainer, Ollama, OpenWebUI, LangChain, LangGraph, LangFlow, n8n, Qdrant
+7. **Ollama Models** (non-critical) - Pulls gpt-oss:20b, qwen3-vl:8b, qwen3-coder:30b, qwen3:8b
+8. **Utility Packages** (non-critical) - git, vim, htop, tree, unzip, build-essential, net-tools, jq
+9. **System Cleanup** (non-critical) - apt autoremove and autoclean
 
 Each step is wrapped in an installation function (e.g., `install_docker()`, `install_ssh()`) that:
 - Checks if already installed (idempotency)
@@ -74,8 +75,25 @@ All services are defined in `docker-compose.yml` and orchestrated together:
 - **LangGraph** (port 8001) - Graph-based workflows
 - **LangFlow** (port 7860) - Visual workflow builder
 - **n8n** (port 5678) - Workflow automation
+- **Qdrant** (ports 6333, 6334) - Vector database for embeddings and semantic search
 
 All containers are configured with environment variables to connect to Ollama on `http://ollama:11434`.
+
+### Database Services
+
+**SQLite**:
+- Installed locally as a package
+- Database directory: `~/.local/share/homelab/databases/`
+- Useful for storing application data, logs, and metadata
+- Can be used by any application on the host or in containers
+
+**Qdrant Vector Database**:
+- Runs as a Docker container
+- Provides REST API on port 6333
+- Admin interface on port 6334
+- Stores vector embeddings for semantic search
+- Integrates with LLMs for RAG (Retrieval-Augmented Generation)
+- Configuration file: `qdrant_config.yaml`
 
 ### Ollama Models
 
@@ -201,5 +219,38 @@ docker exec ollama ollama pull mistral
 ### LangChain Integration
 LangChain connects to Ollama via environment variable `OLLAMA_BASE_URL=http://ollama:11434`
 
+### Qdrant Vector Database
+Create a collection and manage embeddings:
+```bash
+# Create a collection (via REST API)
+curl -X PUT http://localhost:6333/collections/my-embeddings \
+  -H "Content-Type: application/json" \
+  -d '{
+    "vectors": {
+      "size": 384,
+      "distance": "Cosine"
+    }
+  }'
+
+# View collections
+curl http://localhost:6333/collections
+
+# Delete a collection
+curl -X DELETE http://localhost:6333/collections/my-embeddings
+```
+
+### SQLite Database Usage
+Create and manage local databases:
+```bash
+# Create a new database
+sqlite3 ~/.local/share/homelab/databases/myapp.db
+
+# Execute SQL from shell
+sqlite3 ~/.local/share/homelab/databases/myapp.db "CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT);"
+
+# Connect to database
+sqlite3 ~/.local/share/homelab/databases/myapp.db
+```
+
 ### n8n Workflows
-n8n can trigger workflows from HTTP webhooks and integrate with Ollama for AI tasks.
+n8n can trigger workflows from HTTP webhooks and integrate with Ollama for AI tasks, Qdrant for embeddings, and SQLite for data storage.

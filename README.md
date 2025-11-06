@@ -23,8 +23,9 @@ Designed to be used with customized Ubuntu Server installations via Cubic, this 
 ### System Setup
 1. **System Updates** - Latest package updates and upgrades
 2. **SSH** - Remote access to the server
-3. **Docker Engine** - Official Docker runtime with compose plugin
-4. **NVIDIA GPU Support** - For Ollama GPU acceleration (if available)
+3. **SQLite** - Lightweight relational database (local)
+4. **Docker Engine** - Official Docker runtime with compose plugin
+5. **NVIDIA GPU Support** - For Ollama GPU acceleration (if available)
 
 ### Docker Containers
 1. **Portainer** - Container management UI
@@ -34,6 +35,7 @@ Designed to be used with customized Ubuntu Server installations via Cubic, this 
 5. **LangGraph** - Graph-based language workflows
 6. **LangFlow** - Visual LLM workflow builder
 7. **n8n** - Workflow automation platform
+8. **Qdrant** - Vector database for embeddings and semantic search
 
 ### AI Models (auto-pulled by Ollama)
 - `gpt-oss:20b` - Open-source LLM (20 billion parameters)
@@ -60,10 +62,17 @@ After installation, access services via:
 - **Portainer**: `http://<server-ip>:9000`
 - **OpenWebUI**: `http://<server-ip>:8080`
 - **Ollama API**: `http://<server-ip>:11434`
+- **Qdrant Vector DB**: `http://<server-ip>:6333`
+- **Qdrant Admin**: `http://<server-ip>:6334`
 - **LangChain**: `http://<server-ip>:8000`
 - **LangGraph**: `http://<server-ip>:8001`
 - **LangFlow**: `http://<server-ip>:7860`
 - **n8n**: `http://<server-ip>:5678`
+
+### Database Access
+
+- **SQLite**: Local databases at `~/.local/share/homelab/databases/`
+- **Qdrant Collections**: REST API at `http://<server-ip>:6333/collections`
 
 ## Requirements
 

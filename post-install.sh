@@ -117,12 +117,14 @@ echo -e "${BLUE}Homelab Server Install Script${NC}"
 echo "This script will install and configure:"
 echo "  - System updates"
 echo "  - SSH server"
+echo "  - SQLite (local database)"
 echo "  - Docker Engine with GPU support"
 echo "  - Portainer (container management)"
 echo "  - Ollama (LLM runtime)"
 echo "  - OpenWebUI (Ollama web interface)"
 echo "  - LangChain, LangGraph, LangFlow (AI frameworks)"
 echo "  - n8n (workflow automation)"
+echo "  - Qdrant (vector database)"
 echo "  - AI Models (gpt-oss:20b, qwen3-vl:8b, qwen3-coder:30b, qwen3:8b)"
 echo ""
 read -p "Do you want to continue? (y/N): " -n 1 -r
@@ -252,6 +254,21 @@ pull_ollama_models() {
     success "Ollama models pulled"
 }
 
+install_sqlite() {
+    # Check if SQLite is already installed
+    if command -v sqlite3 &> /dev/null; then
+        log "SQLite already installed ($(sqlite3 --version | head -1)), skipping"
+        return 0
+    fi
+
+    sudo apt-get install -y sqlite3 || return 1
+    track_package "sqlite3"
+
+    # Create a default SQLite database directory in home
+    mkdir -p ~/.local/share/homelab/databases || true
+    log "SQLite database directory created at ~/.local/share/homelab/databases"
+}
+
 install_utilities() {
     # Install useful utilities if not already present
     sudo apt-get install -y \
@@ -273,6 +290,7 @@ cleanup_system() {
 # Run installation steps
 run_step "System Updates" install_system_updates true
 run_step "SSH Server" install_ssh false
+run_step "SQLite" install_sqlite false
 run_step "Docker Engine" install_docker false
 run_step "NVIDIA GPU Support" install_nvidia_gpu_support false
 run_step "Docker Containers" install_docker_containers false
@@ -307,10 +325,16 @@ echo -e "${YELLOW}Service Access:${NC}"
 echo "  - Portainer (Container Management): http://<server-ip>:9000"
 echo "  - OpenWebUI (Ollama Interface): http://<server-ip>:8080"
 echo "  - Ollama API: http://<server-ip>:11434"
+echo "  - Qdrant (Vector Database): http://<server-ip>:6333"
+echo "  - Qdrant Admin: http://<server-ip>:6334"
 echo "  - LangChain: http://<server-ip>:8000"
 echo "  - LangGraph: http://<server-ip>:8001"
 echo "  - LangFlow: http://<server-ip>:7860"
 echo "  - n8n (Workflow Automation): http://<server-ip>:5678"
+echo ""
+echo -e "${YELLOW}Database Access:${NC}"
+echo "  - SQLite: ~/.local/share/homelab/databases/"
+echo "  - Qdrant Collections: Via REST API at http://<server-ip>:6333/collections"
 echo ""
 echo -e "${YELLOW}Important notes:${NC}"
 echo "  - Log out and back in for Docker group changes to take effect"
@@ -318,6 +342,7 @@ echo "  - SSH is now enabled for remote access"
 echo "  - Ollama models are being pulled in the background (may take 1-2 hours)"
 echo "  - GPU support requires NVIDIA drivers and docker runtime configuration"
 echo "  - Find your server IP with: hostname -I"
+echo "  - SQLite databases location: ~/.local/share/homelab/databases/"
 echo ""
 log "For GPU support, uncomment the runtime: nvidia lines in docker-compose.yml"
 log "Consider rebooting your system to ensure all changes take effect."
