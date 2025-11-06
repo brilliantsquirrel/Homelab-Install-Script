@@ -126,6 +126,8 @@ echo "  - LangChain, LangGraph, LangFlow (AI frameworks)"
 echo "  - n8n (workflow automation)"
 echo "  - Qdrant (vector database)"
 echo "  - AI Models (gpt-oss:20b, qwen3-vl:8b, qwen3-coder:30b, qwen3:8b)"
+echo "  - Git (with user configuration)"
+echo "  - Claude Code (with project configuration)"
 echo ""
 read -p "Do you want to continue? (y/N): " -n 1 -r
 echo
@@ -377,6 +379,239 @@ EOF
     chmod 700 "$HOME/.local/share/homelab/backups"
 }
 
+configure_git() {
+    # Check if Git is already installed
+    if ! command -v git &> /dev/null; then
+        log "Git not found, installing..."
+        sudo apt-get install -y git || return 1
+        track_package "git"
+    else
+        log "Git already installed ($(git --version)), skipping install"
+    fi
+
+    # Check if git user.name is configured
+    if ! git config --global user.name &> /dev/null; then
+        log "Configuring Git user information..."
+
+        # Prompt for name and email
+        read -p "Enter your Git user name: " git_name
+        read -p "Enter your Git email: " git_email
+
+        # Validate inputs
+        if [ -z "$git_name" ] || [ -z "$git_email" ]; then
+            error "Git name and email cannot be empty"
+            return 1
+        fi
+
+        # Configure Git globally
+        git config --global user.name "$git_name" || return 1
+        git config --global user.email "$git_email" || return 1
+
+        success "Git configured: $git_name <$git_email>"
+    else
+        log "Git already configured as: $(git config --global user.name) <$(git config --global user.email)>"
+    fi
+
+    # Set sensible Git defaults
+    git config --global init.defaultBranch main || return 1
+    git config --global pull.rebase false || return 1
+    git config --global core.editor vim || return 1
+
+    # Create a .gitconfig backup
+    cp ~/.gitconfig ~/.gitconfig.backup.$(date +%Y%m%d) 2>/dev/null || true
+
+    log "Git configuration complete"
+}
+
+install_claude_code() {
+    # Check if Claude Code CLI is already installed
+    if command -v claude-code &> /dev/null || command -v claude &> /dev/null; then
+        log "Claude Code already installed ($(claude-code --version 2>/dev/null || claude --version 2>/dev/null)), skipping"
+        return 0
+    fi
+
+    log "Installing Claude Code CLI..."
+
+    # Install Claude Code from official source
+    # Claude Code is distributed via npm package manager
+    if ! command -v npm &> /dev/null; then
+        log "NPM not found, installing Node.js and npm..."
+        curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash - || return 1
+        sudo apt-get install -y nodejs || return 1
+        track_package "nodejs"
+    fi
+
+    # Install Claude Code CLI globally
+    sudo npm install -g @anthropic-ai/claude-code || return 1
+
+    # Create .claude directory for project configuration
+    mkdir -p "$HOME/.claude" || return 1
+
+    # Create global CLAUDE.md if it doesn't exist
+    if [ ! -f "$HOME/.claude/CLAUDE.md" ]; then
+        cat > "$HOME/.claude/CLAUDE.md" << 'EOF'
+# CLAUDE.md - Global Claude Code Configuration
+
+This file provides global guidance to Claude Code across all projects.
+
+## General Settings
+
+- **Editor**: vim
+- **Default Branch**: main
+- **Pull Strategy**: merge (not rebase)
+
+## Security Defaults
+
+- **Never Commit Secrets**: .env, .env.local, *.key, *.pem files
+- **Validate URLs**: Only use URLs from official sources
+- **Check Permissions**: Ensure sensitive files have restrictive permissions (600 for files, 700 for directories)
+
+## Code Style
+
+- Use meaningful variable and function names
+- Add comments for complex logic
+- Follow existing code patterns in the repository
+- Run linters and formatters before committing
+
+## Testing Requirements
+
+- Write tests for new functionality
+- Run full test suite before committing
+- Document test coverage in pull requests
+
+## Git Best Practices
+
+- Write clear, descriptive commit messages
+- Reference issue numbers in commit messages
+- Create feature branches for new work
+- Use semantic versioning for releases
+
+## Documentation
+
+- Update README when adding features
+- Include examples in code comments
+- Document breaking changes
+- Maintain CHANGELOG.md
+
+## Contact & Support
+
+- Report issues via GitHub Issues
+- Use GitHub Discussions for questions
+- Check existing issues before creating new ones
+EOF
+        chmod 644 "$HOME/.claude/CLAUDE.md"
+        success "Global CLAUDE.md configuration created at ~/.claude/CLAUDE.md"
+    else
+        log "Global CLAUDE.md already exists"
+    fi
+
+    log "Claude Code CLI installed successfully"
+    log "Use 'claude-code' command to start working with projects"
+}
+
+setup_claude_project() {
+    # Create .claude directory for current project if it doesn't exist
+    local project_claude_dir="$(pwd)/.claude"
+
+    if [ ! -d "$project_claude_dir" ]; then
+        mkdir -p "$project_claude_dir" || return 1
+        log "Created .claude directory for project configuration"
+    fi
+
+    # Create project-specific CLAUDE.md if it doesn't exist
+    if [ ! -f "$project_claude_dir/CLAUDE.md" ]; then
+        cat > "$project_claude_dir/CLAUDE.md" << 'EOF'
+# CLAUDE.md - Homelab Install Script Project Configuration
+
+This file provides guidance to Claude Code when working on the Homelab Install Script.
+
+## Project Overview
+
+Homelab automation script for setting up an Ubuntu Server with Docker containers, AI/ML workflows, Git, and Claude Code integration.
+
+## Key Files
+
+- `post-install.sh` - Main installation script
+- `docker-compose.yml` - Docker service definitions
+- `.env.example` - Environment variables template
+- `SECURITY.md` - Security audit and recommendations
+- `SECRETS.md` - Secret management guide
+- `CLAUDE.md` - This file
+
+## Common Commands
+
+```bash
+# Run the installation script
+./post-install.sh
+
+# Configure Git user
+git config --global user.name "Your Name"
+git config --global user.email "your@email.com"
+
+# Start Claude Code session
+claude-code
+
+# Start Docker services
+docker-compose up -d
+
+# View logs
+docker-compose logs -f
+
+# Validate docker-compose
+docker-compose config
+```
+
+## Important Security Notes
+
+- **Never commit secrets**: .env, API keys, passwords
+- **Always use .env.example**: As a template for new deployments
+- **Validate changes**: Run security checks before committing
+- **Review permissions**: Ensure restrictive file permissions
+
+## Testing Guidelines
+
+- Test on fresh Ubuntu Server installation or VM
+- Test idempotency by running script twice
+- Verify all services start correctly
+- Check container logs for errors
+- Test SSH access with key-based auth only
+
+## Documentation Standards
+
+- Update README.md for user-facing changes
+- Update CLAUDE.md for development guidance
+- Include examples in code comments
+- Document new environment variables in .env.example
+
+## Git Workflow
+
+1. Create feature branch: `git checkout -b feature/your-feature`
+2. Make changes and test thoroughly
+3. Commit with clear messages: `git commit -m "description"`
+4. Push to origin: `git push origin feature/your-feature`
+5. Create pull request on GitHub
+
+## Performance Considerations
+
+- Minimize external API calls
+- Use Docker volumes for persistent data
+- Enable database backups
+- Monitor disk usage in databases
+
+## Debugging Tips
+
+- Check docker-compose logs: `docker-compose logs service-name`
+- Validate shell scripts: `bash -n script.sh`
+- Test curl commands: `curl -v https://endpoint`
+- Review sshd configuration: `sudo sshd -T`
+EOF
+        chmod 644 "$project_claude_dir/CLAUDE.md"
+        success "Project CLAUDE.md created at ./.claude/CLAUDE.md"
+    else
+        log "Project CLAUDE.md already exists"
+    fi
+}
+
 install_utilities() {
     # Install useful utilities if not already present
     sudo apt-get install -y \
@@ -403,6 +638,9 @@ run_step "Docker Engine" install_docker false
 run_step "NVIDIA GPU Support" install_nvidia_gpu_support false
 run_step "Docker Containers" install_docker_containers false
 run_step "Ollama Models" pull_ollama_models false
+run_step "Git Configuration" configure_git false
+run_step "Claude Code Installation" install_claude_code false
+run_step "Claude Project Setup" setup_claude_project false
 run_step "Utility Packages" install_utilities false
 run_step "System Cleanup" cleanup_system false
 
@@ -446,11 +684,16 @@ echo "  - Qdrant Collections: Via REST API at http://<server-ip>:6333/collection
 echo ""
 echo -e "${YELLOW}Important notes:${NC}"
 echo "  - Log out and back in for Docker group changes to take effect"
-echo "  - SSH is now enabled for remote access"
+echo "  - SSH is now enabled for remote access (key-based auth only)"
+echo "  - Git is configured with your user information"
+echo "  - Claude Code is installed globally and ready to use"
+echo "  - Project-specific Claude Code configuration at: ./.claude/CLAUDE.md"
+echo "  - Global Claude Code configuration at: ~/.claude/CLAUDE.md"
 echo "  - Ollama models are being pulled in the background (may take 1-2 hours)"
 echo "  - GPU support requires NVIDIA drivers and docker runtime configuration"
 echo "  - Find your server IP with: hostname -I"
 echo "  - SQLite databases location: ~/.local/share/homelab/databases/"
 echo ""
 log "For GPU support, uncomment the runtime: nvidia lines in docker-compose.yml"
+log "To start using Claude Code: claude-code"
 log "Consider rebooting your system to ensure all changes take effect."

@@ -37,6 +37,10 @@ Designed to be used with customized Ubuntu Server installations via Cubic, this 
 7. **n8n** - Workflow automation platform
 8. **Qdrant** - Vector database for embeddings and semantic search
 
+### Development Tools
+1. **Git** - Version control with automated user configuration
+2. **Claude Code** - CLI tool for AI-assisted development with project configuration
+
 ### AI Models (auto-pulled by Ollama)
 - `gpt-oss:20b` - Open-source LLM (20 billion parameters)
 - `qwen3-vl:8b` - Multimodal model (8B, vision-language)
@@ -73,6 +77,24 @@ After installation, access services via:
 
 - **SQLite**: Local databases at `~/.local/share/homelab/databases/`
 - **Qdrant Collections**: REST API at `http://<server-ip>:6333/collections`
+
+### Development Tools Setup
+
+After installation, Git and Claude Code are configured:
+
+- **Git Configuration**: User name and email are set globally during installation
+- **Claude Code**: Installed globally with development guidance in `~/.claude/CLAUDE.md`
+- **Project Configuration**: Project-specific guidance in `./.claude/CLAUDE.md`
+
+To start using Claude Code:
+```bash
+claude-code
+```
+
+View your Git configuration:
+```bash
+git config --global --list
+```
 
 ## Requirements
 
