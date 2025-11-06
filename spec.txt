@@ -1,0 +1,14 @@
+Personal Post-Install Script
+
+This is a simple script I can run after a fresh installation of Ubuntu. Here's a list of things I generally do after a fresh install. Let's automate as much of that as possible.
+
+Here's the list:
+*sudo apt-get update
+*sudo apt-get upgrade
+*install proprietary graphics drivers
+*install docker engine (NOT docker desktop)
+*install latest stable release of python
+*install discord
+*install the 1password firefox add-on
+*Solomon's personal scripts:
+**(none at this time)
