@@ -38,28 +38,50 @@ openssl rand -base64 24
 openssl rand -base64 20
 ```
 
-### 3. Set Up Nginx Authentication
+### 3. Generate Nginx Authentication Credentials (Security Critical)
 
-Create a secure password for nginx basic auth:
+**IMPORTANT**: The Dockerfile no longer includes default credentials. You MUST generate credentials before starting containers.
+
+Generate a secure password and .htpasswd file:
 
 ```bash
-# Install apache2-utils if not present
-sudo apt-get install -y apache2-utils
+# Create nginx/auth directory if it doesn't exist
+mkdir -p nginx/auth
 
-# Generate .htpasswd file (replace 'admin' with your username)
-sudo htpasswd -c nginx/auth/.htpasswd admin
-# You'll be prompted to enter and confirm password
+# Generate a strong random password (store this securely)
+NGINX_PASSWORD=$(openssl rand -base64 32)
+echo "Generated nginx password: $NGINX_PASSWORD"
 
-# Set proper permissions
-sudo chmod 600 nginx/auth/.htpasswd
+# Create .htpasswd file with admin user
+docker run --rm nginx:alpine htpasswd -c /dev/stdout admin:$NGINX_PASSWORD > nginx/auth/.htpasswd
+
+# Set restrictive permissions
+chmod 600 nginx/auth/.htpasswd
+
+# Verify it was created
+cat nginx/auth/.htpasswd
 ```
 
-Or use the nginx container directly:
+**Alternative**: If you want to set it up after containers are running:
 
 ```bash
 # After docker-compose is running
+mkdir -p nginx/auth
+touch nginx/auth/.htpasswd
+chmod 600 nginx/auth/.htpasswd
+
+# Create credentials (you'll be prompted for password)
+docker exec nginx-proxy htpasswd -c /etc/nginx/auth/.htpasswd admin
+
+# Add additional users if needed
 docker exec nginx-proxy htpasswd -b /etc/nginx/auth/.htpasswd username newpassword
 ```
+
+**Security Notes**:
+- Never use weak passwords (minimum 12 characters, mixed case, numbers, symbols recommended)
+- Store the nginx password securely in your password manager
+- Update credentials regularly (at least every 90 days)
+- Use different passwords for different environments (dev/staging/prod)
 
 ### 4. Fill in `.env` File
 

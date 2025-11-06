@@ -62,16 +62,26 @@ The script will:
 
 ## Service Access
 
-After installation, access services via:
-- **Portainer**: `http://<server-ip>:9000`
-- **OpenWebUI**: `http://<server-ip>:8080`
-- **Ollama API**: `http://<server-ip>:11434`
-- **Qdrant Vector DB**: `http://<server-ip>:6333`
-- **Qdrant Admin**: `http://<server-ip>:6334`
-- **LangChain**: `http://<server-ip>:8000`
-- **LangGraph**: `http://<server-ip>:8001`
-- **LangFlow**: `http://<server-ip>:7860`
-- **n8n**: `http://<server-ip>:5678`
+All services are protected behind an authenticated nginx reverse proxy for security.
+
+### Secure Access (Recommended - All Services)
+All services are accessed through the nginx reverse proxy with basic authentication:
+
+```
+https://<server-ip>/
+```
+
+You'll be prompted for authentication credentials (username/password).
+
+Individual service URLs (access through nginx reverse proxy):
+- **Portainer**: `https://<server-ip>/portainer` (requires auth)
+- **OpenWebUI**: `https://<server-ip>/openwebui` (requires auth)
+- **Ollama API**: `https://<server-ip>/ollama` (requires auth)
+- **Qdrant**: `https://<server-ip>/qdrant` (requires auth)
+- **LangChain**: `https://<server-ip>/langchain` (requires auth)
+- **LangGraph**: `https://<server-ip>/langgraph` (requires auth)
+- **LangFlow**: `https://<server-ip>/langflow` (requires auth)
+- **n8n**: `https://<server-ip>/n8n` (requires auth)
 
 ### Database Access
 
@@ -106,22 +116,56 @@ git config --global --list
 
 ## Security Features
 
-This installation includes several security hardening features:
+This installation includes comprehensive security hardening:
 
-- **Nginx Reverse Proxy**: All services are protected behind nginx with basic authentication
+### Phase 1 - Critical Security (Implemented)
+- **No Hardcoded Credentials**: Dockerfile no longer includes default credentials
+- **Docker Socket Protection**: Portainer uses restricted docker-socket-proxy instead of direct socket access
+- **Service Isolation**: All services hidden behind authenticated nginx reverse proxy
+- **API Key Requirements**: All API keys must be explicitly set (no defaults)
+- **Mandatory Credential Generation**: Setup requires generating strong credentials before deployment
+
+### Standard Security Features
+- **Nginx Reverse Proxy**: All services protected behind nginx with basic authentication
 - **SSH Hardening**: Key-based authentication only, root login disabled, password auth disabled
 - **API Key Management**: Environment variable-based secret management with `.env` file
-- **File Permissions**: Restrictive permissions on databases and sensitive files
+- **File Permissions**: Restrictive permissions on databases and sensitive files (700/600)
 - **SSL/TLS Support**: HTTPS with self-signed or custom certificates
 - **Rate Limiting**: Built-in rate limiting on API endpoints
 - **Security Headers**: Security headers (HSTS, X-Frame-Options, etc.) via nginx
 
-**Important**: Before first use, you must:
-1. Copy `.env.example` to `.env` and set strong, random values for all secrets
-2. Generate or provide SSL certificates
-3. Update nginx basic auth credentials
+### Before First Use (REQUIRED)
+1. **Generate Nginx Credentials** - Must create `.htpasswd` with strong password
+   ```bash
+   # Create nginx auth directory
+   mkdir -p nginx/auth
 
-See [SECRETS.md](SECRETS.md) for detailed setup instructions.
+   # Generate credentials (use strong password)
+   NGINX_PASSWORD=$(openssl rand -base64 32)
+   docker run --rm nginx:alpine htpasswd -c /dev/stdout admin:$NGINX_PASSWORD > nginx/auth/.htpasswd
+   chmod 600 nginx/auth/.htpasswd
+   ```
+
+2. **Configure `.env` File** - Copy `.env.example` to `.env` and set strong, random values:
+   ```bash
+   cp .env.example .env
+   # Edit with your secure values:
+   # - OLLAMA_API_KEY (generate: openssl rand -base64 32)
+   # - WEBUI_SECRET_KEY (generate: openssl rand -base64 32)
+   # - QDRANT_API_KEY (generate: openssl rand -base64 32)
+   # - N8N_ENCRYPTION_KEY (generate: openssl rand -base64 32, minimum 32 chars)
+   # - LANGCHAIN_API_KEY (generate: openssl rand -base64 32)
+   # - LANGGRAPH_API_KEY (generate: openssl rand -base64 32)
+   # - LANGFLOW_API_KEY (generate: openssl rand -base64 32)
+   nano .env
+   chmod 600 .env
+   ```
+
+3. **Generate or Provide SSL Certificates**
+   - Self-signed certificates are auto-generated (suitable for internal networks)
+   - For external access, use valid certificates
+
+See [SECRETS.md](SECRETS.md) for detailed setup instructions and [CODE-REVIEW.md](CODE-REVIEW.md) for security audit details.
 
 ## Security Audit
 

@@ -33,6 +33,38 @@ services:
     environment:
       - TZ=UTC
 
+  # Docker Socket Proxy - Restricts Portainer's access to Docker API
+  # This prevents full system compromise if Portainer is compromised
+  docker-socket-proxy:
+    image: tecnativa/docker-socket-proxy:latest
+    container_name: docker-socket-proxy
+    restart:
+      condition: on-failure
+      delay: 5s
+      max_attempts: 5
+      window: 120s
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      - TZ=UTC
+      # Restrict access to only necessary Docker API endpoints
+      - CONTAINERS=1        # View containers
+      - SERVICES=1          # View services
+      - TASKS=1            # View tasks
+      - NETWORKS=1         # View networks
+      - IMAGES=0           # No image access
+      - AUTH=0             # No auth endpoints
+      - EXEC=0             # No exec access
+      - POST=0             # No write operations by default
+      - ALLOW_START=0      # No container start
+      - ALLOW_STOP=0       # No container stop
+      - ALLOW_RESTART=0    # No container restart
+    networks:
+      - homelab_network
+    # Socket proxy doesn't need to be exposed to ports
+    expose:
+      - "2375"
+
   portainer:
     image: portainer/portainer-ce:2.18.4
     container_name: portainer
@@ -41,13 +73,17 @@ services:
       delay: 5s
       max_attempts: 5
       window: 120s
-    # NOTE: For security, Docker socket should be removed in production
-    # and replaced with docker-proxy or similar solution
+    # Security: Use docker-socket-proxy instead of direct socket access
+    # This limits Portainer's access to only viewing containers/services
+    # preventing full system compromise if Portainer is compromised
+    depends_on:
+      - docker-socket-proxy
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
       - portainer_data:/data
     environment:
       - TZ=UTC
+      # Connect to socket proxy instead of docker.sock directly
+      - DOCKER_HOST=tcp://docker-socket-proxy:2375
     networks:
       - homelab_network
 
@@ -73,6 +109,10 @@ services:
     #         - driver: nvidia
     #           count: 1
     #           capabilities: [gpu]
+    # Security: Use 'expose' instead of 'ports' - only accessible via nginx reverse proxy
+    # Access through: https://<server-ip>/ollama (authenticated)
+    expose:
+      - "11434"
     networks:
       - homelab_network
     healthcheck:
@@ -192,6 +232,11 @@ services:
       - QDRANT_API_KEY=${QDRANT_API_KEY:-changeme}
       - QDRANT_HTTP_PORT=6333
       - QDRANT_GRPC_PORT=6334
+    # Security: Use 'expose' instead of 'ports' - only accessible via nginx reverse proxy
+    # Access through: https://<server-ip>/qdrant (authenticated)
+    expose:
+      - "6333"
+      - "6334"
     healthcheck:
       test: ["CMD", "curl", "-f", "-H", "api-key: ${QDRANT_API_KEY:-changeme}", "http://localhost:6333/health"]
       interval: 30s

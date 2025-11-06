@@ -16,13 +16,13 @@ RUN openssl req -x509 -newkey rsa:4096 -nodes \
     -days 365 \
     -subj "/C=US/ST=State/L=City/O=Homelab/CN=homelab.local"
 
-# Create default .htpasswd file (password: homelab123)
-# Change this! Use: docker exec nginx htpasswd -c /etc/nginx/auth/.htpasswd username
-RUN htpasswd -bc /etc/nginx/auth/.htpasswd admin homelab123
+# Create .htpasswd with placeholder (will be replaced at runtime)
+# Do NOT set a default password - credentials must be provided
+RUN touch /etc/nginx/auth/.htpasswd && \
+    chmod 600 /etc/nginx/auth/.htpasswd
 
-# Set proper permissions
-RUN chmod 644 /etc/nginx/certs/* && \
-    chmod 644 /etc/nginx/auth/.htpasswd
+# Set proper permissions on certificates
+RUN chmod 644 /etc/nginx/certs/*
 
 EXPOSE 80 443
 
