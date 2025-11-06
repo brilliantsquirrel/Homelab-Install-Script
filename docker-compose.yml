@@ -1,29 +1,69 @@
 version: '3.8'
 
 services:
-  portainer:
-    image: portainer/portainer-ce:latest
-    container_name: portainer
-    restart: always
+  # Nginx reverse proxy with authentication
+  nginx:
+    build:
+      context: ./nginx
+      dockerfile: Dockerfile
+    container_name: nginx-proxy
+    restart:
+      condition: on-failure
+      delay: 5s
+      max_attempts: 5
+      window: 120s
     ports:
-      - "9000:9000"
-      - "8000:8000"
+      - "80:80"
+      - "443:443"
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - portainer_data:/data
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - nginx_certs:/etc/nginx/certs
+      - nginx_auth:/etc/nginx/auth
+    depends_on:
+      - ollama
+      - openwebui
+      - qdrant
+      - portainer
+      - langchain
+      - langgraph
+      - langflow
+      - n8n
+    networks:
+      - homelab_network
     environment:
       - TZ=UTC
 
+  portainer:
+    image: portainer/portainer-ce:2.18.4
+    container_name: portainer
+    restart:
+      condition: on-failure
+      delay: 5s
+      max_attempts: 5
+      window: 120s
+    # NOTE: For security, Docker socket should be removed in production
+    # and replaced with docker-proxy or similar solution
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - portainer_data:/data
+    environment:
+      - TZ=UTC
+    networks:
+      - homelab_network
+
   ollama:
-    image: ollama/ollama:latest
+    image: ollama/ollama:0.2.0
     container_name: ollama
-    restart: always
-    ports:
-      - "11434:11434"
+    restart:
+      condition: on-failure
+      delay: 5s
+      max_attempts: 5
+      window: 120s
     volumes:
       - ollama_data:/root/.ollama
     environment:
       - TZ=UTC
+      - OLLAMA_API_KEY=${OLLAMA_API_KEY:-changeme}
     # Uncomment the following line for GPU support (NVIDIA CUDA)
     # runtime: nvidia
     # deploy:
@@ -33,102 +73,151 @@ services:
     #         - driver: nvidia
     #           count: 1
     #           capabilities: [gpu]
+    networks:
+      - homelab_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
   openwebui:
-    image: ghcr.io/open-webui/open-webui:latest
+    image: ghcr.io/open-webui/open-webui:v0.1.112
     container_name: openwebui
-    restart: always
-    ports:
-      - "8080:8080"
+    restart:
+      condition: on-failure
+      delay: 5s
+      max_attempts: 5
+      window: 120s
     volumes:
       - openwebui_data:/app/backend/data
     environment:
       - OLLAMA_BASE_URL=http://ollama:11434
+      - OLLAMA_API_KEY=${OLLAMA_API_KEY:-changeme}
       - TZ=UTC
+      - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY:-changeme}
     depends_on:
       - ollama
+    networks:
+      - homelab_network
 
   langchain:
-    image: langchain/langchain:latest
+    image: langchain/langchain:0.0.1
     container_name: langchain
-    restart: always
-    ports:
-      - "8000:8000"
+    restart:
+      condition: on-failure
+      delay: 5s
+      max_attempts: 5
+      window: 120s
     environment:
       - OLLAMA_BASE_URL=http://ollama:11434
+      - LANGCHAIN_API_KEY=${LANGCHAIN_API_KEY:-changeme}
       - TZ=UTC
     depends_on:
       - ollama
+    networks:
+      - homelab_network
 
   langgraph:
-    image: langchain/langgraph-api:latest
+    image: langchain/langgraph-api:0.0.1
     container_name: langgraph
-    restart: always
-    ports:
-      - "8001:8000"
+    restart:
+      condition: on-failure
+      delay: 5s
+      max_attempts: 5
+      window: 120s
     environment:
       - OLLAMA_BASE_URL=http://ollama:11434
+      - LANGGRAPH_API_KEY=${LANGGRAPH_API_KEY:-changeme}
       - TZ=UTC
     depends_on:
       - ollama
+    networks:
+      - homelab_network
 
   langflow:
-    image: langflowai/langflow:latest
+    image: langflowai/langflow:0.6.0
     container_name: langflow
-    restart: always
-    ports:
-      - "7860:7860"
+    restart:
+      condition: on-failure
+      delay: 5s
+      max_attempts: 5
+      window: 120s
     volumes:
       - langflow_data:/root/.langflow
     environment:
       - OLLAMA_BASE_URL=http://ollama:11434
+      - LANGFLOW_API_KEY=${LANGFLOW_API_KEY:-changeme}
       - TZ=UTC
     depends_on:
       - ollama
+    networks:
+      - homelab_network
 
   n8n:
-    image: n8nio/n8n:latest
+    image: n8nio/n8n:1.48.1
     container_name: n8n
-    restart: always
-    ports:
-      - "5678:5678"
+    restart:
+      condition: on-failure
+      delay: 5s
+      max_attempts: 5
+      window: 120s
     volumes:
       - n8n_data:/home/node/.n8n
     environment:
       - N8N_PROTOCOL=http
       - N8N_HOST=0.0.0.0
       - N8N_PORT=5678
+      - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY:-changeme-min-32-chars-required-!!}
       - TZ=UTC
       - OLLAMA_BASE_URL=http://ollama:11434
     depends_on:
       - ollama
+    networks:
+      - homelab_network
 
   qdrant:
-    image: qdrant/qdrant:latest
+    image: qdrant/qdrant:v1.7.0
     container_name: qdrant
-    restart: always
-    ports:
-      - "6333:6333"
-      - "6334:6334"
+    restart:
+      condition: on-failure
+      delay: 5s
+      max_attempts: 5
+      window: 120s
     volumes:
       - qdrant_data:/qdrant/storage
       - ./qdrant_config.yaml:/qdrant/config/config.yaml:ro
     environment:
       - TZ=UTC
+      - QDRANT_API_KEY=${QDRANT_API_KEY:-changeme}
+      - QDRANT_HTTP_PORT=6333
+      - QDRANT_GRPC_PORT=6334
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:6333/health"]
+      test: ["CMD", "curl", "-f", "-H", "api-key: ${QDRANT_API_KEY:-changeme}", "http://localhost:6333/health"]
       interval: 30s
       timeout: 10s
-      retries: 5
+      retries: 3
+    networks:
+      - homelab_network
 
 volumes:
   portainer_data:
+    driver: local
   ollama_data:
+    driver: local
   openwebui_data:
+    driver: local
   langflow_data:
+    driver: local
   n8n_data:
+    driver: local
   qdrant_data:
+    driver: local
+  nginx_certs:
+    driver: local
+  nginx_auth:
+    driver: local
 
 networks:
-  default:
-    name: homelab_network
+  homelab_network:
+    driver: bridge

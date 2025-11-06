@@ -82,9 +82,76 @@ After installation, access services via:
 - GPU (optional, but recommended for Ollama)
 - Minimum 16GB RAM (32GB recommended for larger models)
 
+## Security Features
+
+This installation includes several security hardening features:
+
+- **Nginx Reverse Proxy**: All services are protected behind nginx with basic authentication
+- **SSH Hardening**: Key-based authentication only, root login disabled, password auth disabled
+- **API Key Management**: Environment variable-based secret management with `.env` file
+- **File Permissions**: Restrictive permissions on databases and sensitive files
+- **SSL/TLS Support**: HTTPS with self-signed or custom certificates
+- **Rate Limiting**: Built-in rate limiting on API endpoints
+- **Security Headers**: Security headers (HSTS, X-Frame-Options, etc.) via nginx
+
+**Important**: Before first use, you must:
+1. Copy `.env.example` to `.env` and set strong, random values for all secrets
+2. Generate or provide SSL certificates
+3. Update nginx basic auth credentials
+
+See [SECRETS.md](SECRETS.md) for detailed setup instructions.
+
+## Security Audit
+
+A comprehensive security audit has been performed. See [SECURITY.md](SECURITY.md) for:
+- Identified vulnerabilities and fixes
+- Security best practices
+- Deployment recommendations
+- Security checklist
+
+## Getting Started
+
+### Quick Setup
+
+```bash
+# 1. Clone or download the repository
+cd homelab-install-script
+
+# 2. Copy and configure environment variables
+cp .env.example .env
+nano .env  # Edit with your secure values
+
+# 3. Run the installation script
+./post-install.sh
+
+# 4. Change nginx credentials after installation
+docker exec nginx-proxy htpasswd -c /etc/nginx/auth/.htpasswd admin
+```
+
+### Access Services
+
+After installation, all services are available at:
+
+```
+https://<server-ip>/       (nginx reverse proxy)
+```
+
+You'll be prompted for nginx basic auth credentials.
+
+Individual service URLs:
+- OpenWebUI: `https://<server-ip>/openwebui`
+- Qdrant: `https://<server-ip>/qdrant`
+- Portainer: `https://<server-ip>/portainer`
+- n8n: `https://<server-ip>/n8n`
+- etc.
+
 ## Documentation
 
-See [CLAUDE.md](CLAUDE.md) for detailed architecture, implementation details, and guidance on modifying the script.
+- [README.md](README.md) - This file
+- [CLAUDE.md](CLAUDE.md) - Architecture, implementation details, and modification guide
+- [SECURITY.md](SECURITY.md) - Security audit, vulnerabilities, and recommendations
+- [SECRETS.md](SECRETS.md) - Secret management and setup guide
+- [.env.example](.env.example) - Environment variables reference
 
 ## License
 

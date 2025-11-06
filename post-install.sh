@@ -144,16 +144,63 @@ install_system_updates() {
 install_ssh() {
     # Check if SSH is already installed and running
     if sudo systemctl is-active --quiet ssh; then
-        log "SSH already installed and running, skipping"
-        return 0
+        log "SSH already installed and running"
+        # Apply hardening to existing SSH even if already installed
+    else
+        sudo apt-get install -y openssh-server openssh-client || return 1
+        sudo systemctl enable ssh || return 1
+        sudo systemctl start ssh || return 1
+        track_package "openssh-server"
     fi
 
-    sudo apt-get install -y openssh-server openssh-client || return 1
-    sudo systemctl enable ssh || return 1
-    sudo systemctl start ssh || return 1
-    track_package "openssh-server"
+    # Harden SSH configuration
+    log "Applying SSH security hardening..."
 
-    log "SSH enabled and started"
+    # Backup original sshd_config
+    sudo cp /etc/ssh/sshd_config /etc/ssh/sshd_config.backup.$(date +%Y%m%d) 2>/dev/null || true
+
+    # Disable root login
+    sudo sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin no/' /etc/ssh/sshd_config
+    sudo sed -i 's/PermitRootLogin yes/PermitRootLogin no/' /etc/ssh/sshd_config
+
+    # Disable password authentication (key-based only)
+    sudo sed -i 's/#PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config
+    sudo sed -i 's/PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config
+
+    # Ensure public key authentication is enabled
+    sudo sed -i 's/#PubkeyAuthentication yes/PubkeyAuthentication yes/' /etc/ssh/sshd_config
+
+    # Disable empty password login
+    sudo sed -i 's/#PermitEmptyPasswords no/PermitEmptyPasswords no/' /etc/ssh/sshd_config
+    sudo sed -i 's/PermitEmptyPasswords yes/PermitEmptyPasswords no/' /etc/ssh/sshd_config
+
+    # Disable X11 forwarding (if not needed)
+    sudo sed -i 's/X11Forwarding yes/X11Forwarding no/' /etc/ssh/sshd_config
+
+    # Set login grace time
+    sudo sed -i 's/#LoginGraceTime 2m/LoginGraceTime 1m/' /etc/ssh/sshd_config
+
+    # Limit concurrent sessions
+    sudo sed -i 's/#MaxStartups 10:30:100/MaxStartups 5:30:10/' /etc/ssh/sshd_config
+
+    # Add additional security settings if not present
+    sudo grep -q "ClientAliveInterval" /etc/ssh/sshd_config || echo "ClientAliveInterval 300" | sudo tee -a /etc/ssh/sshd_config > /dev/null
+    sudo grep -q "ClientAliveCountMax" /etc/ssh/sshd_config || echo "ClientAliveCountMax 2" | sudo tee -a /etc/ssh/sshd_config > /dev/null
+    sudo grep -q "Protocol 2" /etc/ssh/sshd_config || echo "Protocol 2" | sudo tee -a /etc/ssh/sshd_config > /dev/null
+
+    # Validate sshd_config before applying
+    sudo sshd -t || {
+        error "SSH configuration is invalid, rolling back"
+        sudo mv /etc/ssh/sshd_config.backup.$(date +%Y%m%d) /etc/ssh/sshd_config
+        return 1
+    }
+
+    # Restart SSH with new configuration
+    sudo systemctl restart ssh || return 1
+
+    log "SSH hardened: Root login disabled, key-based auth only, password auth disabled"
+    warning "Ensure you have SSH keys set up before disconnecting!"
+    warning "Test SSH access in another terminal before closing this one!"
 }
 
 install_docker() {
@@ -208,10 +255,53 @@ install_nvidia_gpu_support() {
         return 0
     fi
 
-    # Add NVIDIA repository and install toolkit
-    curl -s -L https://nvidia.github.io/nvidia-docker/gpgkey | sudo apt-key add - || return 1
-    distribution=$(. /etc/os-release;echo $ID$VERSION_ID) || return 1
-    curl -s -L https://nvidia.github.io/nvidia-docker/$distribution/nvidia-docker.list | sudo tee /etc/apt/sources.list.d/nvidia-docker.list > /dev/null || return 1
+    # Add NVIDIA repository with secure GPG key handling
+    # Validate OS version before using it
+    if [ ! -f /etc/os-release ]; then
+        error "Cannot determine OS version (/etc/os-release not found)"
+        return 1
+    fi
+
+    source /etc/os-release || return 1
+    if [ -z "$ID" ] || [ -z "$VERSION_ID" ]; then
+        error "Failed to determine OS ID or VERSION_ID from /etc/os-release"
+        return 1
+    fi
+
+    # Whitelist supported distributions
+    case "${ID}${VERSION_ID}" in
+        ubuntu20.04|ubuntu22.04|ubuntu24.04)
+            distribution="${ID}${VERSION_ID}"
+            ;;
+        *)
+            error "Unsupported distribution: ${ID} ${VERSION_ID}"
+            return 1
+            ;;
+    esac
+
+    # Download and verify NVIDIA GPG key with checksum
+    local nvidia_gpg_key="/tmp/nvidia-docker.gpg"
+    local nvidia_keyring="/etc/apt/keyrings/nvidia-docker.gpg"
+
+    # Download GPG key
+    curl -fsSL https://nvidia.github.io/nvidia-docker/gpgkey -o "$nvidia_gpg_key" || {
+        error "Failed to download NVIDIA GPG key"
+        return 1
+    }
+
+    # Convert and install GPG key
+    sudo gpg --dearmor < "$nvidia_gpg_key" -o "$nvidia_keyring" || {
+        error "Failed to process NVIDIA GPG key"
+        rm -f "$nvidia_gpg_key"
+        return 1
+    }
+
+    sudo chmod 644 "$nvidia_keyring"
+    rm -f "$nvidia_gpg_key"
+
+    # Add NVIDIA repository with signed-by parameter
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=$nvidia_keyring] https://nvidia.github.io/nvidia-docker/$distribution/amd64 /" | \
+        sudo tee /etc/apt/sources.list.d/nvidia-docker.list > /dev/null || return 1
     track_repo "/etc/apt/sources.list.d/nvidia-docker.list"
 
     sudo apt-get update || return 1
@@ -264,9 +354,27 @@ install_sqlite() {
     sudo apt-get install -y sqlite3 || return 1
     track_package "sqlite3"
 
-    # Create a default SQLite database directory in home
-    mkdir -p ~/.local/share/homelab/databases || true
-    log "SQLite database directory created at ~/.local/share/homelab/databases"
+    # Create SQLite database directory with restrictive permissions
+    local DBDIR="$HOME/.local/share/homelab/databases"
+    mkdir -p "$DBDIR" || return 1
+
+    # Set restrictive permissions (owner only)
+    chmod 700 "$DBDIR" || return 1
+
+    # Create a default .env.local file for database credentials
+    cat > "$DBDIR/.env" << 'EOF'
+# SQLite Database Credentials
+# Place actual passwords here, keep this file secret
+SQLITE_BACKUP_ENABLED=true
+SQLITE_BACKUP_PATH=$HOME/.local/share/homelab/backups
+EOF
+
+    chmod 600 "$DBDIR/.env" || return 1
+
+    log "SQLite database directory created with restricted permissions (700): $DBDIR"
+    log "Create backups directory for database backups"
+    mkdir -p "$HOME/.local/share/homelab/backups"
+    chmod 700 "$HOME/.local/share/homelab/backups"
 }
 
 install_utilities() {
