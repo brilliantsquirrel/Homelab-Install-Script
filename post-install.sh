@@ -138,6 +138,14 @@ fi
 
 log "Starting homelab setup..."
 
+# First, validate environment variables before proceeding
+# This is a critical step - fail fast if configuration is missing
+if ! validate_environment; then
+    error "Environment validation failed. Cannot proceed with installation."
+    error "Please fix the errors above and try again."
+    exit 1
+fi
+
 # Installation functions
 install_system_updates() {
     sudo apt-get update && sudo apt-get upgrade -y || return 1
@@ -315,17 +323,45 @@ install_nvidia_gpu_support() {
 }
 
 install_docker_containers() {
-    # Check if docker-compose.yml exists
-    if [ ! -f "$(pwd)/docker-compose.yml" ]; then
-        error "docker-compose.yml not found in current directory"
+    local compose_file="$(pwd)/docker-compose.yml"
+
+    # Validate docker-compose.yml exists
+    if [ ! -f "$compose_file" ]; then
+        error "docker-compose.yml not found in current directory: $(pwd)"
+        error "Make sure you run this script from the homelab repository directory"
         return 1
     fi
 
+    # Validate docker-compose.yml is readable
+    if [ ! -r "$compose_file" ]; then
+        error "docker-compose.yml is not readable: $compose_file"
+        error "Check file permissions: ls -la $compose_file"
+        return 1
+    fi
+
+    # Validate docker-compose.yml syntax
+    log "Validating docker-compose.yml syntax..."
+    if ! sudo docker-compose -f "$compose_file" config > /dev/null 2>&1; then
+        error "docker-compose.yml is invalid"
+        error "Run the following to see detailed errors:"
+        error "  sudo docker-compose -f $compose_file config"
+        return 1
+    fi
+    success "docker-compose.yml is valid"
+
     # Start all containers
     log "Starting Docker containers..."
-    sudo docker-compose -f "$(pwd)/docker-compose.yml" up -d || return 1
+    if ! sudo docker-compose -f "$compose_file" up -d; then
+        error "Failed to start Docker containers"
+        error "Check docker-compose logs for details:"
+        error "  sudo docker-compose -f $compose_file logs"
+        return 1
+    fi
+
     log "Waiting for services to be ready..."
     sleep 10
+
+    log "Docker containers started successfully"
 }
 
 pull_ollama_models() {
@@ -393,15 +429,47 @@ configure_git() {
     if ! git config --global user.name &> /dev/null; then
         log "Configuring Git user information..."
 
-        # Prompt for name and email
-        read -p "Enter your Git user name: " git_name
-        read -p "Enter your Git email: " git_email
+        local git_name=""
+        local git_email=""
 
-        # Validate inputs
-        if [ -z "$git_name" ] || [ -z "$git_email" ]; then
-            error "Git name and email cannot be empty"
-            return 1
-        fi
+        # Prompt for name - validate input
+        while [ -z "$git_name" ]; do
+            read -p "Enter your Git user name: " git_name
+
+            # Trim whitespace
+            git_name=$(echo "$git_name" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+
+            # Validate length
+            if [ ${#git_name} -lt 2 ]; then
+                error "Git name must be at least 2 characters"
+                git_name=""
+                continue
+            fi
+
+            if [ ${#git_name} -gt 100 ]; then
+                error "Git name must be less than 100 characters"
+                git_name=""
+                continue
+            fi
+
+            # Remove potentially problematic characters
+            git_name=$(echo "$git_name" | sed "s/['\`\"\\\\]//g")
+        done
+
+        # Prompt for email - validate input
+        while [ -z "$git_email" ]; do
+            read -p "Enter your Git email: " git_email
+
+            # Trim whitespace
+            git_email=$(echo "$git_email" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+
+            # Validate email format
+            if ! [[ "$git_email" =~ ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]]; then
+                error "Invalid email format. Please enter a valid email address."
+                git_email=""
+                continue
+            fi
+        done
 
         # Configure Git globally
         git config --global user.name "$git_name" || return 1
@@ -417,8 +485,10 @@ configure_git() {
     git config --global pull.rebase false || return 1
     git config --global core.editor vim || return 1
 
-    # Create a .gitconfig backup
-    cp ~/.gitconfig ~/.gitconfig.backup.$(date +%Y%m%d) 2>/dev/null || true
+    # Create a .gitconfig backup with timestamp
+    local backup_file="$HOME/.gitconfig.backup.$(date +%Y%m%d_%H%M%S)"
+    cp ~/.gitconfig "$backup_file" 2>/dev/null || true
+    log "Git configuration backed up to: $backup_file"
 
     log "Git configuration complete"
 }
@@ -628,6 +698,90 @@ install_utilities() {
 cleanup_system() {
     sudo apt-get autoremove -y || return 1
     sudo apt-get autoclean || return 1
+}
+
+# Validate API keys and critical environment variables
+validate_environment() {
+    log "Validating environment configuration..."
+
+    # Check if .env file exists
+    if [ ! -f .env ]; then
+        error ".env file not found"
+        error "Please copy .env.example to .env and set all required values:"
+        error "  cp .env.example .env"
+        error "  nano .env"
+        return 1
+    fi
+
+    # Load environment variables
+    set -a
+    source .env
+    set +a
+
+    local missing_keys=()
+    local invalid_keys=()
+
+    # Check for required API keys (must not be empty or placeholder values)
+    local required_keys=(
+        "OLLAMA_API_KEY"
+        "WEBUI_SECRET_KEY"
+        "QDRANT_API_KEY"
+        "N8N_ENCRYPTION_KEY"
+        "LANGCHAIN_API_KEY"
+        "LANGGRAPH_API_KEY"
+        "LANGFLOW_API_KEY"
+        "NGINX_AUTH_PASSWORD"
+    )
+
+    for key in "${required_keys[@]}"; do
+        local value="${!key}"
+
+        # Check if key is empty
+        if [ -z "$value" ]; then
+            missing_keys+=("$key")
+            continue
+        fi
+
+        # Check if still using placeholder values
+        if [[ "$value" == "changeme"* ]] || [[ "$value" == "your-"* ]]; then
+            invalid_keys+=("$key")
+            continue
+        fi
+    done
+
+    # Check N8N_ENCRYPTION_KEY minimum length
+    if [ -n "${N8N_ENCRYPTION_KEY}" ] && [ ${#N8N_ENCRYPTION_KEY} -lt 32 ]; then
+        invalid_keys+=("N8N_ENCRYPTION_KEY (less than 32 characters)")
+    fi
+
+    # Validate email if N8N_ADMIN_EMAIL is set
+    if [ -n "${N8N_ADMIN_EMAIL}" ]; then
+        if ! [[ "${N8N_ADMIN_EMAIL}" =~ ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]]; then
+            invalid_keys+=("N8N_ADMIN_EMAIL (invalid format)")
+        fi
+    fi
+
+    # Report missing keys
+    if [ ${#missing_keys[@]} -gt 0 ]; then
+        error "Missing required environment variables:"
+        for key in "${missing_keys[@]}"; do
+            echo "  - $key (not set, cannot be empty)"
+        done
+        return 1
+    fi
+
+    # Report invalid keys
+    if [ ${#invalid_keys[@]} -gt 0 ]; then
+        error "Invalid or placeholder environment variables:"
+        for key in "${invalid_keys[@]}"; do
+            echo "  - $key (must be set to a real value)"
+        done
+        error "Generate secure values with: openssl rand -base64 32"
+        return 1
+    fi
+
+    success "Environment variables validated successfully"
+    return 0
 }
 
 # Run installation steps

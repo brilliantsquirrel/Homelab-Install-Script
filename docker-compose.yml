@@ -66,7 +66,7 @@ services:
       - "2375"
 
   portainer:
-    image: portainer/portainer-ce:2.18.4
+    image: portainer/portainer-ce:2.20.0
     container_name: portainer
     restart:
       condition: on-failure
@@ -88,7 +88,7 @@ services:
       - homelab_network
 
   ollama:
-    image: ollama/ollama:0.2.0
+    image: ollama/ollama:0.6.0
     container_name: ollama
     restart:
       condition: on-failure
@@ -122,7 +122,7 @@ services:
       retries: 3
 
   openwebui:
-    image: ghcr.io/open-webui/open-webui:v0.1.112
+    image: ghcr.io/open-webui/open-webui:v0.3.0
     container_name: openwebui
     restart:
       condition: on-failure
@@ -142,7 +142,7 @@ services:
       - homelab_network
 
   langchain:
-    image: langchain/langchain:0.0.1
+    image: langchain/langchain:0.1.0
     container_name: langchain
     restart:
       condition: on-failure
@@ -159,7 +159,7 @@ services:
       - homelab_network
 
   langgraph:
-    image: langchain/langgraph-api:0.0.1
+    image: langchain/langgraph-api:0.1.0
     container_name: langgraph
     restart:
       condition: on-failure
@@ -176,7 +176,7 @@ services:
       - homelab_network
 
   langflow:
-    image: langflowai/langflow:0.6.0
+    image: langflowai/langflow:1.0.0
     container_name: langflow
     restart:
       condition: on-failure
@@ -195,7 +195,7 @@ services:
       - homelab_network
 
   n8n:
-    image: n8nio/n8n:1.48.1
+    image: n8nio/n8n:1.95.0
     container_name: n8n
     restart:
       condition: on-failure
@@ -217,7 +217,7 @@ services:
       - homelab_network
 
   qdrant:
-    image: qdrant/qdrant:v1.7.0
+    image: qdrant/qdrant:v1.13.0
     container_name: qdrant
     restart:
       condition: on-failure
