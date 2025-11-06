@@ -4,11 +4,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Personal post-install automation script for Ubuntu systems. The main executable is `post-install.sh`, which automates common tasks after a fresh Ubuntu installation. The script is designed to be robust, idempotent, and safe to run multiple times.
+Homelab automation script for setting up an Ubuntu Server with Docker containers and AI/ML workflows. The main executable is `post-install.sh`, which can be integrated into Cubic custom Ubuntu installations. The script is designed to be robust, idempotent, and safe to run multiple times.
 
 ## Files
 
 - `post-install.sh` - Main bash script that performs all installation tasks
+- `docker-compose.yml` - Docker Compose configuration for all services
 - `spec.txt` - Original requirements specification
 - `CLAUDE.md` - This file
 
@@ -22,6 +23,8 @@ The script must be run as a regular user (not root) with sudo privileges. It wil
 - Prompt for confirmation before proceeding
 - Check if each component is already installed (idempotent)
 - Continue with remaining steps if non-critical installations fail
+- Start Docker containers from docker-compose.yml
+- Pull AI models into Ollama
 - Offer rollback if any failures occur
 
 ## Script Architecture
@@ -46,19 +49,43 @@ The script must be run as a regular user (not root) with sudo privileges. It wil
 The script executes these steps sequentially:
 
 1. **System Updates** (critical) - apt-get update/upgrade
-2. **Graphics Drivers** (non-critical) - ubuntu-drivers autoinstall
+2. **SSH Server** (non-critical) - Enable remote access
 3. **Docker Engine** (non-critical) - From official Docker repository
-4. **Python** (non-critical) - Auto-detects latest from deadsnakes PPA
-5. **Discord** (non-critical) - Downloads and installs .deb package
-6. **1Password** (non-critical) - Desktop app with repository setup
-7. **Utility Packages** (non-critical) - git, vim, htop, tree, unzip, build-essential
+4. **NVIDIA GPU Support** (non-critical) - nvidia-docker for GPU acceleration
+5. **Docker Containers** (non-critical) - Starts Portainer, Ollama, OpenWebUI, LangChain, LangGraph, LangFlow, n8n
+6. **Ollama Models** (non-critical) - Pulls gpt-oss:20b, qwen3-vl:8b, qwen3-coder:30b, qwen3:8b
+7. **Utility Packages** (non-critical) - git, vim, htop, tree, unzip, build-essential, net-tools, jq
 8. **System Cleanup** (non-critical) - apt autoremove and autoclean
 
-Each step is wrapped in an installation function (e.g., `install_docker()`, `install_python()`) that:
+Each step is wrapped in an installation function (e.g., `install_docker()`, `install_ssh()`) that:
 - Checks if already installed (idempotency)
 - Performs the installation
 - Tracks installed packages/repos for rollback
 - Returns 1 on failure, 0 on success
+
+### Docker Services
+
+All services are defined in `docker-compose.yml` and orchestrated together:
+
+- **Portainer** (port 9000) - Container management UI
+- **Ollama** (port 11434) - LLM runtime with GPU support
+- **OpenWebUI** (port 8080) - Web interface for Ollama
+- **LangChain** (port 8000) - LLM application framework
+- **LangGraph** (port 8001) - Graph-based workflows
+- **LangFlow** (port 7860) - Visual workflow builder
+- **n8n** (port 5678) - Workflow automation
+
+All containers are configured with environment variables to connect to Ollama on `http://ollama:11434`.
+
+### Ollama Models
+
+Models are automatically pulled in the following order:
+1. `gpt-oss:20b` - 20 billion parameter open-source LLM
+2. `qwen3-vl:8b` - 8B multimodal vision-language model
+3. `qwen3-coder:30b` - 30B code-specialized model
+4. `qwen3:8b` - 8B general-purpose model
+
+Each model pull is wrapped with error handling to continue if one fails.
 
 ## Key Implementation Details
 
@@ -74,6 +101,7 @@ Each step is wrapped in an installation function (e.g., `install_docker()`, `ins
 - Each installation function checks if software is already installed
 - Safe to run multiple times without reinstalling
 - Skips already-installed components with log message
+- Docker containers are health-checked before pulling models
 
 ### Rollback Capability
 - Tracks all packages and repos added during execution
@@ -83,11 +111,11 @@ Each step is wrapped in an installation function (e.g., `install_docker()`, `ins
 - Removes tracked repos (PPAs and repository files)
 - Interactive confirmation before executing rollback
 
-### Python Version Detection
-- Auto-detects latest available Python 3.x from deadsnakes PPA
-- Uses `apt-cache search` to find highest version number
-- Falls back to Python 3.12 if detection fails
-- Checks if detected version already installed before proceeding
+### GPU Support
+- Detects NVIDIA GPU via `nvidia-smi`
+- Installs nvidia-docker2 toolkit if GPU is present
+- docker-compose.yml has commented GPU configuration
+- Users uncomment `runtime: nvidia` lines to enable GPU
 
 ### Logging System
 - Color-coded output: green (info/success), red (error), yellow (warning), blue (headers)
@@ -100,7 +128,7 @@ Each step is wrapped in an installation function (e.g., `install_docker()`, `ins
 - Requires explicit confirmation before starting
 - Shows complete list of what will be installed
 - Prompts before rollback operations
-- Displays post-install notes (logout, reboot requirements)
+- Displays post-install notes (service access URLs, important reminders)
 
 ## Modifying the Script
 
@@ -108,22 +136,22 @@ When adding new installation steps:
 
 1. **Create installation function**:
    ```bash
-   install_myapp() {
+   install_myservice() {
        # Check if already installed
-       if command -v myapp &> /dev/null; then
-           log "MyApp already installed, skipping"
+       if command -v myservice &> /dev/null; then
+           log "MyService already installed, skipping"
            return 0
        fi
 
        # Perform installation
-       sudo apt-get install -y myapp || return 1
-       track_package "myapp"
+       sudo apt-get install -y myservice || return 1
+       track_package "myservice"
    }
    ```
 
 2. **Add to execution flow**:
    ```bash
-   run_step "MyApp" install_myapp false  # false = non-critical
+   run_step "MyService" install_myservice false  # false = non-critical
    ```
 
 3. **Error handling guidelines**:
@@ -136,7 +164,42 @@ When adding new installation steps:
    - Call `track_repo("ppa:..." or "/path/to/list")` after adding repos
 
 5. **Testing**:
-   - Test on fresh Ubuntu installation or VM
+   - Test on fresh Ubuntu Server installation or VM
    - Test idempotency by running twice
    - Test failure handling by simulating errors
    - Verify rollback removes added components
+
+## Docker Compose Usage
+
+Manually manage containers:
+
+```bash
+# Start all services
+docker-compose up -d
+
+# Stop all services
+docker-compose down
+
+# View container logs
+docker-compose logs -f
+
+# Restart a specific service
+docker-compose restart ollama
+```
+
+To enable GPU support, edit `docker-compose.yml` and uncomment the GPU configuration in the ollama service.
+
+## Service Integration
+
+### Ollama Models
+Pull additional models into Ollama:
+```bash
+docker exec ollama ollama pull llama2
+docker exec ollama ollama pull mistral
+```
+
+### LangChain Integration
+LangChain connects to Ollama via environment variable `OLLAMA_BASE_URL=http://ollama:11434`
+
+### n8n Workflows
+n8n can trigger workflows from HTTP webhooks and integrate with Ollama for AI tasks.

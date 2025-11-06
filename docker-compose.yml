@@ -1,0 +1,115 @@
+version: '3.8'
+
+services:
+  portainer:
+    image: portainer/portainer-ce:latest
+    container_name: portainer
+    restart: always
+    ports:
+      - "9000:9000"
+      - "8000:8000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - portainer_data:/data
+    environment:
+      - TZ=UTC
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    restart: always
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    environment:
+      - TZ=UTC
+    # Uncomment the following line for GPU support (NVIDIA CUDA)
+    # runtime: nvidia
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+
+  openwebui:
+    image: ghcr.io/open-webui/open-webui:latest
+    container_name: openwebui
+    restart: always
+    ports:
+      - "8080:8080"
+    volumes:
+      - openwebui_data:/app/backend/data
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - TZ=UTC
+    depends_on:
+      - ollama
+
+  langchain:
+    image: langchain/langchain:latest
+    container_name: langchain
+    restart: always
+    ports:
+      - "8000:8000"
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - TZ=UTC
+    depends_on:
+      - ollama
+
+  langgraph:
+    image: langchain/langgraph-api:latest
+    container_name: langgraph
+    restart: always
+    ports:
+      - "8001:8000"
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - TZ=UTC
+    depends_on:
+      - ollama
+
+  langflow:
+    image: langflowai/langflow:latest
+    container_name: langflow
+    restart: always
+    ports:
+      - "7860:7860"
+    volumes:
+      - langflow_data:/root/.langflow
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - TZ=UTC
+    depends_on:
+      - ollama
+
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: n8n
+    restart: always
+    ports:
+      - "5678:5678"
+    volumes:
+      - n8n_data:/home/node/.n8n
+    environment:
+      - N8N_PROTOCOL=http
+      - N8N_HOST=0.0.0.0
+      - N8N_PORT=5678
+      - TZ=UTC
+      - OLLAMA_BASE_URL=http://ollama:11434
+    depends_on:
+      - ollama
+
+volumes:
+  portainer_data:
+  ollama_data:
+  openwebui_data:
+  langflow_data:
+  n8n_data:
+
+networks:
+  default:
+    name: homelab_network

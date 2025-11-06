@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# Personal Post-Install Script for Ubuntu
-# Automates common tasks after a fresh Ubuntu installation
+# Homelab Install Script for Ubuntu Server
+# Automates setup of homelab with Docker containers and AI/ML workflows
 
 # Colors for output
 RED='\033[0;31m'
@@ -113,14 +113,17 @@ if [[ $EUID -eq 0 ]]; then
 fi
 
 # Confirm before proceeding
-echo -e "${BLUE}Personal Ubuntu Post-Install Script${NC}"
+echo -e "${BLUE}Homelab Server Install Script${NC}"
 echo "This script will install and configure:"
 echo "  - System updates"
-echo "  - Proprietary graphics drivers"
-echo "  - Docker Engine"
-echo "  - Latest stable Python"
-echo "  - Discord"
-echo "  - 1Password Firefox add-on"
+echo "  - SSH server"
+echo "  - Docker Engine with GPU support"
+echo "  - Portainer (container management)"
+echo "  - Ollama (LLM runtime)"
+echo "  - OpenWebUI (Ollama web interface)"
+echo "  - LangChain, LangGraph, LangFlow (AI frameworks)"
+echo "  - n8n (workflow automation)"
+echo "  - AI Models (gpt-oss:20b, qwen3-vl:8b, qwen3-coder:30b, qwen3:8b)"
 echo ""
 read -p "Do you want to continue? (y/N): " -n 1 -r
 echo
@@ -129,20 +132,26 @@ if [[ ! $REPLY =~ ^[Yy]$ ]]; then
     exit 0
 fi
 
-log "Starting post-install setup..."
+log "Starting homelab setup..."
 
 # Installation functions
 install_system_updates() {
-    sudo apt-get update && sudo apt-get upgrade -y
+    sudo apt-get update && sudo apt-get upgrade -y || return 1
 }
 
-install_graphics_drivers() {
-    # Check if proprietary drivers are already installed
-    if ubuntu-drivers list --gpgpu 2>/dev/null | grep -q "installed"; then
-        log "Proprietary graphics drivers already installed, skipping"
+install_ssh() {
+    # Check if SSH is already installed and running
+    if sudo systemctl is-active --quiet ssh; then
+        log "SSH already installed and running, skipping"
         return 0
     fi
-    sudo ubuntu-drivers autoinstall
+
+    sudo apt-get install -y openssh-server openssh-client || return 1
+    sudo systemctl enable ssh || return 1
+    sudo systemctl start ssh || return 1
+    track_package "openssh-server"
+
+    log "SSH enabled and started"
 }
 
 install_docker() {
@@ -184,85 +193,76 @@ install_docker() {
     log "You'll need to log out and back in for Docker group changes to take effect."
 }
 
-install_python() {
-    sudo apt-get install -y software-properties-common || return 1
-    sudo add-apt-repository ppa:deadsnakes/ppa -y || return 1
-    track_repo "ppa:deadsnakes/ppa"
+install_nvidia_gpu_support() {
+    # Check if NVIDIA GPU is present
+    if ! command -v nvidia-smi &> /dev/null; then
+        log "No NVIDIA GPU detected or drivers not installed, skipping NVIDIA container toolkit"
+        return 0
+    fi
+
+    # Check if nvidia-docker is already installed
+    if command -v nvidia-docker &> /dev/null; then
+        log "NVIDIA container toolkit already installed, skipping"
+        return 0
+    fi
+
+    # Add NVIDIA repository and install toolkit
+    curl -s -L https://nvidia.github.io/nvidia-docker/gpgkey | sudo apt-key add - || return 1
+    distribution=$(. /etc/os-release;echo $ID$VERSION_ID) || return 1
+    curl -s -L https://nvidia.github.io/nvidia-docker/$distribution/nvidia-docker.list | sudo tee /etc/apt/sources.list.d/nvidia-docker.list > /dev/null || return 1
+    track_repo "/etc/apt/sources.list.d/nvidia-docker.list"
+
     sudo apt-get update || return 1
+    sudo apt-get install -y nvidia-docker2 || return 1
+    track_package "nvidia-docker2"
 
-    # Auto-detect latest available Python 3 version from deadsnakes PPA
-    # List available python3.x packages and extract highest version number
-    PYTHON_VERSION=$(apt-cache search --names-only '^python3\.[0-9]+$' | \
-        grep -oP 'python3\.\K[0-9]+' | \
-        sort -n | \
-        tail -1)
-
-    if [ -z "$PYTHON_VERSION" ]; then
-        warning "Could not auto-detect Python version, falling back to 3.12"
-        PYTHON_VERSION="3.12"
-    else
-        log "Detected latest Python version: 3.${PYTHON_VERSION}"
-        PYTHON_VERSION="3.${PYTHON_VERSION}"
-    fi
-
-    # Check if this Python version is already installed
-    if command -v python${PYTHON_VERSION} &> /dev/null; then
-        log "Python ${PYTHON_VERSION} already installed ($(python${PYTHON_VERSION} --version)), skipping"
-        return 0
-    fi
-
-    sudo apt-get install -y python${PYTHON_VERSION} python${PYTHON_VERSION}-pip python${PYTHON_VERSION}-venv python${PYTHON_VERSION}-dev || return 1
-    track_package "python${PYTHON_VERSION}"
-
-    # Make it available as python3
-    sudo update-alternatives --install /usr/bin/python3 python3 /usr/bin/python${PYTHON_VERSION} 1 || return 1
+    sudo systemctl restart docker || return 1
+    log "NVIDIA container toolkit installed and Docker restarted"
 }
 
-install_discord() {
-    # Check if Discord is already installed
-    if command -v discord &> /dev/null || dpkg -l | grep -q "^ii.*discord"; then
-        log "Discord already installed, skipping"
-        return 0
+install_docker_containers() {
+    # Check if docker-compose.yml exists
+    if [ ! -f "$(pwd)/docker-compose.yml" ]; then
+        error "docker-compose.yml not found in current directory"
+        return 1
     fi
 
-    wget -O /tmp/discord.deb "https://discord.com/api/download?platform=linux&format=deb" || return 1
-    sudo dpkg -i /tmp/discord.deb || sudo apt-get install -f -y  # Fix dependency issues if dpkg fails
-    track_package "discord"
-    rm -f /tmp/discord.deb
+    # Start all containers
+    log "Starting Docker containers..."
+    sudo docker-compose -f "$(pwd)/docker-compose.yml" up -d || return 1
+    log "Waiting for services to be ready..."
+    sleep 10
 }
 
-install_1password() {
-    # Check if 1Password is already installed
-    if command -v 1password &> /dev/null || dpkg -l | grep -q "^ii.*1password"; then
-        log "1Password already installed, skipping"
-        return 0
+pull_ollama_models() {
+    # Check if Ollama container is running
+    if ! sudo docker ps | grep -q ollama; then
+        error "Ollama container is not running"
+        return 1
     fi
 
-    warning "1Password Firefox add-on needs to be installed manually."
-    warning "Please visit: https://addons.mozilla.org/en-US/firefox/addon/1password-x-password-manager/"
+    log "Pulling Ollama models (this may take a while)..."
 
-    # Install 1Password desktop app
-    curl -sS https://downloads.1password.com/linux/keys/1password.asc | sudo gpg --dearmor --output /usr/share/keyrings/1password-archive-keyring.gpg || return 1
-    echo 'deb [arch=amd64 signed-by=/usr/share/keyrings/1password-archive-keyring.gpg] https://downloads.1password.com/linux/debian/amd64 stable main' | sudo tee /etc/apt/sources.list.d/1password.list || return 1
-    track_repo "/etc/apt/sources.list.d/1password.list"
-    sudo mkdir -p /etc/debsig/policies/AC2D62742012EA22/ || return 1
-    curl -sS https://downloads.1password.com/linux/debian/debsig/1password.pol | sudo tee /etc/debsig/policies/AC2D62742012EA22/1password.pol || return 1
-    sudo mkdir -p /usr/share/debsig/keyrings/AC2D62742012EA22 || return 1
-    curl -sS https://downloads.1password.com/linux/keys/1password.asc | sudo gpg --dearmor --output /usr/share/debsig/keyrings/AC2D62742012EA22/debsig.gpg || return 1
-    sudo apt update && sudo apt install -y 1password || return 1
-    track_package "1password"
+    local models=("gpt-oss:20b" "qwen3-vl:8b" "qwen3-coder:30b" "qwen3:8b")
+    for model in "${models[@]}"; do
+        log "Pulling model: $model"
+        sudo docker exec ollama ollama pull "$model" || warning "Failed to pull $model, continuing with others..."
+    done
+
+    success "Ollama models pulled"
 }
 
 install_utilities() {
-    # Note: curl, wget, ca-certificates already installed by Docker
-    # software-properties-common already installed by Python setup
+    # Install useful utilities if not already present
     sudo apt-get install -y \
         git \
         vim \
         htop \
         tree \
         unzip \
-        build-essential || return 1
+        build-essential \
+        net-tools \
+        jq || return 1
 }
 
 cleanup_system() {
@@ -272,18 +272,18 @@ cleanup_system() {
 
 # Run installation steps
 run_step "System Updates" install_system_updates true
-run_step "Graphics Drivers" install_graphics_drivers false
+run_step "SSH Server" install_ssh false
 run_step "Docker Engine" install_docker false
-run_step "Python" install_python false
-run_step "Discord" install_discord false
-run_step "1Password" install_1password false
+run_step "NVIDIA GPU Support" install_nvidia_gpu_support false
+run_step "Docker Containers" install_docker_containers false
+run_step "Ollama Models" pull_ollama_models false
 run_step "Utility Packages" install_utilities false
 run_step "System Cleanup" cleanup_system false
 
 # Final summary
 echo ""
 echo "========================================"
-log "Post-install script completed!"
+log "Homelab setup completed!"
 echo "========================================"
 echo ""
 
@@ -303,10 +303,21 @@ else
 fi
 
 echo ""
+echo -e "${YELLOW}Service Access:${NC}"
+echo "  - Portainer (Container Management): http://<server-ip>:9000"
+echo "  - OpenWebUI (Ollama Interface): http://<server-ip>:8080"
+echo "  - Ollama API: http://<server-ip>:11434"
+echo "  - LangChain: http://<server-ip>:8000"
+echo "  - LangGraph: http://<server-ip>:8001"
+echo "  - LangFlow: http://<server-ip>:7860"
+echo "  - n8n (Workflow Automation): http://<server-ip>:5678"
+echo ""
 echo -e "${YELLOW}Important notes:${NC}"
 echo "  - Log out and back in for Docker group changes to take effect"
-echo "  - Graphics drivers may require a reboot"
-echo "  - Install 1Password Firefox add-on manually from the Firefox add-ons store"
-echo "  - Solomon's personal scripts: None defined yet"
+echo "  - SSH is now enabled for remote access"
+echo "  - Ollama models are being pulled in the background (may take 1-2 hours)"
+echo "  - GPU support requires NVIDIA drivers and docker runtime configuration"
+echo "  - Find your server IP with: hostname -I"
 echo ""
+log "For GPU support, uncomment the runtime: nvidia lines in docker-compose.yml"
 log "Consider rebooting your system to ensure all changes take effect."
