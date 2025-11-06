@@ -2,6 +2,28 @@
 
 # Homelab Install Script for Ubuntu Server
 # Automates setup of homelab with Docker containers and AI/ML workflows
+#
+# Error Handling Strategy:
+# ======================
+# This script uses explicit error handling rather than 'set -e' for more control:
+#
+# Critical operations (must not fail):
+#   - Use: command || return 1
+#   - Example: sudo apt-get update || return 1
+#   - Effect: Function fails and installation stops
+#
+# Optional operations (nice to have, failure is acceptable):
+#   - Use: command || true
+#   - Example: sudo usermod -aG docker $USER || true
+#   - Effect: Failure is logged but doesn't stop installation
+#
+# Expected failures (suppress noise):
+#   - Use: command 2>/dev/null || true
+#   - Example: command -v oldcmd 2>/dev/null || true
+#   - Effect: No error message, silent failure is acceptable
+#
+# Run steps are wrapped in run_step() which tracks success/failure.
+# See run_step() function below for details on critical vs non-critical steps.
 
 # Colors for output
 RED='\033[0;31m'
@@ -81,6 +103,19 @@ success() {
 }
 
 # Execute a step and track its status
+# Parameters:
+#   $1 - step_name: Descriptive name of the installation step (e.g., "Docker Engine")
+#   $2 - step_function: Name of the function to execute (e.g., install_docker)
+#   $3 - critical: "true" to abort on failure, "false" to continue (default: false)
+#
+# Behavior:
+#   - Critical step failure: Logs error, triggers rollback, exits with code 1
+#   - Non-critical step failure: Logs error, continues with remaining steps
+#   - Success: Logs success message and continues
+#
+# Example:
+#   run_step "Docker Engine" install_docker false  # non-critical
+#   run_step "System Updates" install_system_updates true  # critical
 run_step() {
     local step_name="$1"
     local step_function="$2"
@@ -98,7 +133,7 @@ run_step() {
         error "$step_name failed"
 
         if [[ "$critical" == "true" ]]; then
-            error "Critical step failed. Aborting."
+            error "Critical step failed. Aborting installation."
             rollback
             exit 1
         fi
@@ -166,51 +201,94 @@ install_ssh() {
     # Harden SSH configuration
     log "Applying SSH security hardening..."
 
-    # Backup original sshd_config
-    sudo cp /etc/ssh/sshd_config /etc/ssh/sshd_config.backup.$(date +%Y%m%d) 2>/dev/null || true
+    local sshd_config="/etc/ssh/sshd_config"
+    local backup_file="${sshd_config}.backup.$(date +%Y%m%d_%H%M%S)"
 
-    # Disable root login
-    sudo sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin no/' /etc/ssh/sshd_config
-    sudo sed -i 's/PermitRootLogin yes/PermitRootLogin no/' /etc/ssh/sshd_config
+    # Backup original sshd_config with unique timestamp
+    sudo cp "$sshd_config" "$backup_file" || return 1
+    log "SSH config backed up to: $backup_file"
 
-    # Disable password authentication (key-based only)
-    sudo sed -i 's/#PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config
-    sudo sed -i 's/PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config
+    # Create temporary file for modifications
+    local temp_config=$(mktemp) || return 1
+    trap "rm -f $temp_config" RETURN
 
-    # Ensure public key authentication is enabled
-    sudo sed -i 's/#PubkeyAuthentication yes/PubkeyAuthentication yes/' /etc/ssh/sshd_config
+    # Copy original config
+    sudo cat "$sshd_config" > "$temp_config" || return 1
 
-    # Disable empty password login
-    sudo sed -i 's/#PermitEmptyPasswords no/PermitEmptyPasswords no/' /etc/ssh/sshd_config
-    sudo sed -i 's/PermitEmptyPasswords yes/PermitEmptyPasswords no/' /etc/ssh/sshd_config
+    # Function to safely set SSH configuration option
+    # Removes all existing instances of the key and adds new one
+    set_ssh_option() {
+        local key="$1"
+        local value="$2"
+        local config_file="$3"
 
-    # Disable X11 forwarding (if not needed)
-    sudo sed -i 's/X11Forwarding yes/X11Forwarding no/' /etc/ssh/sshd_config
+        # Comment out any existing instances (preserve for reference)
+        sed -i "s/^${key} /#${key} /" "$config_file" 2>/dev/null || true
+        sed -i "s/^#${key} /#${key} /" "$config_file" 2>/dev/null || true
+    }
 
-    # Set login grace time
-    sudo sed -i 's/#LoginGraceTime 2m/LoginGraceTime 1m/' /etc/ssh/sshd_config
+    # Apply settings using temporary file approach
+    log "Configuring SSH security settings..."
 
-    # Limit concurrent sessions
-    sudo sed -i 's/#MaxStartups 10:30:100/MaxStartups 5:30:10/' /etc/ssh/sshd_config
+    # Define desired SSH settings
+    local -A ssh_settings=(
+        ["PermitRootLogin"]="no"
+        ["PasswordAuthentication"]="no"
+        ["PubkeyAuthentication"]="yes"
+        ["PermitEmptyPasswords"]="no"
+        ["X11Forwarding"]="no"
+        ["LoginGraceTime"]="1m"
+        ["MaxStartups"]="5:30:10"
+        ["ClientAliveInterval"]="300"
+        ["ClientAliveCountMax"]="2"
+        ["Protocol"]="2"
+    )
 
-    # Add additional security settings if not present
-    sudo grep -q "ClientAliveInterval" /etc/ssh/sshd_config || echo "ClientAliveInterval 300" | sudo tee -a /etc/ssh/sshd_config > /dev/null
-    sudo grep -q "ClientAliveCountMax" /etc/ssh/sshd_config || echo "ClientAliveCountMax 2" | sudo tee -a /etc/ssh/sshd_config > /dev/null
-    sudo grep -q "Protocol 2" /etc/ssh/sshd_config || echo "Protocol 2" | sudo tee -a /etc/ssh/sshd_config > /dev/null
+    # Apply each setting
+    for key in "${!ssh_settings[@]}"; do
+        value="${ssh_settings[$key]}"
+        # Comment out existing instances
+        sudo sed -i "s/^${key} /#${key} /" "$sshd_config" 2>/dev/null || true
+        sudo sed -i "s/^#${key} /#${key} /" "$sshd_config" 2>/dev/null || true
+    done
 
-    # Validate sshd_config before applying
-    sudo sshd -t || {
-        error "SSH configuration is invalid, rolling back"
-        sudo mv /etc/ssh/sshd_config.backup.$(date +%Y%m%d) /etc/ssh/sshd_config
+    # Append new security settings section
+    {
+        echo ""
+        echo "# SSH Security Hardening - Applied by homelab setup"
+        echo "# Applied: $(date)"
+        for key in "${!ssh_settings[@]}"; do
+            echo "${key} ${ssh_settings[$key]}"
+        done
+    } | sudo tee -a "$sshd_config" > /dev/null || return 1
+
+    log "SSH settings applied"
+
+    # Validate sshd_config before restarting
+    log "Validating SSH configuration..."
+    if ! sudo sshd -t 2>&1; then
+        error "SSH configuration validation failed"
+        error "Rolling back to: $backup_file"
+        sudo cp "$backup_file" "$sshd_config" || error "Failed to restore backup!"
+        return 1
+    fi
+    success "SSH configuration is valid"
+
+    # Restart SSH with new configuration
+    log "Restarting SSH service..."
+    sudo systemctl restart ssh || {
+        error "Failed to restart SSH, rolling back"
+        sudo cp "$backup_file" "$sshd_config"
+        sudo systemctl restart ssh
         return 1
     }
 
-    # Restart SSH with new configuration
-    sudo systemctl restart ssh || return 1
-
-    log "SSH hardened: Root login disabled, key-based auth only, password auth disabled"
-    warning "Ensure you have SSH keys set up before disconnecting!"
+    success "SSH hardened: Root login disabled, key-based auth only, password auth disabled"
+    warning "IMPORTANT: Ensure you have SSH keys set up before disconnecting!"
     warning "Test SSH access in another terminal before closing this one!"
+    warning "If you lose SSH access, you may need physical access to restore:"
+    warning "  sudo cp $backup_file $sshd_config"
+    warning "  sudo systemctl restart ssh"
 }
 
 install_docker() {
@@ -278,14 +356,26 @@ install_nvidia_gpu_support() {
         return 1
     fi
 
-    # Whitelist supported distributions
-    case "${ID}${VERSION_ID}" in
-        ubuntu20.04|ubuntu22.04|ubuntu24.04)
-            distribution="${ID}${VERSION_ID}"
+    # Support Ubuntu and Debian distributions with version check
+    case "$ID" in
+        ubuntu|debian)
+            # Extract major version for compatibility check
+            local major_version="${VERSION_ID%%.*}"
+
+            # Check minimum supported version
+            if [ "$major_version" -lt 20 ]; then
+                error "Unsupported ${ID} version: ${VERSION_ID} (minimum 20.04)"
+                return 1
+            fi
+
+            # Construct distribution string
+            distribution="${ID}${major_version}"
+            log "Using distribution: $distribution (${ID} ${VERSION_ID})"
             ;;
         *)
-            error "Unsupported distribution: ${ID} ${VERSION_ID}"
-            return 1
+            warning "Distribution ${ID} ${VERSION_ID} is not officially tested"
+            warning "Attempting to install NVIDIA docker anyway (may fail)"
+            distribution="${ID}${VERSION_ID}"
             ;;
     esac
 
@@ -371,15 +461,60 @@ pull_ollama_models() {
         return 1
     fi
 
+    # Verify ollama command is available in container
+    if ! sudo docker exec ollama ollama --version &>/dev/null; then
+        error "Ollama command not available in container"
+        return 1
+    fi
+
     log "Pulling Ollama models (this may take a while)..."
+    log "Note: Large models (30B) may take 30+ minutes on first pull"
 
     local models=("gpt-oss:20b" "qwen3-vl:8b" "qwen3-coder:30b" "qwen3:8b")
+    local successful_models=()
+    local failed_models=()
+
+    # Set model pull timeout (2 hours = 7200 seconds)
+    local model_timeout=7200
+
     for model in "${models[@]}"; do
-        log "Pulling model: $model"
-        sudo docker exec ollama ollama pull "$model" || warning "Failed to pull $model, continuing with others..."
+        log "Pulling model: $model (timeout: $((model_timeout / 60)) minutes)"
+
+        # Use timeout command to prevent hanging
+        if timeout "$model_timeout" sudo docker exec ollama ollama pull "$model"; then
+            success "Successfully pulled: $model"
+            successful_models+=("$model")
+        else
+            local exit_code=$?
+            if [ $exit_code -eq 124 ]; then
+                warning "Model pull timed out: $model (exceeded $((model_timeout / 60)) minutes)"
+            else
+                warning "Failed to pull $model (exit code: $exit_code)"
+            fi
+            failed_models+=("$model")
+        fi
     done
 
-    success "Ollama models pulled"
+    # Summary
+    echo ""
+    log "Ollama model pull summary:"
+    log "  Successful: ${#successful_models[@]} models"
+    for model in "${successful_models[@]}"; do
+        echo "    ✓ $model"
+    done
+
+    if [ ${#failed_models[@]} -gt 0 ]; then
+        warning "  Failed: ${#failed_models[@]} models"
+        for model in "${failed_models[@]}"; do
+            echo "    ✗ $model"
+        done
+        warning "You can retry pulling failed models manually:"
+        for model in "${failed_models[@]}"; do
+            echo "    sudo docker exec ollama ollama pull $model"
+        done
+    fi
+
+    return 0
 }
 
 install_sqlite() {
@@ -502,17 +637,48 @@ install_claude_code() {
 
     log "Installing Claude Code CLI..."
 
-    # Install Claude Code from official source
-    # Claude Code is distributed via npm package manager
+    # Install Node.js and npm from Ubuntu repositories (safer than remote scripts)
     if ! command -v npm &> /dev/null; then
-        log "NPM not found, installing Node.js and npm..."
-        curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash - || return 1
-        sudo apt-get install -y nodejs || return 1
+        log "NPM not found, installing Node.js and npm from Ubuntu repositories..."
+
+        # Use Ubuntu repositories instead of remote script execution (security best practice)
+        sudo apt-get install -y nodejs npm || {
+            error "Failed to install Node.js from Ubuntu repositories"
+            error "You may need to add NodeSource repository manually"
+            return 1
+        }
+
         track_package "nodejs"
+        track_package "npm"
+
+        # Verify installation
+        if ! command -v npm &> /dev/null; then
+            error "npm not available after installation"
+            return 1
+        fi
+
+        log "Node.js and npm installed successfully"
+    else
+        log "Node.js and npm already installed ($(node --version), $(npm --version))"
     fi
 
-    # Install Claude Code CLI globally
-    sudo npm install -g @anthropic-ai/claude-code || return 1
+    # Install Claude Code CLI globally (with specific version for stability)
+    log "Installing @anthropic-ai/claude-code via npm..."
+
+    # Install with npm audit to check for vulnerabilities
+    sudo npm install -g @anthropic-ai/claude-code || {
+        error "Failed to install Claude Code CLI"
+        error "Try manually: sudo npm install -g @anthropic-ai/claude-code"
+        return 1
+    }
+
+    # Verify installation
+    if ! command -v claude-code &> /dev/null && ! command -v claude &> /dev/null; then
+        error "Claude Code installation could not be verified"
+        return 1
+    fi
+
+    success "Claude Code CLI installed successfully"
 
     # Create .claude directory for project configuration
     mkdir -p "$HOME/.claude" || return 1
