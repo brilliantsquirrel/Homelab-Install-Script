@@ -181,23 +181,27 @@ install_cockpit() {
 
     debug "Installing Cockpit web interface"
 
-    # Install Cockpit and useful plugins
-    sudo apt-get install -y \
-        cockpit \
-        cockpit-docker \
-        cockpit-podman \
-        cockpit-machines \
-        cockpit-networkmanager \
-        cockpit-storaged \
-        cockpit-packagekit || return 1
-
+    # Install core Cockpit package
+    sudo apt-get install -y cockpit || return 1
     track_package "cockpit"
-    track_package "cockpit-docker"
-    track_package "cockpit-podman"
-    track_package "cockpit-machines"
-    track_package "cockpit-networkmanager"
-    track_package "cockpit-storaged"
-    track_package "cockpit-packagekit"
+
+    # Install optional plugins (ignore failures for unavailable packages)
+    local plugins=(
+        "cockpit-machines"
+        "cockpit-networkmanager"
+        "cockpit-storaged"
+        "cockpit-packagekit"
+        "cockpit-podman"
+    )
+
+    for plugin in "${plugins[@]}"; do
+        if sudo apt-get install -y "$plugin" 2>/dev/null; then
+            track_package "$plugin"
+            log "Installed $plugin"
+        else
+            debug "$plugin not available, skipping"
+        fi
+    done
 
     # Enable and start Cockpit socket
     sudo systemctl enable cockpit.socket || return 1

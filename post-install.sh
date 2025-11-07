@@ -272,6 +272,7 @@ run_step "SSH Server" install_ssh false
 run_step "SQLite" install_sqlite false
 run_step "Cockpit" install_cockpit false
 run_step "Docker Engine" install_docker false
+run_step "Docker Compose" install_docker_compose false
 run_step "NVIDIA GPU Support" install_nvidia_gpu_support false
 run_step "Pi-Hole DNS Configuration" configure_pihole_dns false
 run_step "Docker Containers" install_docker_containers false
