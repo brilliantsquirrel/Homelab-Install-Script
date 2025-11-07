@@ -400,6 +400,7 @@ services:
     volumes:
       - pihole_etc:/etc/pihole
       - pihole_dnsmasq:/etc/dnsmasq.d
+      - ./pihole-custom-dns.conf:/etc/dnsmasq.d/02-custom-dns.conf:ro
     environment:
       - TZ=UTC
       - WEBPASSWORD=${PIHOLE_PASSWORD:-changeme}

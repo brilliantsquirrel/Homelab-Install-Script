@@ -161,6 +161,76 @@ install_nvidia_gpu_support() {
 }
 
 # ========================================
+# Pi-Hole Custom DNS Configuration
+# ========================================
+
+# Generate Pi-Hole custom DNS configuration with actual server IP
+configure_pihole_dns() {
+    log "Configuring Pi-Hole custom DNS entries..."
+
+    local template_file="$(pwd)/pihole-custom-dns.conf"
+
+    # Check if template exists
+    if [ ! -f "$template_file" ]; then
+        warning "pihole-custom-dns.conf template not found, skipping custom DNS setup"
+        return 0
+    fi
+
+    # Detect server IP address
+    # Try multiple methods to get the most reliable IP
+    local server_ip=""
+
+    # Method 1: hostname -I (gets all IPs, we take the first non-loopback)
+    if command -v hostname &> /dev/null; then
+        server_ip=$(hostname -I 2>/dev/null | awk '{print $1}')
+    fi
+
+    # Method 2: ip route (fallback)
+    if [ -z "$server_ip" ] && command -v ip &> /dev/null; then
+        server_ip=$(ip route get 1.1.1.1 2>/dev/null | grep -oP 'src \K[\d.]+')
+    fi
+
+    # Method 3: Check for SERVER_IP environment variable
+    if [ -z "$server_ip" ] && [ -n "$SERVER_IP" ]; then
+        server_ip="$SERVER_IP"
+    fi
+
+    # Validate we got an IP
+    if [ -z "$server_ip" ]; then
+        warning "Could not detect server IP address"
+        warning "Pi-Hole custom DNS will not be configured"
+        warning "You can manually edit pihole-custom-dns.conf and restart Pi-Hole"
+        return 0
+    fi
+
+    # Validate IP format (basic check)
+    if ! [[ "$server_ip" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
+        warning "Detected IP address appears invalid: $server_ip"
+        warning "Skipping custom DNS configuration"
+        return 0
+    fi
+
+    log "Detected server IP: $server_ip"
+
+    # Check if already configured (avoid rewriting on reruns)
+    if grep -q "address=.*/${server_ip}" "$template_file" 2>/dev/null; then
+        log "Pi-Hole DNS already configured with IP $server_ip"
+        return 0
+    fi
+
+    # Replace placeholder with actual IP
+    debug "Updating DNS configuration with server IP..."
+    if sed -i "s/SERVER_IP_PLACEHOLDER/${server_ip}/g" "$template_file"; then
+        success "Pi-Hole custom DNS configured for $server_ip"
+        log "Services will be accessible via:"
+        log "  - homarr.home, plex.home, nextcloud.home, etc."
+    else
+        warning "Failed to update DNS configuration file"
+        return 0
+    fi
+}
+
+# ========================================
 # Docker Containers
 # ========================================
 

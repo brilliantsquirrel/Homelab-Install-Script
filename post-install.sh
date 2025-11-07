@@ -273,6 +273,7 @@ run_step "SQLite" install_sqlite false
 run_step "Cockpit" install_cockpit false
 run_step "Docker Engine" install_docker false
 run_step "NVIDIA GPU Support" install_nvidia_gpu_support false
+run_step "Pi-Hole DNS Configuration" configure_pihole_dns false
 run_step "Docker Containers" install_docker_containers false
 run_step "Ollama Models" pull_ollama_models false
 run_step "Git Configuration" configure_git false
@@ -366,6 +367,14 @@ echo -e "${YELLOW}DNS Configuration (Pi-Hole):${NC}"
 echo "  - Configure devices to use <server-ip> as DNS server"
 echo "  - Or set as router's DNS server to protect entire network"
 echo "  - Pi-Hole admin password is in .env file (PIHOLE_PASSWORD)"
+echo ""
+echo "  Once DNS is configured, access services via friendly names:"
+echo "  - https://homarr.home - Dashboard"
+echo "  - https://plex.home - Media Server"
+echo "  - https://nextcloud.home - File Storage"
+echo "  - https://pihole.home - Ad Blocker Admin"
+echo "  - https://cockpit.home:9090 - Server Management"
+echo "  - https://hoarder.home, https://ollama.home, https://openwebui.home, etc."
 echo ""
 
 log "Consider rebooting your system to ensure all changes take effect"

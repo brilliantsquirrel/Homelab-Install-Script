@@ -54,13 +54,14 @@ The script executes these steps sequentially:
 4. **Cockpit** (non-critical) - Web-based server management interface
 5. **Docker Engine** (non-critical) - From official Docker repository
 6. **NVIDIA GPU Support** (non-critical) - nvidia-docker for GPU acceleration
-7. **Docker Containers** (non-critical) - Starts all services: nginx, Portainer, Ollama, OpenWebUI, LangChain, LangGraph, LangFlow, n8n, Qdrant, Homarr, Hoarder, Plex, Nextcloud (with PostgreSQL and Redis), Pi-Hole
-8. **Ollama Models** (non-critical) - Pulls gpt-oss:20b, qwen3-vl:8b, qwen3-coder:30b, qwen3:8b
-9. **Git Configuration** (non-critical) - Configure Git with user information
-10. **Claude Code Installation** (non-critical) - Install Claude Code CLI globally
-11. **Claude Project Setup** (non-critical) - Set up project-specific Claude Code configuration
-12. **Utility Packages** (non-critical) - git, vim, htop, tree, unzip, build-essential, net-tools, jq
-13. **System Cleanup** (non-critical) - apt autoremove and autoclean
+7. **Pi-Hole DNS Configuration** (non-critical) - Generates custom DNS entries for .home domains
+8. **Docker Containers** (non-critical) - Starts all services: nginx, Portainer, Ollama, OpenWebUI, LangChain, LangGraph, LangFlow, n8n, Qdrant, Homarr, Hoarder, Plex, Nextcloud (with PostgreSQL and Redis), Pi-Hole
+9. **Ollama Models** (non-critical) - Pulls gpt-oss:20b, qwen3-vl:8b, qwen3-coder:30b, qwen3:8b
+10. **Git Configuration** (non-critical) - Configure Git with user information
+11. **Claude Code Installation** (non-critical) - Install Claude Code CLI globally
+12. **Claude Project Setup** (non-critical) - Set up project-specific Claude Code configuration
+13. **Utility Packages** (non-critical) - git, vim, htop, tree, unzip, build-essential, net-tools, jq
+14. **System Cleanup** (non-critical) - apt autoremove and autoclean
 
 Each step is wrapped in an installation function (e.g., `install_docker()`, `install_ssh()`) that:
 - Checks if already installed (idempotency)
@@ -324,12 +325,26 @@ docker exec -u www-data nextcloud php occ <command>
 ```
 
 ### Pi-Hole DNS Ad Blocker
-Network-wide ad blocking. Access at https://<server-ip>/pihole
+Network-wide ad blocking. Access at https://<server-ip>/pihole or https://pihole.home
 - Configure devices to use <server-ip> as DNS server
 - Or set as router DNS to protect entire network
 - Admin password stored in .env file (PIHOLE_PASSWORD)
 - Blocks ads, trackers, and malicious domains
 - Custom blocklists and whitelists
+- **Provides local DNS resolution for .home domains**
+
+**Custom DNS Entries:**
+The installation automatically configures Pi-Hole to resolve the following domains to your server:
+- `homarr.home` → Dashboard
+- `hoarder.home` → Bookmark Manager
+- `plex.home` → Media Server
+- `nextcloud.home` → File Storage
+- `pihole.home` → Pi-Hole Admin
+- `cockpit.home` → Server Management (port 9090)
+- `ollama.home`, `openwebui.home`, `langchain.home`, `langgraph.home`, `langflow.home`, `n8n.home` → AI Services
+- `portainer.home`, `qdrant.home` → Management Services
+
+**DNS Configuration:**
 
 ```bash
 # Configure device DNS (example for Linux)
@@ -337,11 +352,49 @@ Network-wide ad blocking. Access at https://<server-ip>/pihole
 nmcli con mod <connection> ipv4.dns "<server-ip>"
 nmcli con up <connection>
 
+# Configure device DNS (example for macOS)
+# System Preferences > Network > Advanced > DNS
+# Add <server-ip> as DNS server
+
+# Configure device DNS (example for Windows)
+# Control Panel > Network > Change adapter settings
+# Right-click adapter > Properties > IPv4 > Properties
+# Use the following DNS server addresses: <server-ip>
+
+# Router configuration (entire network)
+# Access your router admin interface
+# Find DNS settings (often under DHCP or LAN settings)
+# Set primary DNS to <server-ip>
+# Set secondary DNS to 1.1.1.1 or 8.8.8.8 (fallback)
+```
+
+**Testing DNS Resolution:**
+```bash
+# Test from a device with Pi-Hole configured as DNS
+nslookup homarr.home
+dig homarr.home
+
+# Should return your server's IP address
+```
+
+**Pi-Hole Management:**
+```bash
 # View Pi-Hole logs
 docker-compose logs -f pihole
 
 # Update gravity (blocklists)
 docker exec pihole pihole -g
+
+# Restart Pi-Hole DNS
+docker-compose restart pihole
+
+# View current DNS entries
+cat pihole-custom-dns.conf
+
+# Add custom DNS entries
+# Edit pihole-custom-dns.conf and add:
+# address=/myservice.home/<server-ip>
+# Then restart: docker-compose restart pihole
 ```
 
 ### Cockpit Server Management
@@ -417,11 +470,39 @@ Enable GPU for video transcoding:
 
 ## Network Configuration
 
+### Local DNS Resolution (.home domains)
+
+The homelab automatically configures Pi-Hole to provide local DNS resolution for all services using the `.home` top-level domain. This allows you to access services via memorable names instead of IP addresses.
+
+**Setup:**
+1. The installation script automatically detects your server's IP address
+2. Pi-Hole is configured with custom DNS entries mapping service names to your server IP
+3. Configure your devices or router to use the server as DNS server
+4. Access services using friendly URLs like `https://plex.home` or `https://homarr.home`
+
+**Available DNS Names:**
+- `homarr.home` - Homelab Dashboard
+- `hoarder.home` - Bookmark Manager
+- `plex.home` - Media Server
+- `nextcloud.home` - File Storage & Collaboration
+- `pihole.home` - DNS Ad Blocker Admin
+- `cockpit.home:9090` - Server Management
+- `ollama.home`, `openwebui.home` - AI Services
+- `langchain.home`, `langgraph.home`, `langflow.home`, `n8n.home` - AI Workflows
+- `portainer.home` - Container Management
+- `qdrant.home` - Vector Database
+- `homelab.home` - Alias for main server
+
+**Configuration File:** `pihole-custom-dns.conf`
+- Automatically generated during installation
+- Can be manually edited to add custom DNS entries
+- Restart Pi-Hole after changes: `docker-compose restart pihole`
+
 ### Port Usage
-- **53** (TCP/UDP): Pi-Hole DNS
+- **53** (TCP/UDP): Pi-Hole DNS (for .home domain resolution and ad blocking)
 - **80**: HTTP (redirects to HTTPS)
-- **443**: HTTPS (nginx reverse proxy)
-- **9090**: Cockpit web interface
+- **443**: HTTPS (nginx reverse proxy for all services)
+- **9090**: Cockpit web interface (direct access, not proxied)
 
 ### Internal Docker Network
 All containers communicate on `homelab_network` bridge network:
