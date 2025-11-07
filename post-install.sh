@@ -131,8 +131,12 @@ setup_environment() {
     local LANGGRAPH_API_KEY=$(openssl rand -base64 32)
     local LANGFLOW_API_KEY=$(openssl rand -base64 32)
     local NGINX_AUTH_PASSWORD=$(openssl rand -base64 32)
+    local HOARDER_SECRET_KEY=$(openssl rand -base64 32)
+    local NEXTAUTH_SECRET=$(openssl rand -base64 32)
+    local NEXTCLOUD_DB_PASSWORD=$(openssl rand -base64 32)
+    local PIHOLE_PASSWORD=$(openssl rand -base64 32)
 
-    log "Generated 8 secure API keys"
+    log "Generated 12 secure API keys and passwords"
     echo ""
 
     # Copy template
@@ -148,8 +152,12 @@ setup_environment() {
     sed -i "s|^LANGGRAPH_API_KEY=.*|LANGGRAPH_API_KEY=$LANGGRAPH_API_KEY|" .env
     sed -i "s|^LANGFLOW_API_KEY=.*|LANGFLOW_API_KEY=$LANGFLOW_API_KEY|" .env
     sed -i "s|^NGINX_AUTH_PASSWORD=.*|NGINX_AUTH_PASSWORD=$NGINX_AUTH_PASSWORD|" .env
+    sed -i "s|^HOARDER_SECRET_KEY=.*|HOARDER_SECRET_KEY=$HOARDER_SECRET_KEY|" .env
+    sed -i "s|^NEXTAUTH_SECRET=.*|NEXTAUTH_SECRET=$NEXTAUTH_SECRET|" .env
+    sed -i "s|^NEXTCLOUD_DB_PASSWORD=.*|NEXTCLOUD_DB_PASSWORD=$NEXTCLOUD_DB_PASSWORD|" .env
+    sed -i "s|^PIHOLE_PASSWORD=.*|PIHOLE_PASSWORD=$PIHOLE_PASSWORD|" .env
 
-    debug "Replaced all API keys in .env"
+    debug "Replaced all API keys and passwords in .env"
 
     # Set restrictive permissions
     chmod 600 .env
@@ -206,15 +214,27 @@ echo -e "${BLUE}========================================${NC}"
 echo ""
 info "This script will install and configure:"
 echo "  - System updates"
-echo "  - SSH server"
+echo "  - SSH server (hardened)"
 echo "  - SQLite (local database)"
 echo "  - Docker Engine with GPU support"
+echo "  - Cockpit (web-based server management)"
+echo ""
+echo "  Container Services:"
 echo "  - Portainer (container management)"
 echo "  - Ollama (LLM runtime)"
 echo "  - OpenWebUI (Ollama web interface)"
 echo "  - LangChain, LangGraph, LangFlow (AI frameworks)"
 echo "  - n8n (workflow automation)"
 echo "  - Qdrant (vector database)"
+echo ""
+echo "  Homelab Services:"
+echo "  - Homarr (homelab dashboard)"
+echo "  - Hoarder (bookmark manager)"
+echo "  - Plex (media server)"
+echo "  - Nextcloud (file storage & collaboration)"
+echo "  - Pi-Hole (DNS-based ad blocker)"
+echo ""
+echo "  Additional Setup:"
 echo "  - AI Models (gpt-oss:20b, qwen3-vl:8b, qwen3-coder:30b, qwen3:8b)"
 echo "  - Git (with user configuration)"
 echo "  - Claude Code (with project configuration)"
@@ -250,6 +270,7 @@ echo ""
 run_step "System Updates" install_system_updates true
 run_step "SSH Server" install_ssh false
 run_step "SQLite" install_sqlite false
+run_step "Cockpit" install_cockpit false
 run_step "Docker Engine" install_docker false
 run_step "NVIDIA GPU Support" install_nvidia_gpu_support false
 run_step "Docker Containers" install_docker_containers false
@@ -290,16 +311,28 @@ fi
 # ========================================
 
 echo ""
-echo -e "${YELLOW}Service Access:${NC}"
-echo "  - nginx reverse proxy (authenticated): https://<server-ip>/"
-echo "  - Portainer (Container Management): https://<server-ip>/portainer/"
-echo "  - OpenWebUI (Ollama Interface): https://<server-ip>/openwebui/"
-echo "  - Ollama API: https://<server-ip>/ollama/"
-echo "  - Qdrant (Vector Database): https://<server-ip>/qdrant/"
-echo "  - LangChain: https://<server-ip>/langchain/"
-echo "  - LangGraph: https://<server-ip>/langgraph/"
-echo "  - LangFlow: https://<server-ip>/langflow/"
-echo "  - n8n (Workflow Automation): https://<server-ip>/n8n/"
+echo -e "${YELLOW}Service Access (all via nginx with authentication):${NC}"
+echo "  - Homarr Dashboard: https://<server-ip>/ (redirects to /homarr)"
+echo "  - Cockpit Server Management: https://<server-ip>:9090 (no proxy, direct access)"
+echo ""
+echo "  Homelab Services:"
+echo "  - Homarr (Dashboard): https://<server-ip>/homarr"
+echo "  - Hoarder (Bookmarks): https://<server-ip>/hoarder"
+echo "  - Plex (Media): https://<server-ip>/plex"
+echo "  - Nextcloud (Files): https://<server-ip>/nextcloud"
+echo "  - Pi-Hole (Ad Blocker): https://<server-ip>/pihole"
+echo ""
+echo "  AI Services:"
+echo "  - OpenWebUI (Ollama Interface): https://<server-ip>/openwebui"
+echo "  - Ollama API: https://<server-ip>/ollama"
+echo "  - LangChain: https://<server-ip>/langchain"
+echo "  - LangGraph: https://<server-ip>/langgraph"
+echo "  - LangFlow: https://<server-ip>/langflow"
+echo "  - n8n (Workflow Automation): https://<server-ip>/n8n"
+echo ""
+echo "  Management:"
+echo "  - Portainer (Container Management): https://<server-ip>/portainer"
+echo "  - Qdrant (Vector Database): https://<server-ip>/qdrant"
 echo ""
 
 echo -e "${YELLOW}Database Access:${NC}"
@@ -307,20 +340,34 @@ echo "  - SQLite: ~/.local/share/homelab/databases/"
 echo "  - Qdrant Collections: Via REST API at https://<server-ip>/qdrant/"
 echo ""
 
-echo -e "${YELLOW}Important notes:${NC}"
+echo -e "${YELLOW}Important Notes:${NC}"
+echo "  - All services require nginx basic authentication (user: admin)"
+echo "  - Cockpit uses system credentials and runs on separate port 9090"
+echo "  - Pi-Hole is DNS server on port 53 (UDP/TCP)"
 echo "  - Log out and back in for Docker group changes to take effect"
-echo "  - SSH is now enabled for remote access (key-based auth only)"
-echo "  - Git is configured with your user information"
-echo "  - Claude Code is installed globally and ready to use"
-echo "  - Project-specific Claude Code configuration at: ./.claude/CLAUDE.md"
-echo "  - Global Claude Code configuration at: ~/.claude/CLAUDE.md"
-echo "  - Ollama models are being pulled in the background (may take 1-2 hours)"
-echo "  - GPU support requires NVIDIA drivers and docker runtime configuration"
+echo "  - SSH is hardened for security (key-based auth only, no root login)"
 echo "  - Find your server IP with: hostname -I"
-echo "  - SQLite databases location: ~/.local/share/homelab/databases/"
+echo "  - Ollama models are being pulled in the background (may take 1-2 hours)"
 echo ""
 
-log "For GPU support, uncomment the runtime: nvidia lines in docker-compose.yml"
+echo -e "${YELLOW}GPU Support:${NC}"
+echo "  - For Ollama GPU: Uncomment 'runtime: nvidia' in docker-compose.yml (ollama service)"
+echo "  - For Plex GPU transcoding: Uncomment GPU config in docker-compose.yml (plex service)"
+echo "  - Requires NVIDIA drivers and nvidia-docker2 toolkit (auto-installed if GPU detected)"
+echo ""
+
+echo -e "${YELLOW}Media Server Setup:${NC}"
+echo "  - Plex media location: Docker volume 'plex_media' (mount your media here)"
+echo "  - To add media: docker volume inspect plex_media (find mount point)"
+echo "  - Or: bind mount your media directory by editing docker-compose.yml"
+echo ""
+
+echo -e "${YELLOW}DNS Configuration (Pi-Hole):${NC}"
+echo "  - Configure devices to use <server-ip> as DNS server"
+echo "  - Or set as router's DNS server to protect entire network"
+echo "  - Pi-Hole admin password is in .env file (PIHOLE_PASSWORD)"
+echo ""
+
+log "Consider rebooting your system to ensure all changes take effect"
 log "To start using Claude Code: claude-code"
-log "Consider rebooting your system to ensure all changes take effect."
 echo ""

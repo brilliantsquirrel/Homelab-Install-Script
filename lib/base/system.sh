@@ -1,8 +1,8 @@
 #!/bin/bash
 
-# System Module - System updates, SSH, and database setup
+# System Module - System updates, SSH, database setup, and Cockpit
 # Usage: source lib/base/system.sh
-# Provides: install_system_updates, install_ssh, install_sqlite
+# Provides: install_system_updates, install_ssh, install_sqlite, install_cockpit
 
 # ========================================
 # System Updates
@@ -165,4 +165,51 @@ EOF
     chmod "${DB_DIR_PERMS:-700}" "$BACKUPDIR"
 
     success "SQLite installed and database directories created"
+}
+
+# ========================================
+# Cockpit Installation
+# ========================================
+
+# Install and configure Cockpit web-based server management
+install_cockpit() {
+    # Check if Cockpit is already installed and running
+    if systemctl is-active --quiet cockpit.socket; then
+        log "Cockpit already installed and running, skipping"
+        return 0
+    fi
+
+    debug "Installing Cockpit web interface"
+
+    # Install Cockpit and useful plugins
+    sudo apt-get install -y \
+        cockpit \
+        cockpit-docker \
+        cockpit-podman \
+        cockpit-machines \
+        cockpit-networkmanager \
+        cockpit-storaged \
+        cockpit-packagekit || return 1
+
+    track_package "cockpit"
+    track_package "cockpit-docker"
+    track_package "cockpit-podman"
+    track_package "cockpit-machines"
+    track_package "cockpit-networkmanager"
+    track_package "cockpit-storaged"
+    track_package "cockpit-packagekit"
+
+    # Enable and start Cockpit socket
+    sudo systemctl enable cockpit.socket || return 1
+    sudo systemctl start cockpit.socket || return 1
+
+    # Check status
+    if systemctl is-active --quiet cockpit.socket; then
+        success "Cockpit installed and running on port 9090"
+        log "Access Cockpit at: https://<server-ip>:9090"
+        log "Login with your system username and password"
+    else
+        error "Cockpit failed to start"
+        return 1
+    fi
 }

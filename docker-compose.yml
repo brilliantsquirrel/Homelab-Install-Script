@@ -28,6 +28,11 @@ services:
       - langgraph
       - langflow
       - n8n
+      - homarr
+      - hoarder
+      - plex
+      - nextcloud
+      - pihole
     networks:
       - homelab_network
     environment:
@@ -245,6 +250,177 @@ services:
     networks:
       - homelab_network
 
+  # Homarr - Homelab dashboard and service organizer
+  homarr:
+    image: ghcr.io/ajnart/homarr:latest
+    container_name: homarr
+    restart:
+      condition: on-failure
+      delay: 5s
+      max_attempts: 5
+      window: 120s
+    volumes:
+      - homarr_config:/app/data/configs
+      - homarr_icons:/app/public/icons
+      - homarr_data:/data
+    environment:
+      - TZ=UTC
+    expose:
+      - "7575"
+    networks:
+      - homelab_network
+
+  # Hoarder - Self-hosted bookmark manager
+  hoarder:
+    image: ghcr.io/hoarder-app/hoarder:latest
+    container_name: hoarder
+    restart:
+      condition: on-failure
+      delay: 5s
+      max_attempts: 5
+      window: 120s
+    volumes:
+      - hoarder_data:/data
+    environment:
+      - TZ=UTC
+      - HOARDER_SECRET_KEY=${HOARDER_SECRET_KEY:-changeme}
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET:-changeme}
+      - NEXTAUTH_URL=https://${SERVER_HOSTNAME:-homelab.local}/hoarder
+    expose:
+      - "3000"
+    networks:
+      - homelab_network
+
+  # Plex - Media server
+  plex:
+    image: lscr.io/linuxserver/plex:latest
+    container_name: plex
+    restart:
+      condition: on-failure
+      delay: 5s
+      max_attempts: 5
+      window: 120s
+    volumes:
+      - plex_config:/config
+      - plex_media:/media
+      - plex_transcode:/transcode
+    environment:
+      - TZ=UTC
+      - PUID=1000
+      - PGID=1000
+      - VERSION=docker
+      - PLEX_CLAIM=${PLEX_CLAIM:-}
+    # Uncomment the following lines for GPU transcoding (NVIDIA)
+    # runtime: nvidia
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu, video, compute, utility]
+    expose:
+      - "32400"
+    # Note: Plex needs port 32400 for discovery. Uncomment if needed:
+    # ports:
+    #   - "32400:32400"
+    networks:
+      - homelab_network
+
+  # Nextcloud - File storage and collaboration platform
+  nextcloud-db:
+    image: postgres:16-alpine
+    container_name: nextcloud-db
+    restart:
+      condition: on-failure
+      delay: 5s
+      max_attempts: 5
+      window: 120s
+    volumes:
+      - nextcloud_db:/var/lib/postgresql/data
+    environment:
+      - TZ=UTC
+      - POSTGRES_DB=nextcloud
+      - POSTGRES_USER=nextcloud
+      - POSTGRES_PASSWORD=${NEXTCLOUD_DB_PASSWORD:-changeme}
+    networks:
+      - homelab_network
+
+  nextcloud-redis:
+    image: redis:7-alpine
+    container_name: nextcloud-redis
+    restart:
+      condition: on-failure
+      delay: 5s
+      max_attempts: 5
+      window: 120s
+    environment:
+      - TZ=UTC
+    networks:
+      - homelab_network
+
+  nextcloud:
+    image: nextcloud:29-apache
+    container_name: nextcloud
+    restart:
+      condition: on-failure
+      delay: 5s
+      max_attempts: 5
+      window: 120s
+    volumes:
+      - nextcloud_data:/var/www/html
+    environment:
+      - TZ=UTC
+      - POSTGRES_HOST=nextcloud-db
+      - POSTGRES_DB=nextcloud
+      - POSTGRES_USER=nextcloud
+      - POSTGRES_PASSWORD=${NEXTCLOUD_DB_PASSWORD:-changeme}
+      - REDIS_HOST=nextcloud-redis
+      - NEXTCLOUD_TRUSTED_DOMAINS=${SERVER_HOSTNAME:-homelab.local}
+      - OVERWRITEPROTOCOL=https
+      - OVERWRITEHOST=${SERVER_HOSTNAME:-homelab.local}
+      - OVERWRITEWEBROOT=/nextcloud
+    depends_on:
+      - nextcloud-db
+      - nextcloud-redis
+    expose:
+      - "80"
+    networks:
+      - homelab_network
+
+  # Pi-Hole - DNS-based ad blocker
+  pihole:
+    image: pihole/pihole:latest
+    container_name: pihole
+    restart:
+      condition: on-failure
+      delay: 5s
+      max_attempts: 5
+      window: 120s
+    volumes:
+      - pihole_etc:/etc/pihole
+      - pihole_dnsmasq:/etc/dnsmasq.d
+    environment:
+      - TZ=UTC
+      - WEBPASSWORD=${PIHOLE_PASSWORD:-changeme}
+      - VIRTUAL_HOST=${SERVER_HOSTNAME:-homelab.local}
+      - PROXY_LOCATION=pihole
+      - FTLCONF_LOCAL_IPV4=${SERVER_IP:-}
+    # DNS ports - needed for Pi-Hole to function as DNS server
+    ports:
+      - "53:53/tcp"
+      - "53:53/udp"
+    # Web interface accessible via nginx reverse proxy
+    expose:
+      - "80"
+    networks:
+      - homelab_network
+    dns:
+      - 127.0.0.1
+      - 1.1.1.1
+    cap_add:
+      - NET_ADMIN
+
 volumes:
   portainer_data:
     driver: local
@@ -261,6 +437,28 @@ volumes:
   nginx_certs:
     driver: local
   nginx_auth:
+    driver: local
+  homarr_config:
+    driver: local
+  homarr_icons:
+    driver: local
+  homarr_data:
+    driver: local
+  hoarder_data:
+    driver: local
+  plex_config:
+    driver: local
+  plex_media:
+    driver: local
+  plex_transcode:
+    driver: local
+  nextcloud_db:
+    driver: local
+  nextcloud_data:
+    driver: local
+  pihole_etc:
+    driver: local
+  pihole_dnsmasq:
     driver: local
 
 networks:
