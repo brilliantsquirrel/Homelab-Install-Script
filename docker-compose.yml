@@ -19,6 +19,7 @@ services:
       - qdrant
       - portainer
       - langchain
+      - langgraph
       - langflow
       - n8n
       - homarr
@@ -148,6 +149,49 @@ services:
       - TZ=UTC
     depends_on:
       - ollama
+    networks:
+      - homelab_network
+
+  # LangGraph - Stateful agent workflow engine
+  langgraph-redis:
+    image: redis:7-alpine
+    container_name: langgraph-redis
+    restart: unless-stopped
+    environment:
+      - TZ=UTC
+    networks:
+      - homelab_network
+
+  langgraph-db:
+    image: postgres:16-alpine
+    container_name: langgraph-db
+    restart: unless-stopped
+    volumes:
+      - langgraph_db:/var/lib/postgresql/data
+    environment:
+      - TZ=UTC
+      - POSTGRES_DB=langgraph
+      - POSTGRES_USER=langgraph
+      - POSTGRES_PASSWORD=${LANGGRAPH_DB_PASSWORD:-changeme}
+    networks:
+      - homelab_network
+
+  langgraph:
+    image: langchain/langgraph-api:3.11
+    container_name: langgraph
+    restart: unless-stopped
+    environment:
+      - TZ=UTC
+      - REDIS_URI=redis://langgraph-redis:6379
+      - POSTGRES_URI=postgres://langgraph:${LANGGRAPH_DB_PASSWORD:-changeme}@langgraph-db:5432/langgraph
+      - LANGSMITH_API_KEY=${LANGGRAPH_API_KEY:-changeme}
+      - OLLAMA_BASE_URL=http://ollama:11434
+    depends_on:
+      - ollama
+      - langgraph-redis
+      - langgraph-db
+    expose:
+      - "8000"
     networks:
       - homelab_network
 
@@ -346,6 +390,8 @@ volumes:
   openwebui_data:
     driver: local
   langflow_data:
+    driver: local
+  langgraph_db:
     driver: local
   n8n_data:
     driver: local

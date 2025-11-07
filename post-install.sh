@@ -128,6 +128,8 @@ setup_environment() {
     local QDRANT_API_KEY=$(openssl rand -base64 32)
     local N8N_ENCRYPTION_KEY=$(openssl rand -base64 32)
     local LANGCHAIN_API_KEY=$(openssl rand -base64 32)
+    local LANGGRAPH_API_KEY=$(openssl rand -base64 32)
+    local LANGGRAPH_DB_PASSWORD=$(openssl rand -base64 32)
     local LANGFLOW_API_KEY=$(openssl rand -base64 32)
     local NGINX_AUTH_PASSWORD=$(openssl rand -base64 32)
     local HOARDER_SECRET_KEY=$(openssl rand -base64 32)
@@ -135,7 +137,7 @@ setup_environment() {
     local NEXTCLOUD_DB_PASSWORD=$(openssl rand -base64 32)
     local PIHOLE_PASSWORD=$(openssl rand -base64 32)
 
-    log "Generated 11 secure API keys and passwords"
+    log "Generated 13 secure API keys and passwords"
     echo ""
 
     # Copy template
@@ -148,6 +150,8 @@ setup_environment() {
     sed -i "s|^QDRANT_API_KEY=.*|QDRANT_API_KEY=$QDRANT_API_KEY|" .env
     sed -i "s|^N8N_ENCRYPTION_KEY=.*|N8N_ENCRYPTION_KEY=$N8N_ENCRYPTION_KEY|" .env
     sed -i "s|^LANGCHAIN_API_KEY=.*|LANGCHAIN_API_KEY=$LANGCHAIN_API_KEY|" .env
+    sed -i "s|^LANGGRAPH_API_KEY=.*|LANGGRAPH_API_KEY=$LANGGRAPH_API_KEY|" .env
+    sed -i "s|^LANGGRAPH_DB_PASSWORD=.*|LANGGRAPH_DB_PASSWORD=$LANGGRAPH_DB_PASSWORD|" .env
     sed -i "s|^LANGFLOW_API_KEY=.*|LANGFLOW_API_KEY=$LANGFLOW_API_KEY|" .env
     sed -i "s|^NGINX_AUTH_PASSWORD=.*|NGINX_AUTH_PASSWORD=$NGINX_AUTH_PASSWORD|" .env
     sed -i "s|^HOARDER_SECRET_KEY=.*|HOARDER_SECRET_KEY=$HOARDER_SECRET_KEY|" .env
@@ -221,7 +225,7 @@ echo "  Container Services:"
 echo "  - Portainer (container management)"
 echo "  - Ollama (LLM runtime)"
 echo "  - OpenWebUI (Ollama web interface)"
-echo "  - LangChain, LangFlow (AI frameworks)"
+echo "  - LangChain, LangGraph, LangFlow (AI frameworks)"
 echo "  - n8n (workflow automation)"
 echo "  - Qdrant (vector database)"
 echo ""
@@ -325,6 +329,7 @@ echo "  AI Services:"
 echo "  - OpenWebUI (Ollama Interface): https://<server-ip>/openwebui"
 echo "  - Ollama API: https://<server-ip>/ollama"
 echo "  - LangChain: https://<server-ip>/langchain"
+echo "  - LangGraph: https://<server-ip>/langgraph"
 echo "  - LangFlow: https://<server-ip>/langflow"
 echo "  - n8n (Workflow Automation): https://<server-ip>/n8n"
 echo ""
