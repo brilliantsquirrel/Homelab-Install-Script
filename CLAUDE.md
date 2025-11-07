@@ -9,7 +9,7 @@ Comprehensive homelab automation script for setting up an Ubuntu Server with Doc
 ## Files
 
 - `post-install.sh` - Main bash script that performs all installation tasks
-- `docker-compose.yml` - Docker Compose configuration for all services
+- `docker compose.yml` - Docker Compose configuration for all services
 - `spec.txt` - Original requirements specification
 - `CLAUDE.md` - This file
 
@@ -23,7 +23,7 @@ The script must be run as a regular user (not root) with sudo privileges. It wil
 - Prompt for confirmation before proceeding
 - Check if each component is already installed (idempotent)
 - Continue with remaining steps if non-critical installations fail
-- Start Docker containers from docker-compose.yml
+- Start Docker containers from docker compose.yml
 - Pull AI models into Ollama
 - Offer rollback if any failures occur
 
@@ -71,7 +71,7 @@ Each step is wrapped in an installation function (e.g., `install_docker()`, `ins
 
 ### Docker Services
 
-All services are defined in `docker-compose.yml` and orchestrated together. Services are accessed through an nginx reverse proxy with basic authentication for security.
+All services are defined in `docker compose.yml` and orchestrated together. Services are accessed through an nginx reverse proxy with basic authentication for security.
 
 **Management & Infrastructure:**
 - **nginx** (ports 80, 443) - Reverse proxy with SSL/TLS and basic authentication
@@ -176,7 +176,7 @@ Each model pull is wrapped with error handling to continue if one fails.
 ### GPU Support
 - Detects NVIDIA GPU via `nvidia-smi`
 - Installs nvidia-docker2 toolkit if GPU is present
-- docker-compose.yml has commented GPU configuration
+- docker compose.yml has commented GPU configuration
 - Users uncomment `runtime: nvidia` lines to enable GPU
 
 ### Logging System
@@ -237,19 +237,19 @@ Manually manage containers:
 
 ```bash
 # Start all services
-docker-compose up -d
+docker compose up -d
 
 # Stop all services
-docker-compose down
+docker compose down
 
 # View container logs
-docker-compose logs -f
+docker compose logs -f
 
 # Restart a specific service
-docker-compose restart ollama
+docker compose restart ollama
 ```
 
-To enable GPU support, edit `docker-compose.yml` and uncomment the GPU configuration in the ollama service.
+To enable GPU support, edit `docker compose.yml` and uncomment the GPU configuration in the ollama service.
 
 ## Service Integration
 
@@ -389,7 +389,7 @@ Self-hosted bookmark manager. Access at https://<server-ip>/hoarder
 ### Plex Media Server
 Media streaming server. Access at https://<server-ip>/plex
 - Add media to the plex_media Docker volume
-- Enable GPU transcoding by uncommenting GPU config in docker-compose.yml
+- Enable GPU transcoding by uncommenting GPU config in docker compose.yml
 - Claim your server using PLEX_CLAIM token from https://www.plex.tv/claim/
 - Supports hardware transcoding with NVIDIA GPUs
 
@@ -398,7 +398,7 @@ Media streaming server. Access at https://<server-ip>/plex
 docker volume inspect plex_media
 
 # Or bind mount your media directory
-# Edit docker-compose.yml plex service volumes:
+# Edit docker compose.yml plex service volumes:
 #   - /path/to/your/media:/media
 ```
 
@@ -412,7 +412,7 @@ File sync and collaboration platform. Access at https://<server-ip>/nextcloud
 
 ```bash
 # View Nextcloud logs
-docker-compose logs -f nextcloud
+docker compose logs -f nextcloud
 
 # Access Nextcloud CLI (occ)
 docker exec -u www-data nextcloud php occ <command>
@@ -474,13 +474,13 @@ dig homarr.home
 **Pi-Hole Management:**
 ```bash
 # View Pi-Hole logs
-docker-compose logs -f pihole
+docker compose logs -f pihole
 
 # Update gravity (blocklists)
 docker exec pihole pihole -g
 
 # Restart Pi-Hole DNS
-docker-compose restart pihole
+docker compose restart pihole
 
 # View current DNS entries
 cat pihole-custom-dns.conf
@@ -488,7 +488,7 @@ cat pihole-custom-dns.conf
 # Add custom DNS entries
 # Edit pihole-custom-dns.conf and add:
 # address=/myservice.home/<server-ip>
-# Then restart: docker-compose restart pihole
+# Then restart: docker compose restart pihole
 ```
 
 ### Cockpit Server Management
@@ -532,7 +532,7 @@ SSH server is automatically hardened:
 ### Ollama GPU Acceleration
 Enable GPU for LLM inference:
 1. Ensure NVIDIA drivers are installed (script auto-detects and installs nvidia-docker2)
-2. Edit docker-compose.yml, uncomment in ollama service:
+2. Edit docker compose.yml, uncomment in ollama service:
    ```yaml
    runtime: nvidia
    deploy:
@@ -543,12 +543,12 @@ Enable GPU for LLM inference:
              count: 1
              capabilities: [gpu]
    ```
-3. Restart containers: `docker-compose up -d`
+3. Restart containers: `docker compose up -d`
 
 ### Plex GPU Transcoding
 Enable GPU for video transcoding:
 1. Ensure NVIDIA drivers installed
-2. Edit docker-compose.yml, uncomment in plex service:
+2. Edit docker compose.yml, uncomment in plex service:
    ```yaml
    runtime: nvidia
    deploy:
@@ -559,7 +559,7 @@ Enable GPU for video transcoding:
              count: 1
              capabilities: [gpu, video, compute, utility]
    ```
-3. Restart Plex: `docker-compose restart plex`
+3. Restart Plex: `docker compose restart plex`
 4. In Plex settings, enable hardware transcoding
 
 ## Network Configuration
@@ -590,7 +590,7 @@ The homelab automatically configures Pi-Hole to provide local DNS resolution for
 **Configuration File:** `pihole-custom-dns.conf`
 - Automatically generated during installation
 - Can be manually edited to add custom DNS entries
-- Restart Pi-Hole after changes: `docker-compose restart pihole`
+- Restart Pi-Hole after changes: `docker compose restart pihole`
 
 ### Port Usage
 - **53** (TCP/UDP): Pi-Hole DNS (for .home domain resolution and ad blocking)
@@ -626,26 +626,26 @@ docker run --rm -v pihole_etc:/source -v $(pwd):/backup alpine tar czf /backup/p
 ## Troubleshooting
 
 ### Service Not Accessible
-1. Check container status: `docker-compose ps`
-2. Check nginx logs: `docker-compose logs nginx`
-3. Check service logs: `docker-compose logs <service-name>`
+1. Check container status: `docker compose ps`
+2. Check nginx logs: `docker compose logs nginx`
+3. Check service logs: `docker compose logs <service-name>`
 4. Verify .env file has all required variables
 5. Check nginx basic auth credentials
 
 ### Pi-Hole DNS Not Working
-1. Verify Pi-Hole is running: `docker-compose ps pihole`
+1. Verify Pi-Hole is running: `docker compose ps pihole`
 2. Test DNS resolution: `dig @<server-ip> google.com`
 3. Check device DNS configuration
 4. Verify port 53 is accessible: `sudo netstat -tunlp | grep 53`
 
 ### Nextcloud Connection Issues
 1. Check trusted domains in config
-2. Verify database connection: `docker-compose logs nextcloud-db`
-3. Check Redis: `docker-compose logs nextcloud-redis`
+2. Verify database connection: `docker compose logs nextcloud-db`
+3. Check Redis: `docker compose logs nextcloud-redis`
 4. Ensure OVERWRITEHOST matches your server hostname
 
 ### GPU Not Detected
 1. Verify NVIDIA drivers: `nvidia-smi`
 2. Check nvidia-docker2: `docker run --rm --gpus all nvidia/cuda:12.0-base nvidia-smi`
-3. Verify docker-compose.yml GPU config is uncommented
+3. Verify docker compose.yml GPU config is uncommented
 4. Restart Docker daemon: `sudo systemctl restart docker`
