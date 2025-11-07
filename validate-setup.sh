@@ -4,19 +4,43 @@
 # Run this script before installing to verify system requirements and configuration
 # Usage: ./validate-setup.sh
 
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+# ========================================
+# Module Loading
+# ========================================
+
+# Get script directory for module imports
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+
+# Source logger module (provides log, error, warning, info functions)
+if [ -f "$SCRIPT_DIR/lib/logger.sh" ]; then
+    source "$SCRIPT_DIR/lib/logger.sh" || {
+        echo "ERROR: Failed to source lib/logger.sh"
+        exit 1
+    }
+else
+    # Fallback logging if modules not available
+    RED='\033[0;31m'
+    GREEN='\033[0;32m'
+    YELLOW='\033[1;33m'
+    BLUE='\033[0;34m'
+    NC='\033[0m' # No Color
+
+    log() { echo -e "${GREEN}[✓]${NC} $1"; }
+    error() { echo -e "${RED}[✗]${NC} $1"; }
+    warning() { echo -e "${YELLOW}[!]${NC} $1"; }
+    info() { echo -e "${BLUE}[i]${NC} $1"; }
+fi
 
 # Counters
 CHECKS_PASSED=0
 CHECKS_FAILED=0
 CHECKS_WARNING=0
 
-# Logging functions
+# Override logging functions to track check results
+_original_log="$( echo "$(type log)" | grep -oP '(?<=\').*' | head -1)"
+_original_error="$( echo "$(type error)" | grep -oP '(?<=\').*' | head -1)"
+_original_warning="$( echo "$(type warning)" | grep -oP '(?<=\').*' | head -1)"
+
 log() {
     echo -e "${GREEN}[✓]${NC} $1"
     ((CHECKS_PASSED++))
@@ -30,10 +54,6 @@ error() {
 warning() {
     echo -e "${YELLOW}[!]${NC} $1"
     ((CHECKS_WARNING++))
-}
-
-info() {
-    echo -e "${BLUE}[i]${NC} $1"
 }
 
 # Header
