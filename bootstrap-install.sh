@@ -127,31 +127,37 @@ echo ""
 
 # Check if .env exists
 if [ ! -f ".env" ]; then
-    info "Creating .env file from template..."
-    cp .env.example .env
-    log ".env file created"
-    echo ""
-    warning "IMPORTANT: Edit .env and set all required API keys"
-    warning "           Some keys will prevent installation if missing"
+    info "Generating .env file with auto-generated API keys..."
+    if [ -f "generate-env.sh" ]; then
+        chmod +x generate-env.sh
+        ./generate-env.sh
+    else
+        warning "generate-env.sh not found, creating .env manually"
+        cp .env.example .env
+        log ".env file created from template"
+        echo ""
+        warning "IMPORTANT: Edit .env and set all required API keys"
+        warning "           Some keys will prevent installation if missing"
+    fi
 else
     info ".env file already exists"
 fi
 
 echo ""
-echo "1. Edit configuration (set API keys, passwords, etc):"
+echo "1. Review/edit configuration if needed:"
 echo "   nano $INSTALL_DIR/.env"
 echo ""
-
-echo "2. Review required environment variables:"
-echo "   cat .env"
+echo "   Required fields to check:"
+echo "   - N8N_ADMIN_EMAIL (n8n admin email address)"
+echo "   - API keys (auto-generated if using generate-env.sh)"
 echo ""
 
-echo "3. Run pre-installation validation:"
+echo "2. Run pre-installation validation:"
 echo "   cd $INSTALL_DIR"
 echo "   ./validate-setup.sh"
 echo ""
 
-echo "4. Run the main installation:"
+echo "3. Run the main installation:"
 echo "   cd $INSTALL_DIR"
 echo "   ./post-install.sh"
 echo ""
