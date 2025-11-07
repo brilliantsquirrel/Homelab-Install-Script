@@ -3,6 +3,10 @@
 # Homelab Install Script for Ubuntu Server
 # Automates setup of homelab with Docker containers and AI/ML workflows
 #
+# Usage:
+#   ./post-install.sh              # Interactive setup (will generate .env if needed)
+#   SKIP_ENV_SETUP=1 ./post-install.sh   # Skip environment setup, use existing .env
+#
 # Error Handling Strategy:
 # ======================
 # This script uses explicit error handling rather than 'set -e' for more control:
@@ -88,7 +92,104 @@ if [[ $EUID -eq 0 ]]; then
    exit 1
 fi
 
-# Confirm before proceeding
+# ========================================
+# Environment Setup (generate .env if needed)
+# ========================================
+
+setup_environment() {
+    log "Setting up environment configuration..."
+
+    # Check if .env exists
+    if [ -f ".env" ]; then
+        debug ".env file already exists"
+        return 0
+    fi
+
+    # Check if .env.example exists
+    if [ ! -f ".env.example" ]; then
+        error ".env.example not found"
+        error "Make sure you're in the Homelab Install Script directory"
+        return 1
+    fi
+
+    info "No .env file found. Creating one with auto-generated API keys..."
+    echo ""
+
+    # Generate all required API keys
+    debug "Generating secure API keys..."
+    local OLLAMA_API_KEY=$(openssl rand -base64 32)
+    local WEBUI_SECRET_KEY=$(openssl rand -base64 32)
+    local QDRANT_API_KEY=$(openssl rand -base64 32)
+    local N8N_ENCRYPTION_KEY=$(openssl rand -base64 32)
+    local LANGCHAIN_API_KEY=$(openssl rand -base64 32)
+    local LANGGRAPH_API_KEY=$(openssl rand -base64 32)
+    local LANGFLOW_API_KEY=$(openssl rand -base64 32)
+    local NGINX_AUTH_PASSWORD=$(openssl rand -base64 32)
+
+    log "Generated 8 secure API keys"
+    echo ""
+
+    # Copy template
+    cp .env.example .env
+    debug "Copied .env from .env.example"
+
+    # Replace values in .env
+    sed -i "s|^OLLAMA_API_KEY=.*|OLLAMA_API_KEY=$OLLAMA_API_KEY|" .env
+    sed -i "s|^WEBUI_SECRET_KEY=.*|WEBUI_SECRET_KEY=$WEBUI_SECRET_KEY|" .env
+    sed -i "s|^QDRANT_API_KEY=.*|QDRANT_API_KEY=$QDRANT_API_KEY|" .env
+    sed -i "s|^N8N_ENCRYPTION_KEY=.*|N8N_ENCRYPTION_KEY=$N8N_ENCRYPTION_KEY|" .env
+    sed -i "s|^LANGCHAIN_API_KEY=.*|LANGCHAIN_API_KEY=$LANGCHAIN_API_KEY|" .env
+    sed -i "s|^LANGGRAPH_API_KEY=.*|LANGGRAPH_API_KEY=$LANGGRAPH_API_KEY|" .env
+    sed -i "s|^LANGFLOW_API_KEY=.*|LANGFLOW_API_KEY=$LANGFLOW_API_KEY|" .env
+    sed -i "s|^NGINX_AUTH_PASSWORD=.*|NGINX_AUTH_PASSWORD=$NGINX_AUTH_PASSWORD|" .env
+
+    debug "Replaced all API keys in .env"
+
+    # Set restrictive permissions
+    chmod 600 .env
+    log ".env file created with auto-generated keys (permissions: 600)"
+
+    # Prompt for N8N_ADMIN_EMAIL
+    echo ""
+    local n8n_email=""
+    while [ -z "$n8n_email" ]; do
+        read -p "Enter n8n admin email address: " n8n_email
+
+        # Trim whitespace
+        n8n_email=$(echo "$n8n_email" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+
+        # Validate email format
+        if ! [[ "$n8n_email" =~ ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]]; then
+            error "Invalid email format. Please try again."
+            n8n_email=""
+            continue
+        fi
+    done
+
+    # Update N8N_ADMIN_EMAIL
+    sed -i "s|^N8N_ADMIN_EMAIL=.*|N8N_ADMIN_EMAIL=$n8n_email|" .env
+    log "N8N_ADMIN_EMAIL configured"
+
+    echo ""
+    success "Environment configuration complete!"
+    echo ""
+}
+
+# ========================================
+# Run environment setup unless skipped
+# ========================================
+
+if [ "${SKIP_ENV_SETUP}" != "1" ]; then
+    if ! setup_environment; then
+        error "Environment setup failed"
+        exit 1
+    fi
+fi
+
+# ========================================
+# Confirm before proceeding with installation
+# ========================================
+
 echo ""
 echo -e "${BLUE}========================================${NC}"
 echo -e "${BLUE}Homelab Server Install Script${NC}"
