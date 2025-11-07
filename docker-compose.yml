@@ -7,11 +7,7 @@ services:
       context: ./nginx
       dockerfile: Dockerfile
     container_name: nginx-proxy
-    restart:
-      condition: on-failure
-      delay: 5s
-      max_attempts: 5
-      window: 120s
+    restart: unless-stopped
     ports:
       - "80:80"
       - "443:443"
@@ -43,11 +39,7 @@ services:
   docker-socket-proxy:
     image: tecnativa/docker-socket-proxy:latest
     container_name: docker-socket-proxy
-    restart:
-      condition: on-failure
-      delay: 5s
-      max_attempts: 5
-      window: 120s
+    restart: unless-stopped
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     environment:
@@ -73,11 +65,7 @@ services:
   portainer:
     image: portainer/portainer-ce:2.20.0
     container_name: portainer
-    restart:
-      condition: on-failure
-      delay: 5s
-      max_attempts: 5
-      window: 120s
+    restart: unless-stopped
     # Security: Use docker-socket-proxy instead of direct socket access
     # This limits Portainer's access to only viewing containers/services
     # preventing full system compromise if Portainer is compromised
@@ -95,11 +83,7 @@ services:
   ollama:
     image: ollama/ollama:0.6.0
     container_name: ollama
-    restart:
-      condition: on-failure
-      delay: 5s
-      max_attempts: 5
-      window: 120s
+    restart: unless-stopped
     volumes:
       - ollama_data:/root/.ollama
     environment:
@@ -129,11 +113,7 @@ services:
   openwebui:
     image: ghcr.io/open-webui/open-webui:v0.3.0
     container_name: openwebui
-    restart:
-      condition: on-failure
-      delay: 5s
-      max_attempts: 5
-      window: 120s
+    restart: unless-stopped
     volumes:
       - openwebui_data:/app/backend/data
     environment:
@@ -149,11 +129,7 @@ services:
   langchain:
     image: langchain/langchain:0.1.0
     container_name: langchain
-    restart:
-      condition: on-failure
-      delay: 5s
-      max_attempts: 5
-      window: 120s
+    restart: unless-stopped
     environment:
       - OLLAMA_BASE_URL=http://ollama:11434
       - LANGCHAIN_API_KEY=${LANGCHAIN_API_KEY:-changeme}
@@ -166,11 +142,7 @@ services:
   langgraph:
     image: langchain/langgraph-api:0.1.0
     container_name: langgraph
-    restart:
-      condition: on-failure
-      delay: 5s
-      max_attempts: 5
-      window: 120s
+    restart: unless-stopped
     environment:
       - OLLAMA_BASE_URL=http://ollama:11434
       - LANGGRAPH_API_KEY=${LANGGRAPH_API_KEY:-changeme}
@@ -183,11 +155,7 @@ services:
   langflow:
     image: langflowai/langflow:1.0.0
     container_name: langflow
-    restart:
-      condition: on-failure
-      delay: 5s
-      max_attempts: 5
-      window: 120s
+    restart: unless-stopped
     volumes:
       - langflow_data:/root/.langflow
     environment:
@@ -202,11 +170,7 @@ services:
   n8n:
     image: n8nio/n8n:1.95.0
     container_name: n8n
-    restart:
-      condition: on-failure
-      delay: 5s
-      max_attempts: 5
-      window: 120s
+    restart: unless-stopped
     volumes:
       - n8n_data:/home/node/.n8n
     environment:
@@ -224,11 +188,7 @@ services:
   qdrant:
     image: qdrant/qdrant:v1.13.0
     container_name: qdrant
-    restart:
-      condition: on-failure
-      delay: 5s
-      max_attempts: 5
-      window: 120s
+    restart: unless-stopped
     volumes:
       - qdrant_data:/qdrant/storage
       - ./qdrant_config.yaml:/qdrant/config/config.yaml:ro
@@ -254,11 +214,7 @@ services:
   homarr:
     image: ghcr.io/ajnart/homarr:latest
     container_name: homarr
-    restart:
-      condition: on-failure
-      delay: 5s
-      max_attempts: 5
-      window: 120s
+    restart: unless-stopped
     volumes:
       - homarr_config:/app/data/configs
       - homarr_icons:/app/public/icons
@@ -274,11 +230,7 @@ services:
   hoarder:
     image: ghcr.io/hoarder-app/hoarder:latest
     container_name: hoarder
-    restart:
-      condition: on-failure
-      delay: 5s
-      max_attempts: 5
-      window: 120s
+    restart: unless-stopped
     volumes:
       - hoarder_data:/data
     environment:
@@ -295,11 +247,7 @@ services:
   plex:
     image: lscr.io/linuxserver/plex:latest
     container_name: plex
-    restart:
-      condition: on-failure
-      delay: 5s
-      max_attempts: 5
-      window: 120s
+    restart: unless-stopped
     volumes:
       - plex_config:/config
       - plex_media:/media
@@ -331,11 +279,7 @@ services:
   nextcloud-db:
     image: postgres:16-alpine
     container_name: nextcloud-db
-    restart:
-      condition: on-failure
-      delay: 5s
-      max_attempts: 5
-      window: 120s
+    restart: unless-stopped
     volumes:
       - nextcloud_db:/var/lib/postgresql/data
     environment:
@@ -349,11 +293,7 @@ services:
   nextcloud-redis:
     image: redis:7-alpine
     container_name: nextcloud-redis
-    restart:
-      condition: on-failure
-      delay: 5s
-      max_attempts: 5
-      window: 120s
+    restart: unless-stopped
     environment:
       - TZ=UTC
     networks:
@@ -362,11 +302,7 @@ services:
   nextcloud:
     image: nextcloud:29-apache
     container_name: nextcloud
-    restart:
-      condition: on-failure
-      delay: 5s
-      max_attempts: 5
-      window: 120s
+    restart: unless-stopped
     volumes:
       - nextcloud_data:/var/www/html
     environment:
@@ -392,11 +328,7 @@ services:
   pihole:
     image: pihole/pihole:latest
     container_name: pihole
-    restart:
-      condition: on-failure
-      delay: 5s
-      max_attempts: 5
-      window: 120s
+    restart: unless-stopped
     volumes:
       - pihole_etc:/etc/pihole
       - pihole_dnsmasq:/etc/dnsmasq.d
