@@ -55,7 +55,7 @@ The script executes these steps sequentially:
 5. **Docker Engine** (non-critical) - From official Docker repository
 6. **NVIDIA GPU Support** (non-critical) - nvidia-docker for GPU acceleration
 7. **Pi-Hole DNS Configuration** (non-critical) - Generates custom DNS entries for .home domains
-8. **Docker Containers** (non-critical) - Starts all services: nginx, Portainer, Ollama, OpenWebUI, LangChain, LangGraph, LangFlow, n8n, Qdrant, Homarr, Hoarder, Plex, Nextcloud (with PostgreSQL and Redis), Pi-Hole
+8. **Docker Containers** (non-critical) - Starts all services: nginx, Portainer, Ollama, OpenWebUI, LangChain, LangFlow, n8n, Qdrant, Homarr, Hoarder, Plex, Nextcloud (with PostgreSQL and Redis), Pi-Hole
 9. **Ollama Models** (non-critical) - Pulls gpt-oss:20b, qwen3-vl:8b, qwen3-coder:30b, qwen3:8b
 10. **Git Configuration** (non-critical) - Configure Git with user information
 11. **Claude Code Installation** (non-critical) - Install Claude Code CLI globally
