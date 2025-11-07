@@ -53,6 +53,33 @@ install_docker() {
     sudo usermod -aG docker $USER 2>/dev/null || true
     log "You'll need to log out and back in for Docker group changes to take effect."
 
+    # Install standalone docker-compose for backward compatibility
+    debug "Installing standalone docker-compose command"
+
+    # Check if docker-compose already exists
+    if command -v docker-compose &> /dev/null && docker-compose --version &> /dev/null; then
+        log "docker-compose already installed ($(docker-compose --version)), skipping"
+    else
+        # Download and install docker-compose binary
+        local compose_version="v2.24.5"
+        local compose_url="https://github.com/docker/compose/releases/download/${compose_version}/docker-compose-$(uname -s)-$(uname -m)"
+
+        debug "Downloading docker-compose ${compose_version}"
+        if sudo curl -L "$compose_url" -o /usr/local/bin/docker-compose; then
+            sudo chmod +x /usr/local/bin/docker-compose || return 1
+
+            # Verify installation
+            if docker-compose --version &> /dev/null; then
+                log "docker-compose installed successfully ($(docker-compose --version))"
+            else
+                warning "docker-compose installed but verification failed"
+            fi
+        else
+            warning "Failed to download docker-compose, you may need to install it manually"
+            warning "Run: sudo apt-get install -y docker-compose"
+        fi
+    fi
+
     success "Docker Engine installed"
 }
 
