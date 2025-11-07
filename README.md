@@ -47,18 +47,42 @@ Designed to be used with customized Ubuntu Server installations via Cubic, this 
 - `qwen3-coder:30b` - Code-specialized model (30B)
 - `qwen3:8b` - General-purpose model (8B)
 
-## Usage
+## Quick Start
+
+### On a Fresh Ubuntu Server Installation
+
+After Ubuntu Server installs and you log in for the first time:
 
 ```bash
+# 1. Clone the repository
+git clone https://github.com/brilliantsquirrel/Homelab-Install-Script.git
+cd Homelab-Install-Script
+
+# 2. Run the installation script
 ./post-install.sh
 ```
 
 The script will:
-- Prompt for confirmation before proceeding
+- Auto-generate secure API keys if `.env` doesn't exist
+- Prompt for your n8n admin email
+- Show what will be installed and confirm
 - Check if each component is already installed
 - Continue with remaining steps if non-critical installations fail
 - Offer rollback if any failures occur
 - Start all Docker services and pull Ollama models
+
+**Installation Time**: 30-60 minutes (plus 1-2 hours for Ollama model pulling)
+
+### On an Existing Ubuntu Server (Rerun)
+
+The script is **idempotent** - safe to run multiple times:
+
+```bash
+cd Homelab-Install-Script
+./post-install.sh
+```
+
+It will skip already-installed components and only install missing pieces.
 
 ## Service Access
 

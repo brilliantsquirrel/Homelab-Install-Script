@@ -3,6 +3,12 @@
 # Homelab Install Script for Ubuntu Server
 # Automates setup of homelab with Docker containers and AI/ML workflows
 #
+# SETUP:
+#   1. Fresh Ubuntu Server 20.04, 22.04, or 24.04 installation
+#   2. Log in as regular user with sudo privileges
+#   3. Clone repo: git clone https://github.com/brilliantsquirrel/Homelab-Install-Script.git
+#   4. Run: cd Homelab-Install-Script && ./post-install.sh
+#
 # Usage:
 #   ./post-install.sh              # Interactive setup (will generate .env if needed)
 #   SKIP_ENV_SETUP=1 ./post-install.sh   # Skip environment setup, use existing .env
