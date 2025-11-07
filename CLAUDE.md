@@ -99,21 +99,45 @@ All services are defined in `docker-compose.yml` and orchestrated together. Serv
 
 All AI containers are configured with environment variables to connect to Ollama on `http://ollama:11434`.
 
-### Database Services
+### AI Database Stack
 
-**SQLite**:
-- Installed locally as a package
-- Database directory: `~/.local/share/homelab/databases/`
-- Useful for storing application data, logs, and metadata
-- Can be used by any application on the host or in containers
+The homelab includes a complete database stack optimized for AI/ML workloads, combining vector search (Qdrant) with relational/metadata storage (SQLite).
 
 **Qdrant Vector Database**:
-- Runs as a Docker container
-- Provides REST API on port 6333
-- Admin interface on port 6334
-- Stores vector embeddings for semantic search
-- Integrates with LLMs for RAG (Retrieval-Augmented Generation)
-- Configuration file: `qdrant_config.yaml`
+- Docker container for high-performance vector similarity search
+- REST API on port 6333, gRPC on port 6334
+- Optimized configuration in `qdrant_config.yaml`:
+  - HNSW indexing for fast nearest-neighbor search
+  - 64MB cache, WAL enabled for durability
+  - Supports multiple vector sizes (384, 768, 1536, 3072, 4096)
+- Perfect for:
+  - RAG (Retrieval-Augmented Generation) with embeddings
+  - Semantic search over documents
+  - Similarity-based recommendations
+  - Document clustering and classification
+
+**SQLite for AI Metadata**:
+- Lightweight, serverless relational database
+- Database directory: `~/.local/share/homelab/databases/`
+- Initialization script: `./sqlite-ai-init.sh`
+- Pre-configured databases:
+  - `conversations.db` - Chat history and messages
+  - `rag.db` - RAG document metadata and chunks (vectors in Qdrant)
+  - `workflows.db` - AI workflow execution tracking
+  - `model_performance.db` - Model benchmarks and usage stats
+- Features:
+  - Full-text search (FTS5) for hybrid search with Qdrant
+  - WAL mode for concurrent access
+  - 64MB cache for performance
+  - Optimized indexes for AI workloads
+
+**Integration**:
+- **Hybrid RAG**: Store text in SQLite, embeddings in Qdrant
+- **Conversation tracking**: Messages in SQLite, semantic search in Qdrant
+- **Workflow state**: SQLite tracks execution, Qdrant finds similar workflows
+- **Performance monitoring**: SQLite logs model calls, tracks costs and latency
+
+See `ai-stack-examples.md` for complete Python code examples.
 
 ### Ollama Models
 
@@ -271,6 +295,76 @@ sqlite3 ~/.local/share/homelab/databases/myapp.db "CREATE TABLE users (id INTEGE
 # Connect to database
 sqlite3 ~/.local/share/homelab/databases/myapp.db
 ```
+
+### AI Database Stack Usage
+
+Initialize AI-optimized SQLite databases:
+```bash
+# Run initialization script
+./sqlite-ai-init.sh
+
+# This creates:
+# - conversations.db: Chat history with full-text search
+# - rag.db: Document metadata, chunks, embeddings tracking
+# - workflows.db: AI workflow execution state and model calls
+# - model_performance.db: Benchmarks, metrics, usage statistics
+```
+
+**Hybrid RAG Pattern** (Text in SQLite, Vectors in Qdrant):
+```python
+# 1. Store document metadata in SQLite
+sqlite> INSERT INTO documents (doc_id, title, content_hash)
+        VALUES ('doc1', 'AI Guide', 'abc123');
+
+# 2. Store document chunks with Qdrant point IDs
+sqlite> INSERT INTO chunks (chunk_id, doc_id, content, qdrant_point_id)
+        VALUES ('chunk1', 'doc1', 'LLMs use transformers...', 'vec123');
+
+# 3. Store embedding vector in Qdrant
+curl -X PUT 'http://qdrant.home:6333/collections/documents/points' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "points": [{
+      "id": "vec123",
+      "vector": [0.1, 0.2, ...],
+      "payload": {"chunk_id": "chunk1", "doc_id": "doc1"}
+    }]
+  }'
+
+# 4. Query: Search Qdrant for similar vectors, retrieve full text from SQLite
+```
+
+**Conversation Tracking**:
+```bash
+# Store chat messages
+sqlite3 ~/.local/share/homelab/databases/conversations.db
+
+sqlite> INSERT INTO messages (conversation_id, role, content)
+        VALUES ('conv1', 'user', 'Explain transformers');
+```
+
+**Workflow Monitoring**:
+```bash
+# Track n8n/LangChain workflow executions
+sqlite3 ~/.local/share/homelab/databases/workflows.db
+
+sqlite> SELECT workflow_name, COUNT(*), AVG(duration_ms)
+        FROM workflow_executions
+        WHERE status = 'completed'
+        GROUP BY workflow_name;
+```
+
+**Model Performance Analytics**:
+```bash
+# Analyze model usage
+sqlite3 ~/.local/share/homelab/databases/model_performance.db
+
+sqlite> SELECT model_name, AVG(avg_latency_ms), AVG(throughput_tokens_per_sec)
+        FROM benchmarks
+        GROUP BY model_name;
+```
+
+See `ai-stack-examples.md` for complete Python integration examples with Qdrant, SQLite, Ollama, and LangChain.
 
 ### n8n Workflows
 n8n can trigger workflows from HTTP webhooks and integrate with Ollama for AI tasks, Qdrant for embeddings, and SQLite for data storage.
