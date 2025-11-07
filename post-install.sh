@@ -151,9 +151,12 @@ setup_environment() {
 
     # Prompt for N8N_ADMIN_EMAIL
     echo ""
+    echo -e "${YELLOW}REQUIRED: N8N Admin Email${NC}"
+    echo "This is the email for your n8n workflow automation admin account"
+    echo ""
     local n8n_email=""
     while [ -z "$n8n_email" ]; do
-        read -p "Enter n8n admin email address: " n8n_email
+        read -p "Enter your email address (e.g., admin@example.com): " n8n_email
 
         # Trim whitespace
         n8n_email=$(echo "$n8n_email" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
@@ -210,7 +213,10 @@ echo "  - AI Models (gpt-oss:20b, qwen3-vl:8b, qwen3-coder:30b, qwen3:8b)"
 echo "  - Git (with user configuration)"
 echo "  - Claude Code (with project configuration)"
 echo ""
-read -p "Do you want to continue? (y/N): " -n 1 -r
+echo -e "${YELLOW}This installation will take 30-60 minutes depending on your system.${NC}"
+echo -e "${YELLOW}Ollama model pulling may take 1-2 hours additional.${NC}"
+echo ""
+read -p "Do you want to continue with installation? (type 'y' to proceed): " -n 1 -r
 echo
 
 if [[ ! $REPLY =~ ^[Yy]$ ]]; then
