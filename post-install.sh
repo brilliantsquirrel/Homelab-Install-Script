@@ -67,6 +67,11 @@ source "$SCRIPT_DIR/lib/base/docker.sh" || {
     exit 1
 }
 
+source "$SCRIPT_DIR/lib/base/storage.sh" || {
+    error "FATAL: Failed to source lib/base/storage.sh"
+    exit 1
+}
+
 source "$SCRIPT_DIR/lib/base/development.sh" || {
     error "FATAL: Failed to source lib/base/development.sh"
     exit 1
@@ -240,10 +245,15 @@ echo "  Additional Setup:"
 echo "  - AI Models (gpt-oss:20b, qwen3-vl:8b, qwen3-coder:30b, qwen3:8b)"
 echo "  - Git (with user configuration)"
 echo "  - Claude Code (with project configuration)"
+echo "  - Custom storage paths (for optimal performance)"
 echo ""
 echo -e "${YELLOW}This installation will take 30-60 minutes depending on your system.${NC}"
 echo -e "${YELLOW}Ollama model pulling may take 1-2 hours additional.${NC}"
 echo ""
+
+# Display storage recommendations
+display_storage_recommendations
+
 read -p "Do you want to continue with installation? (type 'y' to proceed): " -n 1 -r
 echo
 
@@ -273,9 +283,13 @@ run_step "System Updates" install_system_updates true
 run_step "SSH Server" install_ssh false
 run_step "SQLite" install_sqlite false
 run_step "Cockpit" install_cockpit false
+run_step "Storage Configuration" configure_storage_paths false
 run_step "Docker Engine" install_docker false
+run_step "Docker Storage" configure_docker_storage false
 run_step "NVIDIA GPU Support" install_nvidia_gpu_support false
 run_step "Pi-Hole DNS Configuration" configure_pihole_dns false
+run_step "Storage Paths" update_docker_compose_storage false
+run_step "SQLite Storage" configure_sqlite_storage false
 run_step "Docker Containers" install_docker_containers false
 run_step "Ollama Models" pull_ollama_models false
 run_step "Git Configuration" configure_git false
