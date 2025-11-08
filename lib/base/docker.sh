@@ -234,11 +234,58 @@ configure_pihole_dns() {
 # Docker Containers
 # ========================================
 
+# Disable systemd-resolved DNS stub listener for Pi-Hole
+disable_systemd_resolved_stub() {
+    log "Checking if port 53 is available for Pi-Hole..."
+
+    # Check if port 53 is in use
+    if sudo lsof -i :53 >/dev/null 2>&1; then
+        local process=$(sudo lsof -i :53 | tail -n +2 | awk '{print $1}' | head -1)
+
+        if [[ "$process" == "systemd-r"* ]]; then
+            warning "systemd-resolved is using port 53, which Pi-Hole needs"
+            log "Disabling systemd-resolved DNS stub listener..."
+
+            # Backup resolved.conf
+            if [ ! -f /etc/systemd/resolved.conf.backup ]; then
+                sudo cp /etc/systemd/resolved.conf /etc/systemd/resolved.conf.backup
+                log "Backed up /etc/systemd/resolved.conf"
+            fi
+
+            # Disable DNS stub listener
+            sudo sed -i 's/#DNSStubListener=yes/DNSStubListener=no/' /etc/systemd/resolved.conf
+            sudo sed -i 's/DNSStubListener=yes/DNSStubListener=no/' /etc/systemd/resolved.conf
+
+            # Restart systemd-resolved
+            log "Restarting systemd-resolved..."
+            sudo systemctl restart systemd-resolved || true
+
+            # Remove symlink and create regular file for resolv.conf
+            if [ -L /etc/resolv.conf ]; then
+                sudo rm /etc/resolv.conf
+                echo "nameserver 1.1.1.1" | sudo tee /etc/resolv.conf > /dev/null
+                echo "nameserver 8.8.8.8" | sudo tee -a /etc/resolv.conf > /dev/null
+            fi
+
+            success "✓ Disabled systemd-resolved DNS stub listener"
+            log "Port 53 is now available for Pi-Hole"
+        else
+            warning "Port 53 is in use by: $process"
+            warning "Pi-Hole may fail to start. Please manually stop $process"
+        fi
+    else
+        success "✓ Port 53 is available"
+    fi
+}
+
 # Start Docker containers from docker-compose.yml
 install_docker_containers() {
     local compose_file="$(pwd)/docker-compose.yml"
 
     log "Starting Docker containers..."
+
+    # Disable systemd-resolved stub listener before starting Pi-Hole
+    disable_systemd_resolved_stub
 
     # Validate docker-compose.yml exists
     if [ ! -f "$compose_file" ]; then
