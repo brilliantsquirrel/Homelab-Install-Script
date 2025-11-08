@@ -101,8 +101,9 @@ configure_storage_tiers() {
     if ! detect_available_drives; then
         warning "No additional drives available"
         warning "All data will be stored on boot drive (not recommended for production)"
-        read -p "Continue with boot drive only? (y/N): " use_boot_only
-        if [[ ! "$use_boot_only" =~ ^[Yy]$ ]]; then
+        read -p "Continue with boot drive only? (y/N): " -n 1 -r use_boot_only
+        echo
+        if [[ ! "$REPLY" =~ ^[Yy]$ ]]; then
             error "Storage configuration cancelled"
             return 1
         fi
@@ -124,8 +125,9 @@ configure_storage_tiers() {
     echo "For each tier, you'll select a drive and partition size."
     echo ""
 
-    read -p "Continue with automatic partitioning? (y/N): " confirm
-    if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+    read -p "Continue with automatic partitioning? (y/N): " -n 1 -r
+    echo
+    if [[ ! "$REPLY" =~ ^[Yy]$ ]]; then
         error "Storage configuration cancelled"
         return 1
     fi
@@ -139,8 +141,9 @@ configure_storage_tiers() {
     # Display configuration summary
     display_storage_summary
 
-    read -p "Proceed with creating partitions? (y/N): " final_confirm
-    if [[ ! "$final_confirm" =~ ^[Yy]$ ]]; then
+    read -p "Proceed with creating partitions? (y/N): " -n 1 -r
+    echo
+    if [[ ! "$REPLY" =~ ^[Yy]$ ]]; then
         error "Partition creation cancelled"
         return 1
     fi

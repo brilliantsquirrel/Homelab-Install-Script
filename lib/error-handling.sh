@@ -33,8 +33,8 @@ track_repo() {
 # Removes packages and repositories that were added
 rollback() {
     echo ""
-    warning "Would you like to rollback the changes made during this installation? (y/N)"
-    read -p "> " -n 1 -r
+    warning "Would you like to rollback the changes made during this installation?"
+    read -p "Rollback changes? (y/N): " -n 1 -r
     echo
 
     if [[ ! $REPLY =~ ^[Yy]$ ]]; then
