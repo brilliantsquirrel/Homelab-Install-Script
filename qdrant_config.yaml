@@ -1,21 +1,101 @@
-# Qdrant Configuration File
-# This file is read-only in the container and mounted as a configuration template
+# Qdrant Vector Database Configuration for AI Stack
+# Official documentation: https://qdrant.tech/documentation/
+# Optimized for homelab AI/ML workloads with Ollama, LangChain, and RAG applications
 
-# Server configuration
-server:
+# Service configuration
+service:
+  # HTTP API port (REST API)
   http_port: 6333
+
+  # gRPC API port (high-performance)
   grpc_port: 6334
 
-# Database configuration
+  # Enable CORS for web applications (LangFlow, OpenWebUI)
+  enable_cors: true
+
+  # Max request size (32MB for large embeddings)
+  max_request_size_mb: 32
+
+# Storage configuration
 storage:
-  # Path to the storage directory
+  # Storage path (mounted from Docker volume)
   storage_path: /qdrant/storage
-  # Whether to use snapshots
+
+  # Snapshots path for backups
   snapshots_path: /qdrant/snapshots
-  # Write-Ahead Log configuration
+
+  # Write-ahead log (WAL) settings
   wal:
-    enabled: true
     wal_capacity_mb: 200
+    wal_segments_ahead: 2
+
+  # Performance tuning for homelab servers
+  performance:
+    # Auto-detect CPU cores for search
+    max_search_threads: 0
+
+  # Optimizer configuration
+  optimizers:
+    # Number of points to keep in memory before flushing to disk
+    memmap_threshold: 20000
+
+    # Start indexing after this many vectors
+    indexing_threshold: 20000
+
+    # Flush interval in seconds
+    flush_interval_sec: 5
+
+    # Max optimization threads (0 = auto)
+    max_optimization_threads: 1
+
+# HNSW (Hierarchical Navigable Small World) index defaults
+# These affect search speed vs accuracy tradeoff for vector similarity search
+hnsw_index:
+  # Number of edges per node (higher = better recall, more memory)
+  # 16 is good balance for most AI applications
+  m: 16
+
+  # Size of dynamic candidate list during indexing
+  # Higher = better recall, slower indexing
+  ef_construct: 100
+
+  # Use full scan for small collections
+  full_scan_threshold: 10000
+
+# Cluster configuration (disabled for single-node homelab)
+cluster:
+  enabled: false
+
+# TLS/SSL (disabled - use nginx reverse proxy for HTTPS)
+tls:
+  enabled: false
+
+# Telemetry (disabled for privacy)
+telemetry_disabled: true
 
 # Logging configuration
-log_level: info
+log_level: INFO
+
+# Collection optimizer defaults
+collections:
+  # Default on-disk payload storage (saves RAM)
+  on_disk_payload: false
+
+  # Optimizer settings
+  optimizer:
+    # Deleted threshold - optimize when this % of points are deleted
+    deleted_threshold: 0.2
+
+    # Vacuum min vector number
+    vacuum_min_vector_number: 1000
+
+    # Default indexing threshold
+    default_segment_number: 2
+
+# Common vector sizes for reference:
+# - 384: all-MiniLM-L6-v2 (sentence-transformers, lightweight)
+# - 768: BERT base models
+# - 1024: OpenAI text-embedding-ada-002 (legacy)
+# - 1536: OpenAI text-embedding-ada-002 (current), text-embedding-3-small
+# - 3072: OpenAI text-embedding-3-large
+# - 4096: Ollama llama2, mistral embeddings

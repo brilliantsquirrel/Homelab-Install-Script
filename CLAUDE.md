@@ -4,12 +4,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Homelab automation script for setting up an Ubuntu Server with Docker containers and AI/ML workflows. The main executable is `post-install.sh`, which can be integrated into Cubic custom Ubuntu installations. The script is designed to be robust, idempotent, and safe to run multiple times.
+Comprehensive homelab automation script for setting up an Ubuntu Server with Docker containers, AI/ML workflows, media services, and network management. Designed for Dell PowerEdge R630 servers (or similar hardware) to create a complete homelab environment with AI services, media streaming, file storage, and network-wide ad blocking. The main executable is `post-install.sh`, which can be integrated into Cubic custom Ubuntu installations. The script is designed to be robust, idempotent, and safe to run multiple times.
 
 ## Files
 
 - `post-install.sh` - Main bash script that performs all installation tasks
-- `docker-compose.yml` - Docker Compose configuration for all services
+- `docker compose.yml` - Docker Compose configuration for all services
 - `spec.txt` - Original requirements specification
 - `CLAUDE.md` - This file
 
@@ -23,7 +23,7 @@ The script must be run as a regular user (not root) with sudo privileges. It wil
 - Prompt for confirmation before proceeding
 - Check if each component is already installed (idempotent)
 - Continue with remaining steps if non-critical installations fail
-- Start Docker containers from docker-compose.yml
+- Start Docker containers from docker compose.yml
 - Pull AI models into Ollama
 - Offer rollback if any failures occur
 
@@ -49,14 +49,19 @@ The script must be run as a regular user (not root) with sudo privileges. It wil
 The script executes these steps sequentially:
 
 1. **System Updates** (critical) - apt-get update/upgrade
-2. **SSH Server** (non-critical) - Enable remote access
+2. **SSH Server** (non-critical) - Enable remote access with security hardening
 3. **SQLite** (non-critical) - Install sqlite3 CLI and create database directory
-4. **Docker Engine** (non-critical) - From official Docker repository
-5. **NVIDIA GPU Support** (non-critical) - nvidia-docker for GPU acceleration
-6. **Docker Containers** (non-critical) - Starts Portainer, Ollama, OpenWebUI, LangChain, LangGraph, LangFlow, n8n, Qdrant
-7. **Ollama Models** (non-critical) - Pulls gpt-oss:20b, qwen3-vl:8b, qwen3-coder:30b, qwen3:8b
-8. **Utility Packages** (non-critical) - git, vim, htop, tree, unzip, build-essential, net-tools, jq
-9. **System Cleanup** (non-critical) - apt autoremove and autoclean
+4. **Cockpit** (non-critical) - Web-based server management interface
+5. **Docker Engine** (non-critical) - From official Docker repository
+6. **NVIDIA GPU Support** (non-critical) - nvidia-docker for GPU acceleration
+7. **Pi-Hole DNS Configuration** (non-critical) - Generates custom DNS entries for .home domains
+8. **Docker Containers** (non-critical) - Starts all services: nginx, Portainer, Ollama, OpenWebUI, LangChain, LangFlow, n8n, Qdrant, Homarr, Hoarder, Plex, Nextcloud (with PostgreSQL and Redis), Pi-Hole
+9. **Ollama Models** (non-critical) - Pulls gpt-oss:20b, qwen3-vl:8b, qwen3-coder:30b, qwen3:8b
+10. **Git Configuration** (non-critical) - Configure Git with user information
+11. **Claude Code Installation** (non-critical) - Install Claude Code CLI globally
+12. **Claude Project Setup** (non-critical) - Set up project-specific Claude Code configuration
+13. **Utility Packages** (non-critical) - git, vim, htop, tree, unzip, build-essential, net-tools, jq
+14. **System Cleanup** (non-critical) - apt autoremove and autoclean
 
 Each step is wrapped in an installation function (e.g., `install_docker()`, `install_ssh()`) that:
 - Checks if already installed (idempotency)
@@ -66,34 +71,73 @@ Each step is wrapped in an installation function (e.g., `install_docker()`, `ins
 
 ### Docker Services
 
-All services are defined in `docker-compose.yml` and orchestrated together:
+All services are defined in `docker compose.yml` and orchestrated together. Services are accessed through an nginx reverse proxy with basic authentication for security.
 
-- **Portainer** (port 9000) - Container management UI
-- **Ollama** (port 11434) - LLM runtime with GPU support
-- **OpenWebUI** (port 8080) - Web interface for Ollama
-- **LangChain** (port 8000) - LLM application framework
-- **LangGraph** (port 8001) - Graph-based workflows
-- **LangFlow** (port 7860) - Visual workflow builder
-- **n8n** (port 5678) - Workflow automation
-- **Qdrant** (ports 6333, 6334) - Vector database for embeddings and semantic search
+**Management & Infrastructure:**
+- **nginx** (ports 80, 443) - Reverse proxy with SSL/TLS and basic authentication
+- **docker-socket-proxy** - Security layer restricting Portainer's Docker API access
+- **Portainer** - Container management UI (via /portainer)
+- **Cockpit** (port 9090) - Web-based server management (direct access, not proxied)
 
-All containers are configured with environment variables to connect to Ollama on `http://ollama:11434`.
+**Homelab Services:**
+- **Homarr** - Homelab dashboard and service organizer (via /homarr)
+- **Hoarder** - Self-hosted bookmark manager with tagging (via /hoarder)
+- **Plex** - Media server with transcoding support (via /plex, optionally port 32400)
+- **Nextcloud** - File storage, sync, and collaboration platform (via /nextcloud)
+  - **nextcloud-db** - PostgreSQL 16 database for Nextcloud
+  - **nextcloud-redis** - Redis cache for Nextcloud performance
+- **Pi-Hole** - DNS-based ad blocker (ports 53 UDP/TCP for DNS, web via /pihole)
 
-### Database Services
+**AI/ML Services:**
+- **Ollama** - LLM runtime with GPU support (via /ollama)
+- **OpenWebUI** - Web interface for Ollama (via /openwebui)
+- **LangChain** - LLM application framework (via /langchain)
+- **LangGraph** - Graph-based workflow engine (via /langgraph)
+- **LangFlow** - Visual workflow builder for AI (via /langflow)
+- **n8n** - Workflow automation platform (via /n8n)
+- **Qdrant** - Vector database for embeddings and semantic search (via /qdrant)
 
-**SQLite**:
-- Installed locally as a package
-- Database directory: `~/.local/share/homelab/databases/`
-- Useful for storing application data, logs, and metadata
-- Can be used by any application on the host or in containers
+All AI containers are configured with environment variables to connect to Ollama on `http://ollama:11434`.
+
+### AI Database Stack
+
+The homelab includes a complete database stack optimized for AI/ML workloads, combining vector search (Qdrant) with relational/metadata storage (SQLite).
 
 **Qdrant Vector Database**:
-- Runs as a Docker container
-- Provides REST API on port 6333
-- Admin interface on port 6334
-- Stores vector embeddings for semantic search
-- Integrates with LLMs for RAG (Retrieval-Augmented Generation)
-- Configuration file: `qdrant_config.yaml`
+- Docker container for high-performance vector similarity search
+- REST API on port 6333, gRPC on port 6334
+- Optimized configuration in `qdrant_config.yaml`:
+  - HNSW indexing for fast nearest-neighbor search
+  - 64MB cache, WAL enabled for durability
+  - Supports multiple vector sizes (384, 768, 1536, 3072, 4096)
+- Perfect for:
+  - RAG (Retrieval-Augmented Generation) with embeddings
+  - Semantic search over documents
+  - Similarity-based recommendations
+  - Document clustering and classification
+
+**SQLite for AI Metadata**:
+- Lightweight, serverless relational database
+- Database directory: `~/.local/share/homelab/databases/`
+- Initialization script: `./sqlite-ai-init.sh`
+- Pre-configured databases:
+  - `conversations.db` - Chat history and messages
+  - `rag.db` - RAG document metadata and chunks (vectors in Qdrant)
+  - `workflows.db` - AI workflow execution tracking
+  - `model_performance.db` - Model benchmarks and usage stats
+- Features:
+  - Full-text search (FTS5) for hybrid search with Qdrant
+  - WAL mode for concurrent access
+  - 64MB cache for performance
+  - Optimized indexes for AI workloads
+
+**Integration**:
+- **Hybrid RAG**: Store text in SQLite, embeddings in Qdrant
+- **Conversation tracking**: Messages in SQLite, semantic search in Qdrant
+- **Workflow state**: SQLite tracks execution, Qdrant finds similar workflows
+- **Performance monitoring**: SQLite logs model calls, tracks costs and latency
+
+See `ai-stack-examples.md` for complete Python code examples.
 
 ### Ollama Models
 
@@ -132,7 +176,7 @@ Each model pull is wrapped with error handling to continue if one fails.
 ### GPU Support
 - Detects NVIDIA GPU via `nvidia-smi`
 - Installs nvidia-docker2 toolkit if GPU is present
-- docker-compose.yml has commented GPU configuration
+- docker compose.yml has commented GPU configuration
 - Users uncomment `runtime: nvidia` lines to enable GPU
 
 ### Logging System
@@ -193,19 +237,19 @@ Manually manage containers:
 
 ```bash
 # Start all services
-docker-compose up -d
+docker compose up -d
 
 # Stop all services
-docker-compose down
+docker compose down
 
 # View container logs
-docker-compose logs -f
+docker compose logs -f
 
 # Restart a specific service
-docker-compose restart ollama
+docker compose restart ollama
 ```
 
-To enable GPU support, edit `docker-compose.yml` and uncomment the GPU configuration in the ollama service.
+To enable GPU support, edit `docker compose.yml` and uncomment the GPU configuration in the ollama service.
 
 ## Service Integration
 
@@ -252,5 +296,356 @@ sqlite3 ~/.local/share/homelab/databases/myapp.db "CREATE TABLE users (id INTEGE
 sqlite3 ~/.local/share/homelab/databases/myapp.db
 ```
 
+### AI Database Stack Usage
+
+Initialize AI-optimized SQLite databases:
+```bash
+# Run initialization script
+./sqlite-ai-init.sh
+
+# This creates:
+# - conversations.db: Chat history with full-text search
+# - rag.db: Document metadata, chunks, embeddings tracking
+# - workflows.db: AI workflow execution state and model calls
+# - model_performance.db: Benchmarks, metrics, usage statistics
+```
+
+**Hybrid RAG Pattern** (Text in SQLite, Vectors in Qdrant):
+```python
+# 1. Store document metadata in SQLite
+sqlite> INSERT INTO documents (doc_id, title, content_hash)
+        VALUES ('doc1', 'AI Guide', 'abc123');
+
+# 2. Store document chunks with Qdrant point IDs
+sqlite> INSERT INTO chunks (chunk_id, doc_id, content, qdrant_point_id)
+        VALUES ('chunk1', 'doc1', 'LLMs use transformers...', 'vec123');
+
+# 3. Store embedding vector in Qdrant
+curl -X PUT 'http://qdrant.home:6333/collections/documents/points' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "points": [{
+      "id": "vec123",
+      "vector": [0.1, 0.2, ...],
+      "payload": {"chunk_id": "chunk1", "doc_id": "doc1"}
+    }]
+  }'
+
+# 4. Query: Search Qdrant for similar vectors, retrieve full text from SQLite
+```
+
+**Conversation Tracking**:
+```bash
+# Store chat messages
+sqlite3 ~/.local/share/homelab/databases/conversations.db
+
+sqlite> INSERT INTO messages (conversation_id, role, content)
+        VALUES ('conv1', 'user', 'Explain transformers');
+```
+
+**Workflow Monitoring**:
+```bash
+# Track n8n/LangChain workflow executions
+sqlite3 ~/.local/share/homelab/databases/workflows.db
+
+sqlite> SELECT workflow_name, COUNT(*), AVG(duration_ms)
+        FROM workflow_executions
+        WHERE status = 'completed'
+        GROUP BY workflow_name;
+```
+
+**Model Performance Analytics**:
+```bash
+# Analyze model usage
+sqlite3 ~/.local/share/homelab/databases/model_performance.db
+
+sqlite> SELECT model_name, AVG(avg_latency_ms), AVG(throughput_tokens_per_sec)
+        FROM benchmarks
+        GROUP BY model_name;
+```
+
+See `ai-stack-examples.md` for complete Python integration examples with Qdrant, SQLite, Ollama, and LangChain.
+
 ### n8n Workflows
 n8n can trigger workflows from HTTP webhooks and integrate with Ollama for AI tasks, Qdrant for embeddings, and SQLite for data storage.
+
+## Homelab Services Usage
+
+### Homarr Dashboard
+Homarr is the main dashboard for your homelab. Access at https://<server-ip>/homarr
+- Add service cards for all your homelab applications
+- Monitor system resources
+- Organize services by category
+- Create quick-access bookmarks
+
+### Hoarder Bookmark Manager
+Self-hosted bookmark manager. Access at https://<server-ip>/hoarder
+- Save and organize bookmarks with tags
+- Full-text search across saved content
+- Import bookmarks from browsers
+- Share bookmark collections
+- API integration via HOARDER_SECRET_KEY
+
+### Plex Media Server
+Media streaming server. Access at https://<server-ip>/plex
+- Add media to the plex_media Docker volume
+- Enable GPU transcoding by uncommenting GPU config in docker compose.yml
+- Claim your server using PLEX_CLAIM token from https://www.plex.tv/claim/
+- Supports hardware transcoding with NVIDIA GPUs
+
+```bash
+# Find media volume location
+docker volume inspect plex_media
+
+# Or bind mount your media directory
+# Edit docker compose.yml plex service volumes:
+#   - /path/to/your/media:/media
+```
+
+### Nextcloud File Storage
+File sync and collaboration platform. Access at https://<server-ip>/nextcloud
+- First-time setup creates admin account
+- Uses PostgreSQL database for reliability
+- Redis caching for performance
+- Upload large files (up to 10GB via nginx config)
+- Desktop and mobile sync clients available
+
+```bash
+# View Nextcloud logs
+docker compose logs -f nextcloud
+
+# Access Nextcloud CLI (occ)
+docker exec -u www-data nextcloud php occ <command>
+```
+
+### Pi-Hole DNS Ad Blocker
+Network-wide ad blocking. Access at https://<server-ip>/pihole or https://pihole.home
+- Configure devices to use <server-ip> as DNS server
+- Or set as router DNS to protect entire network
+- Admin password stored in .env file (PIHOLE_PASSWORD)
+- Blocks ads, trackers, and malicious domains
+- Custom blocklists and whitelists
+- **Provides local DNS resolution for .home domains**
+
+**Custom DNS Entries:**
+The installation automatically configures Pi-Hole to resolve the following domains to your server:
+- `homarr.home` → Dashboard
+- `hoarder.home` → Bookmark Manager
+- `plex.home` → Media Server
+- `nextcloud.home` → File Storage
+- `pihole.home` → Pi-Hole Admin
+- `cockpit.home` → Server Management (port 9090)
+- `ollama.home`, `openwebui.home`, `langchain.home`, `langgraph.home`, `langflow.home`, `n8n.home` → AI Services
+- `portainer.home`, `qdrant.home` → Management Services
+
+**DNS Configuration:**
+
+```bash
+# Configure device DNS (example for Linux)
+# Edit /etc/resolv.conf or use NetworkManager:
+nmcli con mod <connection> ipv4.dns "<server-ip>"
+nmcli con up <connection>
+
+# Configure device DNS (example for macOS)
+# System Preferences > Network > Advanced > DNS
+# Add <server-ip> as DNS server
+
+# Configure device DNS (example for Windows)
+# Control Panel > Network > Change adapter settings
+# Right-click adapter > Properties > IPv4 > Properties
+# Use the following DNS server addresses: <server-ip>
+
+# Router configuration (entire network)
+# Access your router admin interface
+# Find DNS settings (often under DHCP or LAN settings)
+# Set primary DNS to <server-ip>
+# Set secondary DNS to 1.1.1.1 or 8.8.8.8 (fallback)
+```
+
+**Testing DNS Resolution:**
+```bash
+# Test from a device with Pi-Hole configured as DNS
+nslookup homarr.home
+dig homarr.home
+
+# Should return your server's IP address
+```
+
+**Pi-Hole Management:**
+```bash
+# View Pi-Hole logs
+docker compose logs -f pihole
+
+# Update gravity (blocklists)
+docker exec pihole pihole -g
+
+# Restart Pi-Hole DNS
+docker compose restart pihole
+
+# View current DNS entries
+cat pihole-custom-dns.conf
+
+# Add custom DNS entries
+# Edit pihole-custom-dns.conf and add:
+# address=/myservice.home/<server-ip>
+# Then restart: docker compose restart pihole
+```
+
+### Cockpit Server Management
+Web-based server administration. Access at https://<server-ip>:9090
+- Login with system username/password
+- Monitor CPU, memory, disk, network
+- Manage systemd services
+- View system logs
+- Terminal access
+- Docker container management (via cockpit-docker plugin)
+- Virtual machine management (via cockpit-machines plugin)
+
+## Security Features
+
+### Nginx Reverse Proxy
+All services (except Cockpit and Pi-Hole DNS) are accessed through nginx reverse proxy:
+- HTTPS with self-signed certificates (replace with Let's Encrypt for production)
+- HTTP basic authentication (username: admin, password in .env)
+- Rate limiting to prevent abuse (10 req/s for API, 30 req/s for web)
+- Security headers (HSTS, X-Frame-Options, CSP, etc.)
+- Request size limits (10GB for Nextcloud, 100MB for Plex, 20MB default)
+
+### Docker Socket Proxy
+Portainer accesses Docker via socket proxy instead of direct socket mount:
+- Restricts API access to read-only operations
+- No container start/stop/restart capabilities
+- No exec access into containers
+- Prevents full system compromise if Portainer is breached
+
+### SSH Hardening
+SSH server is automatically hardened:
+- Root login disabled
+- Password authentication disabled (key-based only)
+- Public key authentication required
+- X11 forwarding disabled
+- Connection timeouts configured
+- Original config backed up before changes
+
+## GPU Support
+
+### Ollama GPU Acceleration
+Enable GPU for LLM inference:
+1. Ensure NVIDIA drivers are installed (script auto-detects and installs nvidia-docker2)
+2. Edit docker compose.yml, uncomment in ollama service:
+   ```yaml
+   runtime: nvidia
+   deploy:
+     resources:
+       reservations:
+         devices:
+           - driver: nvidia
+             count: 1
+             capabilities: [gpu]
+   ```
+3. Restart containers: `docker compose up -d`
+
+### Plex GPU Transcoding
+Enable GPU for video transcoding:
+1. Ensure NVIDIA drivers installed
+2. Edit docker compose.yml, uncomment in plex service:
+   ```yaml
+   runtime: nvidia
+   deploy:
+     resources:
+       reservations:
+         devices:
+           - driver: nvidia
+             count: 1
+             capabilities: [gpu, video, compute, utility]
+   ```
+3. Restart Plex: `docker compose restart plex`
+4. In Plex settings, enable hardware transcoding
+
+## Network Configuration
+
+### Local DNS Resolution (.home domains)
+
+The homelab automatically configures Pi-Hole to provide local DNS resolution for all services using the `.home` top-level domain. This allows you to access services via memorable names instead of IP addresses.
+
+**Setup:**
+1. The installation script automatically detects your server's IP address
+2. Pi-Hole is configured with custom DNS entries mapping service names to your server IP
+3. Configure your devices or router to use the server as DNS server
+4. Access services using friendly URLs like `https://plex.home` or `https://homarr.home`
+
+**Available DNS Names:**
+- `homarr.home` - Homelab Dashboard
+- `hoarder.home` - Bookmark Manager
+- `plex.home` - Media Server
+- `nextcloud.home` - File Storage & Collaboration
+- `pihole.home` - DNS Ad Blocker Admin
+- `cockpit.home:9090` - Server Management
+- `ollama.home`, `openwebui.home` - AI Services
+- `langchain.home`, `langgraph.home`, `langflow.home`, `n8n.home` - AI Workflows
+- `portainer.home` - Container Management
+- `qdrant.home` - Vector Database
+- `homelab.home` - Alias for main server
+
+**Configuration File:** `pihole-custom-dns.conf`
+- Automatically generated during installation
+- Can be manually edited to add custom DNS entries
+- Restart Pi-Hole after changes: `docker compose restart pihole`
+
+### Port Usage
+- **53** (TCP/UDP): Pi-Hole DNS (for .home domain resolution and ad blocking)
+- **80**: HTTP (redirects to HTTPS)
+- **443**: HTTPS (nginx reverse proxy for all services)
+- **9090**: Cockpit web interface (direct access, not proxied)
+
+### Internal Docker Network
+All containers communicate on `homelab_network` bridge network:
+- Services reference each other by container name
+- Example: Ollama is accessible at `http://ollama:11434` from other containers
+- Isolated from host network for security
+
+## Backup Recommendations
+
+### Database Backups
+```bash
+# Nextcloud database
+docker exec nextcloud-db pg_dump -U nextcloud nextcloud > nextcloud_backup.sql
+
+# SQLite databases
+cp -r ~/.local/share/homelab/databases/ ~/backups/databases_$(date +%F)
+```
+
+### Volume Backups
+```bash
+# Backup all Docker volumes
+docker run --rm -v plex_config:/source -v $(pwd):/backup alpine tar czf /backup/plex_config.tar.gz -C /source .
+docker run --rm -v nextcloud_data:/source -v $(pwd):/backup alpine tar czf /backup/nextcloud_data.tar.gz -C /source .
+docker run --rm -v pihole_etc:/source -v $(pwd):/backup alpine tar czf /backup/pihole_etc.tar.gz -C /source .
+```
+
+## Troubleshooting
+
+### Service Not Accessible
+1. Check container status: `docker compose ps`
+2. Check nginx logs: `docker compose logs nginx`
+3. Check service logs: `docker compose logs <service-name>`
+4. Verify .env file has all required variables
+5. Check nginx basic auth credentials
+
+### Pi-Hole DNS Not Working
+1. Verify Pi-Hole is running: `docker compose ps pihole`
+2. Test DNS resolution: `dig @<server-ip> google.com`
+3. Check device DNS configuration
+4. Verify port 53 is accessible: `sudo netstat -tunlp | grep 53`
+
+### Nextcloud Connection Issues
+1. Check trusted domains in config
+2. Verify database connection: `docker compose logs nextcloud-db`
+3. Check Redis: `docker compose logs nextcloud-redis`
+4. Ensure OVERWRITEHOST matches your server hostname
+
+### GPU Not Detected
+1. Verify NVIDIA drivers: `nvidia-smi`
+2. Check nvidia-docker2: `docker run --rm --gpus all nvidia/cuda:12.0-base nvidia-smi`
+3. Verify docker compose.yml GPU config is uncommented
+4. Restart Docker daemon: `sudo systemctl restart docker`

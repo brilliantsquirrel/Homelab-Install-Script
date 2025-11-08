@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # Nginx reverse proxy with authentication
   nginx:
@@ -7,11 +5,7 @@ services:
       context: ./nginx
       dockerfile: Dockerfile
     container_name: nginx-proxy
-    restart:
-      condition: on-failure
-      delay: 5s
-      max_attempts: 5
-      window: 120s
+    restart: unless-stopped
     ports:
       - "80:80"
       - "443:443"
@@ -28,6 +22,11 @@ services:
       - langgraph
       - langflow
       - n8n
+      - homarr
+      - hoarder
+      - plex
+      - nextcloud
+      - pihole
     networks:
       - homelab_network
     environment:
@@ -38,11 +37,7 @@ services:
   docker-socket-proxy:
     image: tecnativa/docker-socket-proxy:latest
     container_name: docker-socket-proxy
-    restart:
-      condition: on-failure
-      delay: 5s
-      max_attempts: 5
-      window: 120s
+    restart: unless-stopped
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     environment:
@@ -68,11 +63,7 @@ services:
   portainer:
     image: portainer/portainer-ce:2.20.0
     container_name: portainer
-    restart:
-      condition: on-failure
-      delay: 5s
-      max_attempts: 5
-      window: 120s
+    restart: unless-stopped
     # Security: Use docker-socket-proxy instead of direct socket access
     # This limits Portainer's access to only viewing containers/services
     # preventing full system compromise if Portainer is compromised
@@ -90,11 +81,7 @@ services:
   ollama:
     image: ollama/ollama:0.6.0
     container_name: ollama
-    restart:
-      condition: on-failure
-      delay: 5s
-      max_attempts: 5
-      window: 120s
+    restart: unless-stopped
     volumes:
       - ollama_data:/root/.ollama
     environment:
@@ -124,11 +111,7 @@ services:
   openwebui:
     image: ghcr.io/open-webui/open-webui:v0.3.0
     container_name: openwebui
-    restart:
-      condition: on-failure
-      delay: 5s
-      max_attempts: 5
-      window: 120s
+    restart: unless-stopped
     volumes:
       - openwebui_data:/app/backend/data
     environment:
@@ -144,11 +127,7 @@ services:
   langchain:
     image: langchain/langchain:0.1.0
     container_name: langchain
-    restart:
-      condition: on-failure
-      delay: 5s
-      max_attempts: 5
-      window: 120s
+    restart: unless-stopped
     environment:
       - OLLAMA_BASE_URL=http://ollama:11434
       - LANGCHAIN_API_KEY=${LANGCHAIN_API_KEY:-changeme}
@@ -158,31 +137,10 @@ services:
     networks:
       - homelab_network
 
-  langgraph:
-    image: langchain/langgraph-api:0.1.0
-    container_name: langgraph
-    restart:
-      condition: on-failure
-      delay: 5s
-      max_attempts: 5
-      window: 120s
-    environment:
-      - OLLAMA_BASE_URL=http://ollama:11434
-      - LANGGRAPH_API_KEY=${LANGGRAPH_API_KEY:-changeme}
-      - TZ=UTC
-    depends_on:
-      - ollama
-    networks:
-      - homelab_network
-
   langflow:
     image: langflowai/langflow:1.0.0
     container_name: langflow
-    restart:
-      condition: on-failure
-      delay: 5s
-      max_attempts: 5
-      window: 120s
+    restart: unless-stopped
     volumes:
       - langflow_data:/root/.langflow
     environment:
@@ -194,14 +152,53 @@ services:
     networks:
       - homelab_network
 
+  # LangGraph - Stateful agent workflow engine
+  langgraph-redis:
+    image: redis:7-alpine
+    container_name: langgraph-redis
+    restart: unless-stopped
+    environment:
+      - TZ=UTC
+    networks:
+      - homelab_network
+
+  langgraph-db:
+    image: postgres:16-alpine
+    container_name: langgraph-db
+    restart: unless-stopped
+    volumes:
+      - langgraph_db:/var/lib/postgresql/data
+    environment:
+      - TZ=UTC
+      - POSTGRES_DB=langgraph
+      - POSTGRES_USER=langgraph
+      - POSTGRES_PASSWORD=${LANGGRAPH_DB_PASSWORD:-changeme}
+    networks:
+      - homelab_network
+
+  langgraph:
+    image: langchain/langgraph-api:3.11
+    container_name: langgraph
+    restart: unless-stopped
+    environment:
+      - TZ=UTC
+      - REDIS_URI=redis://langgraph-redis:6379
+      - POSTGRES_URI=postgres://langgraph:${LANGGRAPH_DB_PASSWORD:-changeme}@langgraph-db:5432/langgraph
+      - LANGSMITH_API_KEY=${LANGGRAPH_API_KEY:-changeme}
+      - OLLAMA_BASE_URL=http://ollama:11434
+    depends_on:
+      - ollama
+      - langgraph-redis
+      - langgraph-db
+    expose:
+      - "8000"
+    networks:
+      - homelab_network
+
   n8n:
     image: n8nio/n8n:1.95.0
     container_name: n8n
-    restart:
-      condition: on-failure
-      delay: 5s
-      max_attempts: 5
-      window: 120s
+    restart: unless-stopped
     volumes:
       - n8n_data:/home/node/.n8n
     environment:
@@ -219,11 +216,7 @@ services:
   qdrant:
     image: qdrant/qdrant:v1.13.0
     container_name: qdrant
-    restart:
-      condition: on-failure
-      delay: 5s
-      max_attempts: 5
-      window: 120s
+    restart: unless-stopped
     volumes:
       - qdrant_data:/qdrant/storage
       - ./qdrant_config.yaml:/qdrant/config/config.yaml:ro
@@ -245,6 +238,150 @@ services:
     networks:
       - homelab_network
 
+  # Homarr - Homelab dashboard and service organizer
+  homarr:
+    image: ghcr.io/ajnart/homarr:latest
+    container_name: homarr
+    restart: unless-stopped
+    volumes:
+      - homarr_config:/app/data/configs
+      - homarr_icons:/app/public/icons
+      - homarr_data:/data
+    environment:
+      - TZ=UTC
+    expose:
+      - "7575"
+    networks:
+      - homelab_network
+
+  # Hoarder - Self-hosted bookmark manager
+  hoarder:
+    image: ghcr.io/hoarder-app/hoarder:latest
+    container_name: hoarder
+    restart: unless-stopped
+    volumes:
+      - hoarder_data:/data
+    environment:
+      - TZ=UTC
+      - HOARDER_SECRET_KEY=${HOARDER_SECRET_KEY:-changeme}
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET:-changeme}
+      - NEXTAUTH_URL=https://${SERVER_HOSTNAME:-homelab.local}/hoarder
+    expose:
+      - "3000"
+    networks:
+      - homelab_network
+
+  # Plex - Media server
+  plex:
+    image: lscr.io/linuxserver/plex:latest
+    container_name: plex
+    restart: unless-stopped
+    volumes:
+      - plex_config:/config
+      - plex_media:/media
+      - plex_transcode:/transcode
+    environment:
+      - TZ=UTC
+      - PUID=1000
+      - PGID=1000
+      - VERSION=docker
+      - PLEX_CLAIM=${PLEX_CLAIM:-}
+    # Uncomment the following lines for GPU transcoding (NVIDIA)
+    # runtime: nvidia
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu, video, compute, utility]
+    expose:
+      - "32400"
+    # Note: Plex needs port 32400 for discovery. Uncomment if needed:
+    # ports:
+    #   - "32400:32400"
+    networks:
+      - homelab_network
+
+  # Nextcloud - File storage and collaboration platform
+  nextcloud-db:
+    image: postgres:16-alpine
+    container_name: nextcloud-db
+    restart: unless-stopped
+    volumes:
+      - nextcloud_db:/var/lib/postgresql/data
+    environment:
+      - TZ=UTC
+      - POSTGRES_DB=nextcloud
+      - POSTGRES_USER=nextcloud
+      - POSTGRES_PASSWORD=${NEXTCLOUD_DB_PASSWORD:-changeme}
+    networks:
+      - homelab_network
+
+  nextcloud-redis:
+    image: redis:7-alpine
+    container_name: nextcloud-redis
+    restart: unless-stopped
+    environment:
+      - TZ=UTC
+    networks:
+      - homelab_network
+
+  nextcloud:
+    image: nextcloud:29-apache
+    container_name: nextcloud
+    restart: unless-stopped
+    volumes:
+      - nextcloud_data:/var/www/html
+    environment:
+      - TZ=UTC
+      - POSTGRES_HOST=nextcloud-db
+      - POSTGRES_DB=nextcloud
+      - POSTGRES_USER=nextcloud
+      - POSTGRES_PASSWORD=${NEXTCLOUD_DB_PASSWORD:-changeme}
+      - REDIS_HOST=nextcloud-redis
+      - NEXTCLOUD_TRUSTED_DOMAINS=${SERVER_HOSTNAME:-homelab.local}
+      - OVERWRITEPROTOCOL=https
+      - OVERWRITEHOST=${SERVER_HOSTNAME:-homelab.local}
+      - OVERWRITEWEBROOT=/nextcloud
+    depends_on:
+      - nextcloud-db
+      - nextcloud-redis
+    expose:
+      - "80"
+    networks:
+      - homelab_network
+
+  # Pi-Hole - DNS-based ad blocker
+  pihole:
+    image: pihole/pihole:latest
+    container_name: pihole
+    restart: unless-stopped
+    volumes:
+      - pihole_etc:/etc/pihole
+      - pihole_dnsmasq:/etc/dnsmasq.d
+      - ./pihole-custom-dns.conf:/etc/dnsmasq.d/02-custom-dns.conf:ro
+    environment:
+      - TZ=UTC
+      - WEBPASSWORD=${PIHOLE_PASSWORD:-changeme}
+      - VIRTUAL_HOST=${SERVER_HOSTNAME:-homelab.local}
+      - PROXY_LOCATION=pihole
+      - FTLCONF_LOCAL_IPV4=${SERVER_IP:-}
+    # DNS ports - needed for Pi-Hole to function as DNS server
+    ports:
+      - "53:53/tcp"
+      - "53:53/udp"
+    # Web interface accessible via nginx reverse proxy
+    expose:
+      - "80"
+    networks:
+      - homelab_network
+    dns:
+      - 127.0.0.1
+      - 1.1.1.1
+    cap_add:
+      - NET_ADMIN
+
 volumes:
   portainer_data:
     driver: local
@@ -254,6 +391,8 @@ volumes:
     driver: local
   langflow_data:
     driver: local
+  langgraph_db:
+    driver: local
   n8n_data:
     driver: local
   qdrant_data:
@@ -261,6 +400,28 @@ volumes:
   nginx_certs:
     driver: local
   nginx_auth:
+    driver: local
+  homarr_config:
+    driver: local
+  homarr_icons:
+    driver: local
+  homarr_data:
+    driver: local
+  hoarder_data:
+    driver: local
+  plex_config:
+    driver: local
+  plex_media:
+    driver: local
+  plex_transcode:
+    driver: local
+  nextcloud_db:
+    driver: local
+  nextcloud_data:
+    driver: local
+  pihole_etc:
+    driver: local
+  pihole_dnsmasq:
     driver: local
 
 networks:

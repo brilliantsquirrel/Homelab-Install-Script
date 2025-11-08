@@ -70,7 +70,7 @@ echo ""
 echo -e "${BLUE}2. Container Status${NC}"
 
 # List of expected containers
-containers=("nginx-proxy" "ollama" "openwebui" "portainer" "qdrant" "n8n" "langchain" "langgraph" "langflow" "docker-socket-proxy")
+containers=("nginx-proxy" "ollama" "openwebui" "portainer" "qdrant" "n8n" "langchain" "langflow" "docker-socket-proxy")
 
 for container in "${containers[@]}"; do
     if sudo docker ps | grep -q "$container"; then

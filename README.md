@@ -4,7 +4,7 @@ A robust automation script for setting up an Ubuntu Server homelab with Docker c
 
 ## Overview
 
-This script automates the setup of a homelab server for general utility and AI workflows. It installs Docker, configures container services (Portainer, Ollama, OpenWebUI, LangChain, LangGraph, LangFlow, n8n), pulls AI models, and sets up network access for all services.
+This script automates the setup of a homelab server for general utility and AI workflows. It installs Docker, configures container services (Portainer, Ollama, OpenWebUI, LangChain, LangFlow, n8n), pulls AI models, and sets up network access for all services.
 
 Designed to be used with customized Ubuntu Server installations via Cubic, this script is idempotent, resilient, and can be run multiple times safely.
 
@@ -179,7 +179,6 @@ This installation includes comprehensive security hardening:
    # - QDRANT_API_KEY (generate: openssl rand -base64 32)
    # - N8N_ENCRYPTION_KEY (generate: openssl rand -base64 32, minimum 32 chars)
    # - LANGCHAIN_API_KEY (generate: openssl rand -base64 32)
-   # - LANGGRAPH_API_KEY (generate: openssl rand -base64 32)
    # - LANGFLOW_API_KEY (generate: openssl rand -base64 32)
    nano .env
    chmod 600 .env
