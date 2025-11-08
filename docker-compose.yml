@@ -367,10 +367,10 @@ services:
       - VIRTUAL_HOST=${SERVER_HOSTNAME:-homelab.local}
       - PROXY_LOCATION=pihole
       - FTLCONF_LOCAL_IPV4=${SERVER_IP:-}
-    # DNS ports - needed for Pi-Hole to function as DNS server
+    # DNS ports - Pi-Hole on alternate port 5353 (change to 53 after stopping dnsmasq)
     ports:
-      - "53:53/tcp"
-      - "53:53/udp"
+      - "5353:53/tcp"
+      - "5353:53/udp"
     # Web interface accessible via nginx reverse proxy
     expose:
       - "80"
