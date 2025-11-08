@@ -449,7 +449,7 @@ pull_ollama_models() {
     fi
 
     log "Pulling Ollama models (this may take a while)..."
-    log "Note: Large models (30B) may take 30+ minutes on first pull"
+    log "Note: Large models (30B) may take 30+ minutes to several hours depending on network speed"
 
     # Get models from configuration
     local models=()
@@ -463,25 +463,16 @@ pull_ollama_models() {
     local successful_models=()
     local failed_models=()
 
-    # Get model pull timeout from configuration
-    local model_timeout="${MODEL_PULL_TIMEOUT:-7200}"
-
-    debug "Using model pull timeout: $model_timeout seconds ($((model_timeout / 60)) minutes)"
-
     for model in "${models[@]}"; do
-        log "Pulling model: $model (timeout: $((model_timeout / 60)) minutes)"
+        log "Pulling model: $model (no timeout - may take a long time for large models)"
 
-        # Use timeout command to prevent hanging
-        if timeout "$model_timeout" sudo docker exec ollama ollama pull "$model"; then
+        # Pull model without timeout to allow large models to download fully
+        if sudo docker exec ollama ollama pull "$model"; then
             success "Successfully pulled: $model"
             successful_models+=("$model")
         else
             local exit_code=$?
-            if [ $exit_code -eq 124 ]; then
-                warning "Model pull timed out: $model (exceeded $((model_timeout / 60)) minutes)"
-            else
-                warning "Failed to pull $model (exit code: $exit_code)"
-            fi
+            warning "Failed to pull $model (exit code: $exit_code)"
             failed_models+=("$model")
         fi
     done
