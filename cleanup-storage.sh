@@ -186,8 +186,66 @@ else
     log "Skipping drive wipe"
 fi
 
-# Step 5: Clean up storage config file
-header "Step 5: Configuration Files"
+# Step 5: Docker cleanup (optional)
+header "Step 5: Docker Data Cleanup"
+
+echo "Docker images, containers, and volumes are stored in /var/lib/docker/"
+echo "and persist between installation runs."
+echo ""
+
+if command -v docker &> /dev/null; then
+    log "Docker disk usage:"
+    sudo docker system df 2>/dev/null || log "Unable to get Docker disk usage"
+    echo ""
+fi
+
+read -p "Do you want to clean up Docker data? (y/N): " -n 1 -r
+echo
+if [[ $REPLY =~ ^[Yy]$ ]]; then
+    warning "This will remove:"
+    echo "  - All Docker containers (running and stopped)"
+    echo "  - All Docker images (requires re-download)"
+    echo "  - All Docker volumes (ALL DATA WILL BE LOST)"
+    echo "  - All Docker networks"
+    echo ""
+
+    read -p "Type 'DELETE-DOCKER' to confirm: " CONFIRM
+
+    if [ "$CONFIRM" = "DELETE-DOCKER" ]; then
+        log "Stopping and removing all Docker containers..."
+        sudo docker compose down 2>/dev/null || true
+        sudo docker stop $(sudo docker ps -aq) 2>/dev/null || true
+        sudo docker rm $(sudo docker ps -aq) 2>/dev/null || true
+        success "✓ Removed all containers"
+
+        log "Removing all Docker images..."
+        sudo docker rmi -f $(sudo docker images -aq) 2>/dev/null || true
+        success "✓ Removed all images"
+
+        log "Removing all Docker volumes..."
+        sudo docker volume rm $(sudo docker volume ls -q) 2>/dev/null || true
+        success "✓ Removed all volumes"
+
+        log "Removing all Docker networks..."
+        sudo docker network prune -f 2>/dev/null || true
+        success "✓ Removed all custom networks"
+
+        log "Running Docker system prune..."
+        sudo docker system prune -af --volumes 2>/dev/null || true
+        success "✓ Docker system cleaned"
+
+        echo ""
+        log "Docker disk usage after cleanup:"
+        sudo docker system df 2>/dev/null || log "Unable to get Docker disk usage"
+    else
+        log "Docker cleanup cancelled (confirmation failed)"
+    fi
+else
+    log "Skipping Docker cleanup (images and volumes preserved)"
+fi
+
+# Step 6: Clean up storage config file
+header "Step 6: Configuration Files"
 
 if [ -f "$HOME/.homelab-storage.conf" ]; then
     log "Removing storage configuration file..."
