@@ -304,6 +304,11 @@ create_partition() {
 
     log "Creating partition on /dev/$drive for $mount_point..."
 
+    # Validate free space
+    if ! validate_free_space "$drive" "$size"; then
+        return 1
+    fi
+
     # Get next partition number
     local part_num=$(get_next_partition_number "$drive")
     local partition="${drive}${part_num}"
@@ -315,20 +320,23 @@ create_partition() {
 
     # Calculate size for parted
     local parted_size
+    local parted_end
     if [ "$size" = "remaining" ]; then
-        parted_size="100%"
+        parted_end="-1s"  # Use -1s to mean "end of disk"
         log "Using all remaining space on /dev/$drive"
     else
-        parted_size="${size}GB"
+        # Convert GB to sectors for precise calculation
+        parted_end="${size}GB"
     fi
 
     # Get start position (end of last partition or beginning of disk)
     local start_pos=$(get_partition_start_position "$drive")
 
     # Create partition using parted
-    log "Creating partition: /dev/$partition ($parted_size)"
-    sudo parted -s /dev/$drive mkpart primary ext4 "$start_pos" "$parted_size" || {
+    log "Creating partition: /dev/$partition (from $start_pos to $parted_end)"
+    sudo parted -s --align optimal /dev/$drive mkpart primary ext4 "$start_pos" "$parted_end" || {
         error "Failed to create partition on /dev/$drive"
+        error "Debug: start=$start_pos, end=$parted_end"
         return 1
     }
 
@@ -401,15 +409,64 @@ get_next_partition_number() {
 get_partition_start_position() {
     local drive="$1"
 
-    # Get the end of the last partition, or 0 if no partitions
-    local end_pos=$(sudo parted -s /dev/$drive unit GB print free 2>/dev/null | \
-                    grep 'Free Space' | tail -1 | awk '{print $1}' | sed 's/GB//')
+    # Check if drive has any partitions
+    local last_partition=$(lsblk -n -o NAME /dev/$drive | tail -n +2 | tail -1)
 
-    if [ -z "$end_pos" ]; then
+    if [ -z "$last_partition" ]; then
+        # No partitions, start at beginning
         echo "0%"
     else
-        echo "${end_pos}GB"
+        # Get the end of the last partition
+        local end_sector=$(sudo parted -s /dev/$drive unit s print | grep "^ $last_partition" | awk '{print $3}' | sed 's/s//')
+
+        if [ -z "$end_sector" ]; then
+            # Fallback: try to get from parted print
+            local partition_num=$(echo "$last_partition" | grep -o '[0-9]*$')
+            end_sector=$(sudo parted -s /dev/$drive unit s print | grep "^ *${partition_num} " | awk '{print $3}' | sed 's/s//')
+        fi
+
+        if [ -z "$end_sector" ]; then
+            # Last resort: start at 1MB aligned
+            echo "1MiB"
+        else
+            # Start next partition at next sector after last partition
+            echo "$((end_sector + 1))s"
+        fi
     fi
+}
+
+# Validate there's enough free space on the drive
+validate_free_space() {
+    local drive="$1"
+    local required_gb="$2"
+
+    # Get drive size in GB
+    local drive_size=$(lsblk -b -d -n -o SIZE /dev/$drive)
+    local drive_size_gb=$((drive_size / 1024 / 1024 / 1024))
+
+    # Get used space by existing partitions
+    local used_space=0
+    local partitions=$(lsblk -b -n -o NAME,SIZE /dev/$drive | tail -n +2)
+
+    while IFS= read -r line; do
+        local part_size=$(echo "$line" | awk '{print $2}')
+        used_space=$((used_space + part_size))
+    done <<< "$partitions"
+
+    local used_gb=$((used_space / 1024 / 1024 / 1024))
+    local free_gb=$((drive_size_gb - used_gb))
+
+    log "Drive /dev/$drive: Total ${drive_size_gb}GB, Used ${used_gb}GB, Free ${free_gb}GB"
+
+    if [ "$required_gb" != "remaining" ]; then
+        if [ "$free_gb" -lt "$required_gb" ]; then
+            error "Not enough free space on /dev/$drive"
+            error "Required: ${required_gb}GB, Available: ${free_gb}GB"
+            return 1
+        fi
+    fi
+
+    return 0
 }
 
 # ========================================
