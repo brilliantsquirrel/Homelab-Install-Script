@@ -304,6 +304,16 @@ create_partition() {
 
     log "Creating partition on /dev/$drive for $mount_point..."
 
+    # Initialize partition table if it doesn't exist
+    if ! sudo parted -s /dev/$drive print &>/dev/null; then
+        log "No partition table found on /dev/$drive, creating GPT partition table..."
+        sudo parted -s /dev/$drive mklabel gpt || {
+            error "Failed to create partition table on /dev/$drive"
+            return 1
+        }
+        success "✓ Created GPT partition table on /dev/$drive"
+    fi
+
     # Validate free space
     if ! validate_free_space "$drive" "$size"; then
         return 1
