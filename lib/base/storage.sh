@@ -334,7 +334,7 @@ create_partition() {
     # Calculate end position for parted
     local parted_end
     if [ "$size" = "remaining" ]; then
-        parted_end="-1s"  # Use -1s to mean "end of disk"
+        parted_end="100%"  # Use 100% to mean "end of disk"
         log "Using all remaining space on /dev/$drive"
     elif [[ "$start_pos" =~ s$ ]]; then
         # Start is in sectors (e.g., "195311616s")
