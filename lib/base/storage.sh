@@ -444,14 +444,15 @@ validate_free_space() {
     local drive_size=$(lsblk -b -d -n -o SIZE /dev/$drive)
     local drive_size_gb=$((drive_size / 1024 / 1024 / 1024))
 
-    # Get used space by existing partitions
+    # Get used space by existing partitions (only TYPE=part, not lvm or other descendants)
     local used_space=0
-    local partitions=$(lsblk -b -n -o NAME,SIZE /dev/$drive | tail -n +2)
+    local partitions=$(lsblk -b -n -o NAME,SIZE,TYPE /dev/$drive | grep 'part' | awk '{print $2}')
 
-    while IFS= read -r line; do
-        local part_size=$(echo "$line" | awk '{print $2}')
-        used_space=$((used_space + part_size))
-    done <<< "$partitions"
+    if [ -n "$partitions" ]; then
+        while IFS= read -r part_size; do
+            used_space=$((used_space + part_size))
+        done <<< "$partitions"
+    fi
 
     local used_gb=$((used_space / 1024 / 1024 / 1024))
     local free_gb=$((drive_size_gb - used_gb))
