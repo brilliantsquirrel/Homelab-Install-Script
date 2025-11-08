@@ -449,7 +449,10 @@ get_partition_start_position() {
             echo "1MiB"
         else
             # Start next partition at next sector after last partition
-            echo "$((end_sector + 1))s"
+            # Align to 2048-sector boundary (1MiB for 512-byte sectors) for optimal performance
+            local next_sector=$((end_sector + 1))
+            local aligned_sector=$(( (next_sector + 2047) / 2048 * 2048 ))
+            echo "${aligned_sector}s"
         fi
     fi
 }
