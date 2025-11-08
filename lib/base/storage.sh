@@ -328,19 +328,35 @@ create_partition() {
         partition="${drive}p${part_num}"
     fi
 
-    # Calculate size for parted
-    local parted_size
+    # Get start position (end of last partition or beginning of disk)
+    local start_pos=$(get_partition_start_position "$drive")
+
+    # Calculate end position for parted
     local parted_end
     if [ "$size" = "remaining" ]; then
         parted_end="-1s"  # Use -1s to mean "end of disk"
         log "Using all remaining space on /dev/$drive"
     else
-        # Convert GB to sectors for precise calculation
-        parted_end="${size}GB"
+        # Calculate end position by adding size to start
+        # If start is in sectors, calculate end in sectors
+        if [[ "$start_pos" =~ s$ ]]; then
+            # Start is in sectors (e.g., "195311616s")
+            local start_sector=$(echo "$start_pos" | sed 's/s$//')
+            # Convert GB to sectors (assuming 512 byte sectors: 1GB = 2097152 sectors)
+            local size_sectors=$((size * 2097152))
+            parted_end="$((start_sector + size_sectors))s"
+        else
+            # Start is in percentage or other unit, use GB offset
+            # Get current position in GB and add size
+            local start_gb=$(sudo parted -s /dev/$drive unit GB print free | grep "^  *[0-9]" | tail -1 | awk '{print $2}' | sed 's/GB$//' | cut -d'.' -f1)
+            if [ -z "$start_gb" ] || [ "$start_gb" = "0" ]; then
+                # First partition, start at 0
+                parted_end="${size}GB"
+            else
+                parted_end="$((start_gb + size))GB"
+            fi
+        fi
     fi
-
-    # Get start position (end of last partition or beginning of disk)
-    local start_pos=$(get_partition_start_position "$drive")
 
     # Create partition using parted
     log "Creating partition: /dev/$partition (from $start_pos to $parted_end)"
