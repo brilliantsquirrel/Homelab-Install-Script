@@ -62,11 +62,109 @@ install_docker() {
 
 # Install NVIDIA Docker container toolkit for GPU support
 install_nvidia_gpu_support() {
-    # Check if NVIDIA GPU is present
-    if ! command -v nvidia-smi &> /dev/null; then
-        log "No NVIDIA GPU detected or drivers not installed, skipping NVIDIA container toolkit"
+    log "Checking for NVIDIA GPU..."
+
+    # Check if NVIDIA GPU hardware is present
+    local has_nvidia_gpu=false
+
+    # Method 1: Check PCI devices
+    if command -v lspci &> /dev/null; then
+        if lspci | grep -i nvidia &> /dev/null; then
+            has_nvidia_gpu=true
+            log "NVIDIA GPU detected via lspci"
+        fi
+    fi
+
+    # Method 2: Check for NVIDIA vendor ID in sysfs
+    if [ "$has_nvidia_gpu" = false ]; then
+        if grep -r "0x10de" /sys/class/drm/card*/device/vendor 2>/dev/null | grep -q "0x10de"; then
+            has_nvidia_gpu=true
+            log "NVIDIA GPU detected via sysfs"
+        fi
+    fi
+
+    # Method 3: Check if nvidia-smi works (drivers already installed)
+    if [ "$has_nvidia_gpu" = false ]; then
+        if command -v nvidia-smi &> /dev/null && nvidia-smi &> /dev/null; then
+            has_nvidia_gpu=true
+            log "NVIDIA GPU detected via nvidia-smi"
+        fi
+    fi
+
+    if [ "$has_nvidia_gpu" = false ]; then
+        log "No NVIDIA GPU detected, skipping NVIDIA support"
         return 0
     fi
+
+    success "✓ NVIDIA GPU hardware detected"
+
+    # Check if NVIDIA drivers are installed
+    if ! command -v nvidia-smi &> /dev/null; then
+        warning "NVIDIA GPU found but drivers not installed"
+        log "Installing NVIDIA drivers..."
+
+        # Install pciutils if not present (for GPU detection)
+        if ! command -v lspci &> /dev/null; then
+            sudo apt-get install -y pciutils || true
+        fi
+
+        # Detect recommended driver version
+        log "Detecting recommended NVIDIA driver..."
+        sudo apt-get update || return 1
+
+        # Install ubuntu-drivers-common to detect recommended driver
+        sudo apt-get install -y ubuntu-drivers-common || {
+            warning "Could not install ubuntu-drivers-common, trying manual driver installation"
+        }
+
+        # Get recommended driver
+        local recommended_driver=""
+        if command -v ubuntu-drivers &> /dev/null; then
+            recommended_driver=$(ubuntu-drivers devices 2>/dev/null | grep recommended | awk '{print $3}' | head -1)
+        fi
+
+        if [ -n "$recommended_driver" ]; then
+            log "Installing recommended driver: $recommended_driver"
+            sudo apt-get install -y "$recommended_driver" || {
+                error "Failed to install $recommended_driver"
+                return 1
+            }
+        else
+            # Fallback to latest driver metapackage
+            log "Installing nvidia-driver-535 (fallback)"
+            sudo apt-get install -y nvidia-driver-535 || {
+                error "Failed to install NVIDIA driver"
+                warning "You may need to install drivers manually:"
+                warning "  sudo ubuntu-drivers autoinstall"
+                return 1
+            }
+        fi
+
+        success "✓ NVIDIA drivers installed"
+        warning "⚠️  REBOOT REQUIRED for NVIDIA drivers to take effect"
+        warning "After reboot, re-run this script to complete GPU setup"
+
+        # Track for rollback
+        track_package "$recommended_driver"
+
+        return 0
+    fi
+
+    # Verify nvidia-smi works
+    if ! nvidia-smi &> /dev/null; then
+        error "nvidia-smi command exists but failed to run"
+        error "This usually means:"
+        error "  1. NVIDIA drivers were just installed and system needs reboot"
+        error "  2. Driver/kernel version mismatch"
+        warning "Try rebooting the system and re-running this script"
+        return 1
+    fi
+
+    # Display GPU information
+    log "NVIDIA GPU Information:"
+    nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv,noheader 2>/dev/null | while read line; do
+        log "  $line"
+    done
 
     # Check if nvidia-docker is already installed
     if command -v nvidia-docker &> /dev/null; then
