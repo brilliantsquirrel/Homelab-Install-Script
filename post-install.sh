@@ -251,9 +251,6 @@ echo -e "${YELLOW}This installation will take 30-60 minutes depending on your sy
 echo -e "${YELLOW}Ollama model pulling may take 1-2 hours additional.${NC}"
 echo ""
 
-# Display storage recommendations
-display_storage_recommendations
-
 read -p "Do you want to continue with installation? (type 'y' to proceed): " -n 1 -r
 echo
 
@@ -283,7 +280,7 @@ run_step "System Updates" install_system_updates true
 run_step "SSH Server" install_ssh false
 run_step "SQLite" install_sqlite false
 run_step "Cockpit" install_cockpit false
-run_step "Storage Configuration" configure_storage_paths false
+run_step "Storage Configuration" configure_storage_tiers false
 run_step "Docker Engine" install_docker false
 run_step "Docker Storage" configure_docker_storage false
 run_step "NVIDIA GPU Support" install_nvidia_gpu_support false
