@@ -56,10 +56,11 @@ header "Cubic ISO Preparation - Homelab Dependencies"
 log "This script will:"
 log "  1. Create cubic-artifacts/ as your Cubic project directory"
 log "  2. Copy all homelab scripts into cubic-artifacts/homelab/"
-log "  3. Download Docker images (~20-30GB)"
-log "  4. Download Ollama models (~50-80GB)"
+log "  3. Download Ubuntu Server 24.04 LTS ISO (~2.5GB)"
+log "  4. Download Docker images (~20-30GB)"
+log "  5. Download Ollama models (~50-80GB)"
 log ""
-log "Total download size: ~50-100GB depending on selected models"
+log "Total download size: ~52-102GB depending on selected models"
 echo ""
 
 # Create output directory structure
@@ -84,6 +85,67 @@ log "Copying all homelab files to cubic-artifacts/homelab/..."
 rsync -av --exclude='cubic-artifacts' --exclude='.git' "$REPO_DIR/" "$HOMELAB_DIR/"
 
 success "✓ Copied homelab scripts to: $HOMELAB_DIR"
+
+# ========================================
+# Step 0: Download Ubuntu Server ISO
+# ========================================
+
+header "Step 0: Downloading Ubuntu Server 24.04 LTS ISO"
+
+UBUNTU_VERSION="24.04.1"
+UBUNTU_ISO_URL="https://releases.ubuntu.com/24.04/ubuntu-${UBUNTU_VERSION}-live-server-amd64.iso"
+UBUNTU_ISO_FILE="$CUBIC_DIR/ubuntu-${UBUNTU_VERSION}-live-server-amd64.iso"
+
+# Check if ISO already exists
+if [ -f "$UBUNTU_ISO_FILE" ]; then
+    existing_size=$(du -h "$UBUNTU_ISO_FILE" | cut -f1)
+    log "Ubuntu Server ISO already downloaded: $(basename $UBUNTU_ISO_FILE) ($existing_size)"
+    success "✓ Skipping ISO download (already exists)"
+    echo ""
+else
+    log "Downloading Ubuntu Server 24.04 LTS ISO (~2.5GB)"
+    log "Source: $UBUNTU_ISO_URL"
+    echo ""
+
+    read -p "Download Ubuntu Server 24.04 LTS ISO (~2.5GB)? (y/N): " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        warning "Skipping Ubuntu ISO download"
+        warning "You will need to manually provide the ISO to Cubic"
+    else
+        log "Downloading ISO (this may take several minutes)..."
+
+        # Download with wget (shows progress bar) or curl as fallback
+        if command -v wget &> /dev/null; then
+            wget -O "$UBUNTU_ISO_FILE" "$UBUNTU_ISO_URL" || {
+                error "Failed to download Ubuntu ISO"
+                rm -f "$UBUNTU_ISO_FILE"
+                exit 1
+            }
+        elif command -v curl &> /dev/null; then
+            curl -L -o "$UBUNTU_ISO_FILE" "$UBUNTU_ISO_URL" || {
+                error "Failed to download Ubuntu ISO"
+                rm -f "$UBUNTU_ISO_FILE"
+                exit 1
+            }
+        else
+            error "Neither wget nor curl is available"
+            error "Please install wget: sudo apt-get install wget"
+            exit 1
+        fi
+
+        # Verify download completed
+        if [ -f "$UBUNTU_ISO_FILE" ]; then
+            iso_size=$(du -h "$UBUNTU_ISO_FILE" | cut -f1)
+            success "✓ Downloaded: $(basename $UBUNTU_ISO_FILE) ($iso_size)"
+            log "ISO location: $UBUNTU_ISO_FILE"
+        else
+            error "ISO download failed"
+            exit 1
+        fi
+    fi
+    echo ""
+fi
 
 # Check if Docker is installed
 if ! command -v docker &> /dev/null; then
@@ -390,6 +452,7 @@ When launching Cubic, select THIS directory as your project directory.
 
 ```
 cubic-artifacts/              # <- Point Cubic here!
+├── ubuntu-24.04.1-live-server-amd64.iso  # Ubuntu Server ISO
 ├── homelab/                  # All homelab installation scripts
 │   ├── post-install.sh
 │   ├── docker-compose.yml
@@ -415,7 +478,7 @@ cubic
 
 # In Cubic GUI:
 # - Project Directory: /path/to/Homelab-Install-Script/cubic-artifacts
-# - Select Ubuntu Server 24.04 LTS ISO
+# - Original ISO: Select ubuntu-24.04.1-live-server-amd64.iso (in this directory)
 # - Click Next
 ```
 
@@ -494,11 +557,12 @@ cd /opt/homelab
 
 ## Disk Space Requirements
 
+- **Ubuntu Server ISO**: ~2.5 GB
 - **Docker Images**: ~20-30 GB
 - **Ollama Models**: ~50-80 GB
-- **Total**: ~70-110 GB
+- **Total**: ~72-112 GB
 
-Ensure your ISO has sufficient space for these artifacts.
+Ensure your system has sufficient space for these artifacts.
 
 ## Updating Dependencies
 
@@ -534,6 +598,12 @@ header "Preparation Complete!"
 echo "Cubic project directory: $CUBIC_DIR"
 echo ""
 echo "Directory contents:"
+if [ -f "$UBUNTU_ISO_FILE" ]; then
+    iso_size=$(du -h "$UBUNTU_ISO_FILE" | cut -f1)
+    echo "  - $(basename $UBUNTU_ISO_FILE) : Ubuntu Server ISO ($iso_size)"
+else
+    echo "  - Ubuntu ISO         : NOT DOWNLOADED (you'll need to provide it)"
+fi
 echo "  - homelab/           : All homelab installation scripts"
 echo "  - docker-images/     : $(ls -1 "$DOCKER_DIR" 2>/dev/null | wc -l) Docker image tar files"
 echo "  - ollama-models/     : $(ls -1 "$MODELS_DIR" 2>/dev/null | wc -l) Ollama model archives"
@@ -558,7 +628,12 @@ echo ""
 echo "  2. In Cubic GUI, select PROJECT DIRECTORY:"
 echo "     $CUBIC_DIR"
 echo ""
-echo "  3. Select Ubuntu Server 24.04 LTS ISO"
+if [ -f "$UBUNTU_ISO_FILE" ]; then
+    echo "  3. Select Ubuntu Server 24.04 LTS ISO:"
+    echo "     $UBUNTU_ISO_FILE"
+else
+    echo "  3. Select Ubuntu Server 24.04 LTS ISO (you'll need to download it)"
+fi
 echo ""
 echo "  4. In Cubic chroot terminal, run:"
 echo "     # mkdir -p /opt/homelab /opt/homelab-offline"
