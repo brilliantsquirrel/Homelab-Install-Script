@@ -42,7 +42,7 @@ header() {
 PROJECT_ID=""
 VM_NAME="cubic-builder"
 ZONE="us-west1-a"
-MACHINE_TYPE="e2-standard-4"  # 4 vCPU, 16GB RAM
+MACHINE_TYPE="n2-standard-8"  # 8 vCPU, 32GB RAM
 BOOT_DISK_SIZE="100GB"
 BUCKET_NAME="cloud-ai-server-cubic-artifacts"
 IMAGE_FAMILY="ubuntu-2204-lts"  # Ubuntu 22.04 LTS (stable, well-supported)
