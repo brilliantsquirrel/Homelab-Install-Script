@@ -185,6 +185,12 @@ log "Installing Docker..."
 curl -fsSL https://get.docker.com | sh
 usermod -aG docker ubuntu
 
+# Install Google Cloud Ops Agent
+log "Installing Google Cloud Ops Agent..."
+curl -sSO https://dl.google.com/cloudagents/add-google-cloud-ops-agent-repo.sh
+bash add-google-cloud-ops-agent-repo.sh --also-install
+rm -f add-google-cloud-ops-agent-repo.sh
+
 # Install Cubic
 log "Installing Cubic..."
 apt-add-repository -y ppa:cubic-wizard/release
