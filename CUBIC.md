@@ -2,6 +2,31 @@
 
 This guide explains how to create a custom Ubuntu ISO with all homelab dependencies pre-installed using [Cubic](https://github.com/PJ-Singh-001/Cubic) (Custom Ubuntu ISO Creator).
 
+## Quick Start
+
+**Complete workflow from start to finish:**
+
+```bash
+# 1. Install prerequisites
+sudo apt update && sudo apt install -y git
+sudo apt-add-repository ppa:cubic-wizard/release && sudo apt update
+sudo apt install --no-install-recommends cubic
+curl -fsSL https://get.docker.com | sh && sudo usermod -aG docker $USER
+
+# 2. Clone repository and download dependencies (log out/in first for Docker group)
+cd ~
+git clone https://github.com/brilliantsquirrel/Homelab-Install-Script.git
+cd Homelab-Install-Script
+git checkout main
+./cubic-prepare.sh  # Downloads 70-110GB, takes several hours
+
+# 3. Launch Cubic and follow GUI wizard
+cubic
+
+# 4. In Cubic chroot terminal, copy files and customize
+# See detailed steps below
+```
+
 ## Overview
 
 By integrating homelab dependencies into a custom ISO, you can:
@@ -16,6 +41,10 @@ By integrating homelab dependencies into a custom ISO, you can:
 ### On Your Build Machine (with Internet)
 
 ```bash
+# Install Git
+sudo apt update
+sudo apt install -y git
+
 # Install Cubic
 sudo apt-add-repository universe
 sudo apt-add-repository ppa:cubic-wizard/release
@@ -39,12 +68,20 @@ sudo usermod -aG docker $USER
 
 - **Target server**: 100 GB minimum for root partition
 
-## Step 1: Prepare Dependencies
+## Step 1: Clone Repository and Prepare Dependencies
 
-Run the preparation script to download all dependencies:
+First, clone the homelab repository and download all dependencies:
 
 ```bash
-cd ~/Homelab-Install-Script
+# Clone the repository
+cd ~
+git clone https://github.com/brilliantsquirrel/Homelab-Install-Script.git
+cd Homelab-Install-Script
+
+# Checkout the latest version
+git checkout main
+# Or checkout a specific branch if needed:
+# git checkout claude/homelab-ai-server-setup-011CUtxQCR38wt4JF7UqHJVZ
 
 # Download all Docker images and Ollama models
 ./cubic-prepare.sh
@@ -85,11 +122,16 @@ Cubic will open a terminal inside the ISO's chroot environment. Run these comman
 mkdir -p /opt/homelab
 mkdir -p /opt/homelab-offline
 
-# Copy homelab installation scripts
-# (From Cubic, use the file manager to copy from your host)
-# Or mount the host filesystem:
-cp -r /path/to/Homelab-Install-Script/* /opt/homelab/
-cp -r /path/to/cubic-artifacts/* /opt/homelab-offline/
+# Note: In Cubic's chroot environment, you need to access files from your host system
+# Cubic automatically mounts your home directory, so you can access it
+
+# Copy homelab installation scripts from your home directory
+# Replace 'youruser' with your actual username
+cp -r /home/youruser/Homelab-Install-Script/* /opt/homelab/
+cp -r /home/youruser/Homelab-Install-Script/cubic-artifacts/* /opt/homelab-offline/
+
+# Alternative: Use Cubic's file manager to copy files graphically
+# Right-click in Cubic -> Open File Manager -> Navigate to ~/Homelab-Install-Script
 
 # Set permissions
 chmod +x /opt/homelab/*.sh
