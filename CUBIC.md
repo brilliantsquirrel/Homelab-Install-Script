@@ -46,12 +46,16 @@ cubic
 # 6. Copy homelab files to ISO
 mkdir -p /opt/homelab /opt/homelab-offline
 
-# Verify artifacts exist
-ls /root/Homelab-Install-Script/cubic-artifacts/
+# Verify artifacts exist (cubic-artifacts is at root level, separate from Homelab-Install-Script)
+ls ~/cubic-artifacts/
 
-# Copy files
+# Copy homelab scripts
 cp -r /root/Homelab-Install-Script/* /opt/homelab/
-cp -r /root/Homelab-Install-Script/cubic-artifacts/* /opt/homelab-offline/
+
+# Copy pre-downloaded artifacts (from separate directory at root level)
+cp -r ~/cubic-artifacts/* /opt/homelab-offline/
+
+# Set permissions
 chmod +x /opt/homelab/*.sh /opt/homelab-offline/scripts/*.sh
 
 # 7. Pre-install Docker (see Step 3.2 below for full commands)
@@ -175,22 +179,30 @@ mkdir -p /opt/homelab
 mkdir -p /opt/homelab-offline
 
 # In Cubic chroot, you can access your build machine's home directory
-# Cubic mounts it automatically (usually at /root or your username)
+# Cubic mounts it automatically at /root/
 
-# First, verify the artifacts exist on your build machine:
-ls /root/Homelab-Install-Script/cubic-artifacts/
+# IMPORTANT: cubic-artifacts is a separate directory at root level,
+# NOT inside Homelab-Install-Script/
 
-# If that doesn't work, try:
-# ls ~/Homelab-Install-Script/cubic-artifacts/
+# First, verify the directories exist:
+ls ~/
+# You should see two separate directories:
+#   Homelab-Install-Script/
+#   cubic-artifacts/
+
+# Verify artifacts exist:
+ls ~/cubic-artifacts/docker-images/
+ls ~/cubic-artifacts/ollama-models/
 
 # Copy homelab installation scripts
-# Adjust path based on where you see the files above
 cp -r /root/Homelab-Install-Script/* /opt/homelab/
-cp -r /root/Homelab-Install-Script/cubic-artifacts/* /opt/homelab-offline/
+
+# Copy pre-downloaded artifacts (from separate directory at root level)
+cp -r ~/cubic-artifacts/* /opt/homelab-offline/
 
 # Alternative: Use Cubic's file manager to copy files graphically
-# Right-click in Cubic -> Open File Manager -> Navigate to build machine's home
-# Look for Homelab-Install-Script directory
+# Right-click in Cubic -> Open File Manager -> Navigate to /root
+# You'll see both Homelab-Install-Script and cubic-artifacts directories
 
 # Set permissions
 chmod +x /opt/homelab/*.sh
@@ -467,9 +479,11 @@ cd ~/Homelab-Install-Script
 
 ### cubic-artifacts Directory Not Found in Chroot
 
-**Problem**: Can't find `~/Homelab-Install-Script/cubic-artifacts/` in Cubic chroot
+**Problem**: Can't find cubic-artifacts in Cubic chroot
 
-**Cause**: The artifacts weren't downloaded yet, or you're looking in the wrong path
+**Cause**: The artifacts weren't downloaded yet, OR you're looking in the wrong path
+
+**IMPORTANT**: In Cubic chroot, `cubic-artifacts/` is a separate directory at `/root/cubic-artifacts/`, NOT inside the Homelab-Install-Script directory!
 
 **Solution**:
 1. Verify artifacts exist on build machine (exit Cubic first):
@@ -477,13 +491,18 @@ cd ~/Homelab-Install-Script
    ls ~/Homelab-Install-Script/cubic-artifacts/
    ```
 2. If missing, run `./cubic-prepare.sh` on build machine
-3. In Cubic chroot, try different paths:
+3. In Cubic chroot, the directory structure is different:
    ```bash
-   ls /root/Homelab-Install-Script/cubic-artifacts/
+   # List root home directory - you'll see TWO separate directories:
+   ls ~/
+   # Output: Homelab-Install-Script  cubic-artifacts
+
+   # Access cubic-artifacts directly:
+   ls ~/cubic-artifacts/
    # Or
-   ls ~/Homelab-Install-Script/cubic-artifacts/
+   ls /root/cubic-artifacts/
    ```
-4. Use Cubic's file manager to locate files graphically
+4. Use Cubic's file manager to locate files graphically (navigate to /root, you'll see both directories)
 
 ### ISO Too Large for DVD
 
