@@ -185,12 +185,6 @@ log "Installing Docker..."
 curl -fsSL https://get.docker.com | sh
 usermod -aG docker ubuntu
 
-# Install Google Cloud Ops Agent
-log "Installing Google Cloud Ops Agent..."
-curl -sSO https://dl.google.com/cloudagents/add-google-cloud-ops-agent-repo.sh
-bash add-google-cloud-ops-agent-repo.sh --also-install
-rm -f add-google-cloud-ops-agent-repo.sh
-
 # Install Cubic
 log "Installing Cubic..."
 apt-add-repository -y ppa:cubic-wizard/release
@@ -434,6 +428,107 @@ cmd_bucket() {
     gsutil ls -lh "gs://\${BUCKET_NAME}/" || log "(empty)"
 }
 
+cmd_setup_scripts() {
+    header "Setup Mount Scripts"
+    log "Creating mount-bucket.sh on VM..."
+
+    gcloud compute ssh "\$VM_NAME" \\
+        --project="\$PROJECT_ID" \\
+        --zone="\$ZONE" \\
+        --command="cat > ~/mount-bucket.sh << 'SCRIPT_EOF'
+#!/bin/bash
+
+# Mount Google Cloud Storage Bucket
+# This script mounts the cloud storage bucket to ~/cubic-artifacts
+
+set -e
+
+GREEN='\\033[0;32m'
+RED='\\033[0;31m'
+YELLOW='\\033[1;33m'
+NC='\\033[0m'
+
+log() { echo -e \"\\\${GREEN}[INFO]\\\${NC} \\\$1\"; }
+error() { echo -e \"\\\${RED}[ERROR]\\\${NC} \\\$1\"; }
+success() { echo -e \"\\\${GREEN}[SUCCESS]\\\${NC} \\\$1\"; }
+
+# Get bucket name from instance metadata
+BUCKET_NAME=\\\$(curl -s \"http://metadata.google.internal/computeMetadata/v1/instance/attributes/bucket-name\" -H \"Metadata-Flavor: Google\")
+
+if [ -z \"\\\$BUCKET_NAME\" ]; then
+    error \"Could not retrieve bucket name from metadata\"
+    exit 1
+fi
+
+MOUNT_POINT=\"\\\$HOME/cubic-artifacts\"
+
+log \"Mounting bucket: gs://\\\${BUCKET_NAME}\"
+log \"Mount point: \\\$MOUNT_POINT\"
+
+# Create mount point
+mkdir -p \"\\\$MOUNT_POINT\"
+
+# Check if already mounted
+if mountpoint -q \"\\\$MOUNT_POINT\"; then
+    log \"Bucket already mounted at \\\$MOUNT_POINT\"
+    exit 0
+fi
+
+# Mount the bucket
+log \"Mounting bucket with gcsfuse...\"
+gcsfuse --implicit-dirs \"\\\$BUCKET_NAME\" \"\\\$MOUNT_POINT\"
+
+success \"✓ Bucket mounted successfully\"
+log \"Access your files at: \\\$MOUNT_POINT\"
+
+# Verify mount
+if [ -d \"\\\$MOUNT_POINT\" ]; then
+    log \"Contents:\"
+    ls -lh \"\\\$MOUNT_POINT\" 2>/dev/null || log \"(empty)\"
+fi
+SCRIPT_EOF
+chmod +x ~/mount-bucket.sh"
+
+    success "✓ Created mount-bucket.sh on VM"
+
+    log "Creating unmount-bucket.sh on VM..."
+
+    gcloud compute ssh "\$VM_NAME" \\
+        --project="\$PROJECT_ID" \\
+        --zone="\$ZONE" \\
+        --command="cat > ~/unmount-bucket.sh << 'SCRIPT_EOF'
+#!/bin/bash
+
+# Unmount Google Cloud Storage Bucket
+
+set -e
+
+GREEN='\\033[0;32m'
+RED='\\033[0;31m'
+NC='\\033[0m'
+
+log() { echo -e \"\\\${GREEN}[INFO]\\\${NC} \\\$1\"; }
+error() { echo -e \"\\\${RED}[ERROR]\\\${NC} \\\$1\"; }
+success() { echo -e \"\\\${GREEN}[SUCCESS]\\\${NC} \\\$1\"; }
+
+MOUNT_POINT=\"\\\$HOME/cubic-artifacts\"
+
+if ! mountpoint -q \"\\\$MOUNT_POINT\"; then
+    log \"Bucket not mounted at \\\$MOUNT_POINT\"
+    exit 0
+fi
+
+log \"Unmounting: \\\$MOUNT_POINT\"
+fusermount -u \"\\\$MOUNT_POINT\"
+
+success \"✓ Bucket unmounted\"
+SCRIPT_EOF
+chmod +x ~/unmount-bucket.sh"
+
+    success "✓ Created unmount-bucket.sh on VM"
+    log "You can now run: ssh to VM and execute ~/mount-bucket.sh"
+}
+
 cmd_delete() {
     header "Delete VM"
     log "WARNING: This will delete the VM instance"
@@ -460,27 +555,29 @@ cmd_info() {
     echo "Bucket:      gs://\${BUCKET_NAME}"
     echo ""
     log "Useful commands:"
-    echo "  \$0 status    - Show VM status"
-    echo "  \$0 start     - Start the VM"
-    echo "  \$0 stop      - Stop the VM"
-    echo "  \$0 ssh       - SSH into VM"
-    echo "  \$0 bucket    - Show bucket contents"
-    echo "  \$0 upload    - Upload files to bucket"
-    echo "  \$0 download  - Download files from bucket"
+    echo "  \$0 status        - Show VM status"
+    echo "  \$0 start         - Start the VM"
+    echo "  \$0 stop          - Stop the VM"
+    echo "  \$0 ssh           - SSH into VM"
+    echo "  \$0 setup-scripts - Create mount scripts on VM"
+    echo "  \$0 bucket        - Show bucket contents"
+    echo "  \$0 upload        - Upload files to bucket"
+    echo "  \$0 download      - Download files from bucket"
     echo "  \$0 delete    - Delete the VM"
 }
 
 # Command dispatcher
 case "\${1:-info}" in
-    status)   cmd_status ;;
-    start)    cmd_start ;;
-    stop)     cmd_stop ;;
-    ssh)      cmd_ssh ;;
-    upload)   cmd_upload "\$2" ;;
-    download) cmd_download "\$2" ;;
-    bucket)   cmd_bucket ;;
-    delete)   cmd_delete ;;
-    info)     cmd_info ;;
+    status)        cmd_status ;;
+    start)         cmd_start ;;
+    stop)          cmd_stop ;;
+    ssh)           cmd_ssh ;;
+    setup-scripts) cmd_setup_scripts ;;
+    upload)        cmd_upload "\$2" ;;
+    download)      cmd_download "\$2" ;;
+    bucket)        cmd_bucket ;;
+    delete)        cmd_delete ;;
+    info)          cmd_info ;;
     *)
         error "Unknown command: \$1"
         cmd_info
@@ -502,29 +599,78 @@ log "The startup script is installing Docker, Cubic, and desktop environment"
 echo ""
 
 log "Waiting for SSH to be ready..."
-gcloud compute ssh "$VM_NAME" \
-    --project="$PROJECT_ID" \
-    --zone="$ZONE" \
-    --command="echo 'SSH connection successful'" \
-    || warning "SSH connection failed, VM may still be starting up"
+for i in {1..10}; do
+    if gcloud compute ssh "$VM_NAME" \
+        --project="$PROJECT_ID" \
+        --zone="$ZONE" \
+        --command="echo 'SSH connection successful'" 2>/dev/null; then
+        success "✓ SSH is ready"
+        break
+    else
+        if [ $i -eq 10 ]; then
+            warning "SSH not ready after 10 attempts, continuing anyway..."
+        else
+            log "Attempt $i/10: SSH not ready, waiting 10 seconds..."
+            sleep 10
+        fi
+    fi
+done
 
-# Copy helper scripts to VM
+# Copy helper scripts to VM with retries
 log "Copying helper scripts to VM..."
-gcloud compute scp /tmp/mount-bucket.sh "${VM_NAME}:~/" \
-    --project="$PROJECT_ID" \
-    --zone="$ZONE" \
-    || warning "Failed to copy mount-bucket.sh"
 
-gcloud compute scp /tmp/unmount-bucket.sh "${VM_NAME}:~/" \
-    --project="$PROJECT_ID" \
-    --zone="$ZONE" \
-    || warning "Failed to copy unmount-bucket.sh"
+# Copy mount-bucket.sh
+for i in {1..3}; do
+    if gcloud compute scp /tmp/mount-bucket.sh "${VM_NAME}:~/" \
+        --project="$PROJECT_ID" \
+        --zone="$ZONE" 2>/dev/null; then
+        success "✓ Copied mount-bucket.sh"
+        break
+    else
+        if [ $i -eq 3 ]; then
+            warning "Failed to copy mount-bucket.sh after 3 attempts"
+        else
+            log "Retry $i/3: Failed to copy mount-bucket.sh, waiting..."
+            sleep 5
+        fi
+    fi
+done
 
+# Copy unmount-bucket.sh
+for i in {1..3}; do
+    if gcloud compute scp /tmp/unmount-bucket.sh "${VM_NAME}:~/" \
+        --project="$PROJECT_ID" \
+        --zone="$ZONE" 2>/dev/null; then
+        success "✓ Copied unmount-bucket.sh"
+        break
+    else
+        if [ $i -eq 3 ]; then
+            warning "Failed to copy unmount-bucket.sh after 3 attempts"
+        else
+            log "Retry $i/3: Failed to copy unmount-bucket.sh, waiting..."
+            sleep 5
+        fi
+    fi
+done
+
+# Set permissions
+log "Setting script permissions..."
 gcloud compute ssh "$VM_NAME" \
     --project="$PROJECT_ID" \
     --zone="$ZONE" \
-    --command="chmod +x ~/mount-bucket.sh ~/unmount-bucket.sh" \
-    || warning "Failed to set permissions"
+    --command="chmod +x ~/mount-bucket.sh ~/unmount-bucket.sh 2>/dev/null || echo 'Scripts may not exist yet'"
+
+# Verify scripts were copied
+log "Verifying scripts..."
+if gcloud compute ssh "$VM_NAME" \
+    --project="$PROJECT_ID" \
+    --zone="$ZONE" \
+    --command="test -f ~/mount-bucket.sh && test -f ~/unmount-bucket.sh && echo 'Scripts verified'" 2>/dev/null | grep -q "Scripts verified"; then
+    success "✓ Helper scripts successfully installed"
+else
+    warning "Scripts may not have been copied successfully"
+    log "You can manually create them later using the management script"
+fi
 
 # Summary
 header "Setup Complete!"

@@ -274,52 +274,6 @@ fi
 success "✓ Docker is available"
 
 # ========================================
-# Step 0.5: Install Google Cloud Ops Agent
-# ========================================
-
-header "Step 0.5: Installing Google Cloud Ops Agent"
-
-install_ops_agent() {
-    # Check if ops agent is already installed
-    if systemctl is-active --quiet google-cloud-ops-agent; then
-        log "Google Cloud Ops Agent is already installed and running"
-        return 0
-    fi
-
-    log "Installing Google Cloud Ops Agent for metrics and logging..."
-
-    # Download and run the installation script
-    if curl -sSO https://dl.google.com/cloudagents/add-google-cloud-ops-agent-repo.sh; then
-        sudo bash add-google-cloud-ops-agent-repo.sh --also-install || {
-            warning "Failed to install Google Cloud Ops Agent"
-            rm -f add-google-cloud-ops-agent-repo.sh
-            return 1
-        }
-        rm -f add-google-cloud-ops-agent-repo.sh
-
-        # Start and enable the service
-        sudo systemctl enable google-cloud-ops-agent
-        sudo systemctl start google-cloud-ops-agent
-
-        success "✓ Google Cloud Ops Agent installed and started"
-        return 0
-    else
-        warning "Failed to download Google Cloud Ops Agent installation script"
-        return 1
-    fi
-}
-
-# Ask user for confirmation
-read -p "Install Google Cloud Ops Agent for metrics and logging? (y/N): " -n 1 -r
-echo
-if [[ $REPLY =~ ^[Yy]$ ]]; then
-    install_ops_agent || warning "Continuing without Ops Agent"
-else
-    warning "Skipping Google Cloud Ops Agent installation"
-fi
-echo ""
-
-# ========================================
 # Step 1: Pull and Save Docker Images
 # ========================================
 
