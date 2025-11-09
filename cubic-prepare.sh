@@ -92,7 +92,7 @@ success "✓ Copied homelab scripts to: $HOMELAB_DIR"
 
 header "Step 0: Downloading Ubuntu Server 24.04 LTS ISO"
 
-UBUNTU_VERSION="24.04.1"
+UBUNTU_VERSION="24.04.3"
 UBUNTU_ISO_URL="https://releases.ubuntu.com/24.04/ubuntu-${UBUNTU_VERSION}-live-server-amd64.iso"
 UBUNTU_ISO_FILE="$CUBIC_DIR/ubuntu-${UBUNTU_VERSION}-live-server-amd64.iso"
 
@@ -452,7 +452,7 @@ When launching Cubic, select THIS directory as your project directory.
 
 ```
 cubic-artifacts/              # <- Point Cubic here!
-├── ubuntu-24.04.1-live-server-amd64.iso  # Ubuntu Server ISO
+├── ubuntu-24.04.3-live-server-amd64.iso  # Ubuntu Server ISO
 ├── homelab/                  # All homelab installation scripts
 │   ├── post-install.sh
 │   ├── docker-compose.yml
@@ -478,7 +478,7 @@ cubic
 
 # In Cubic GUI:
 # - Project Directory: /path/to/Homelab-Install-Script/cubic-artifacts
-# - Original ISO: Select ubuntu-24.04.1-live-server-amd64.iso (in this directory)
+# - Original ISO: Select ubuntu-24.04.3-live-server-amd64.iso (in this directory)
 # - Click Next
 ```
 
