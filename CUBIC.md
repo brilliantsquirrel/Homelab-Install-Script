@@ -6,6 +6,8 @@ This guide explains how to create a custom Ubuntu ISO with all homelab dependenc
 
 **Complete workflow from start to finish:**
 
+### On Your Build Machine (Terminal)
+
 ```bash
 # 1. Install prerequisites
 sudo apt update && sudo apt install -y git
@@ -13,18 +15,51 @@ sudo apt-add-repository ppa:cubic-wizard/release && sudo apt update
 sudo apt install --no-install-recommends cubic
 curl -fsSL https://get.docker.com | sh && sudo usermod -aG docker $USER
 
-# 2. Clone repository and download dependencies (log out/in first for Docker group)
+# IMPORTANT: Log out and log back in for Docker group to take effect
+
+# 2. Clone repository
 cd ~
 git clone https://github.com/brilliantsquirrel/Homelab-Install-Script.git
 cd Homelab-Install-Script
 git checkout main
-./cubic-prepare.sh  # Downloads 70-110GB, takes several hours
 
-# 3. Launch Cubic and follow GUI wizard
+# 3. Download all dependencies (70-110GB, takes several hours)
+./cubic-prepare.sh
+
+# 4. Verify downloads completed
+ls -lh cubic-artifacts/
+```
+
+### Launch Cubic (GUI)
+
+```bash
+# 5. Launch Cubic and follow GUI wizard
 cubic
+# - Select project directory: ~/cubic-homelab
+# - Select Ubuntu Server 24.04 LTS ISO
+# - Click Next through extraction
+```
 
-# 4. In Cubic chroot terminal, copy files and customize
-# See detailed steps below
+### In Cubic Chroot Terminal (root@cubic)
+
+```bash
+# 6. Copy homelab files to ISO
+mkdir -p /opt/homelab /opt/homelab-offline
+
+# Verify artifacts exist
+ls /root/Homelab-Install-Script/cubic-artifacts/
+
+# Copy files
+cp -r /root/Homelab-Install-Script/* /opt/homelab/
+cp -r /root/Homelab-Install-Script/cubic-artifacts/* /opt/homelab-offline/
+chmod +x /opt/homelab/*.sh /opt/homelab-offline/scripts/*.sh
+
+# 7. Pre-install Docker (see Step 3.2 below for full commands)
+# 8. Optionally pre-install NVIDIA drivers (see Step 3.3)
+# 9. Create systemd services and desktop shortcuts (see Step 3.4-3.5)
+# 10. Clean up and exit Cubic chroot
+
+# See detailed steps below for complete customization
 ```
 
 ## Overview
