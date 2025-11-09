@@ -126,7 +126,7 @@ else
             success "✓ Pulled: $image"
 
             # Save image to tar file
-            local filename=$(echo "$image" | sed 's/[\/:]/_/g')
+            filename=$(echo "$image" | sed 's/[\/:]/_/g')
             log "Saving to: $DOCKER_DIR/${filename}.tar"
 
             if sudo docker save "$image" | gzip > "$DOCKER_DIR/${filename}.tar.gz"; then
@@ -211,7 +211,7 @@ else
         sh -c "cd /models && tar czf /backup/ollama-models.tar.gz ."
 
     if [ -f "$MODELS_DIR/ollama-models.tar.gz" ]; then
-        local size=$(du -h "$MODELS_DIR/ollama-models.tar.gz" | cut -f1)
+        size=$(du -h "$MODELS_DIR/ollama-models.tar.gz" | cut -f1)
         success "✓ Exported models: ollama-models.tar.gz ($size)"
     else
         error "Failed to export models"
