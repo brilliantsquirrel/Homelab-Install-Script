@@ -382,6 +382,13 @@ install_docker_containers() {
 
     log "Starting Docker containers..."
 
+    # Check if running in offline mode
+    if [ "${OFFLINE_MODE:-false}" = "true" ]; then
+        log "OFFLINE_MODE detected - using pre-loaded Docker images"
+    else
+        log "Online mode - Docker will pull images as needed"
+    fi
+
     # Disable systemd-resolved stub listener before starting Pi-Hole
     disable_systemd_resolved_stub
 
@@ -433,6 +440,13 @@ install_docker_containers() {
 # Pull Ollama LLM models into the Ollama container
 pull_ollama_models() {
     log "Preparing to pull Ollama models..."
+
+    # Check if running in offline mode
+    if [ "${OFFLINE_MODE:-false}" = "true" ]; then
+        log "OFFLINE_MODE detected - skipping model download"
+        log "Models should be loaded using: /opt/homelab-offline/scripts/load-ollama-models.sh"
+        return 0
+    fi
 
     # Check if Ollama container is running
     if ! sudo docker ps | grep -q ollama; then
