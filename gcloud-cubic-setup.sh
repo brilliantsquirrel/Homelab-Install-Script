@@ -45,8 +45,11 @@ ZONE="us-central1-a"
 MACHINE_TYPE="n2-standard-8"  # 8 vCPU, 32GB RAM
 BOOT_DISK_SIZE="100GB"
 BUCKET_NAME=""
-IMAGE_FAMILY="ubuntu-2404-lts"
+IMAGE_FAMILY="ubuntu-2204-lts"  # Ubuntu 22.04 LTS (stable, well-supported)
 IMAGE_PROJECT="ubuntu-os-cloud"
+# Alternative options:
+# IMAGE_FAMILY="ubuntu-2404-lts-amd64"  # Ubuntu 24.04 (if available)
+# IMAGE_FAMILY="ubuntu-minimal-2204-lts-amd64"  # Minimal install
 
 header "Google Cloud VM Setup for Cubic"
 
