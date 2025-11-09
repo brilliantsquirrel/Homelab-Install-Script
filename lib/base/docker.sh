@@ -62,11 +62,109 @@ install_docker() {
 
 # Install NVIDIA Docker container toolkit for GPU support
 install_nvidia_gpu_support() {
-    # Check if NVIDIA GPU is present
-    if ! command -v nvidia-smi &> /dev/null; then
-        log "No NVIDIA GPU detected or drivers not installed, skipping NVIDIA container toolkit"
+    log "Checking for NVIDIA GPU..."
+
+    # Check if NVIDIA GPU hardware is present
+    local has_nvidia_gpu=false
+
+    # Method 1: Check PCI devices
+    if command -v lspci &> /dev/null; then
+        if lspci | grep -i nvidia &> /dev/null; then
+            has_nvidia_gpu=true
+            log "NVIDIA GPU detected via lspci"
+        fi
+    fi
+
+    # Method 2: Check for NVIDIA vendor ID in sysfs
+    if [ "$has_nvidia_gpu" = false ]; then
+        if grep -r "0x10de" /sys/class/drm/card*/device/vendor 2>/dev/null | grep -q "0x10de"; then
+            has_nvidia_gpu=true
+            log "NVIDIA GPU detected via sysfs"
+        fi
+    fi
+
+    # Method 3: Check if nvidia-smi works (drivers already installed)
+    if [ "$has_nvidia_gpu" = false ]; then
+        if command -v nvidia-smi &> /dev/null && nvidia-smi &> /dev/null; then
+            has_nvidia_gpu=true
+            log "NVIDIA GPU detected via nvidia-smi"
+        fi
+    fi
+
+    if [ "$has_nvidia_gpu" = false ]; then
+        log "No NVIDIA GPU detected, skipping NVIDIA support"
         return 0
     fi
+
+    success "✓ NVIDIA GPU hardware detected"
+
+    # Check if NVIDIA drivers are installed
+    if ! command -v nvidia-smi &> /dev/null; then
+        warning "NVIDIA GPU found but drivers not installed"
+        log "Installing NVIDIA drivers..."
+
+        # Install pciutils if not present (for GPU detection)
+        if ! command -v lspci &> /dev/null; then
+            sudo apt-get install -y pciutils || true
+        fi
+
+        # Detect recommended driver version
+        log "Detecting recommended NVIDIA driver..."
+        sudo apt-get update || return 1
+
+        # Install ubuntu-drivers-common to detect recommended driver
+        sudo apt-get install -y ubuntu-drivers-common || {
+            warning "Could not install ubuntu-drivers-common, trying manual driver installation"
+        }
+
+        # Get recommended driver
+        local recommended_driver=""
+        if command -v ubuntu-drivers &> /dev/null; then
+            recommended_driver=$(ubuntu-drivers devices 2>/dev/null | grep recommended | awk '{print $3}' | head -1)
+        fi
+
+        if [ -n "$recommended_driver" ]; then
+            log "Installing recommended driver: $recommended_driver"
+            sudo apt-get install -y "$recommended_driver" || {
+                error "Failed to install $recommended_driver"
+                return 1
+            }
+        else
+            # Fallback to latest driver metapackage
+            log "Installing nvidia-driver-535 (fallback)"
+            sudo apt-get install -y nvidia-driver-535 || {
+                error "Failed to install NVIDIA driver"
+                warning "You may need to install drivers manually:"
+                warning "  sudo ubuntu-drivers autoinstall"
+                return 1
+            }
+        fi
+
+        success "✓ NVIDIA drivers installed"
+        warning "⚠️  REBOOT REQUIRED for NVIDIA drivers to take effect"
+        warning "After reboot, re-run this script to complete GPU setup"
+
+        # Track for rollback
+        track_package "$recommended_driver"
+
+        return 0
+    fi
+
+    # Verify nvidia-smi works
+    if ! nvidia-smi &> /dev/null; then
+        error "nvidia-smi command exists but failed to run"
+        error "This usually means:"
+        error "  1. NVIDIA drivers were just installed and system needs reboot"
+        error "  2. Driver/kernel version mismatch"
+        warning "Try rebooting the system and re-running this script"
+        return 1
+    fi
+
+    # Display GPU information
+    log "NVIDIA GPU Information:"
+    nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv,noheader 2>/dev/null | while read line; do
+        log "  $line"
+    done
 
     # Check if nvidia-docker is already installed
     if command -v nvidia-docker &> /dev/null; then
@@ -234,11 +332,58 @@ configure_pihole_dns() {
 # Docker Containers
 # ========================================
 
+# Disable systemd-resolved DNS stub listener for Pi-Hole
+disable_systemd_resolved_stub() {
+    log "Checking if port 53 is available for Pi-Hole..."
+
+    # Check if port 53 is in use
+    if sudo lsof -i :53 >/dev/null 2>&1; then
+        local process=$(sudo lsof -i :53 | tail -n +2 | awk '{print $1}' | head -1)
+
+        if [[ "$process" == "systemd-r"* ]]; then
+            warning "systemd-resolved is using port 53, which Pi-Hole needs"
+            log "Disabling systemd-resolved DNS stub listener..."
+
+            # Backup resolved.conf
+            if [ ! -f /etc/systemd/resolved.conf.backup ]; then
+                sudo cp /etc/systemd/resolved.conf /etc/systemd/resolved.conf.backup
+                log "Backed up /etc/systemd/resolved.conf"
+            fi
+
+            # Disable DNS stub listener
+            sudo sed -i 's/#DNSStubListener=yes/DNSStubListener=no/' /etc/systemd/resolved.conf
+            sudo sed -i 's/DNSStubListener=yes/DNSStubListener=no/' /etc/systemd/resolved.conf
+
+            # Restart systemd-resolved
+            log "Restarting systemd-resolved..."
+            sudo systemctl restart systemd-resolved || true
+
+            # Remove symlink and create regular file for resolv.conf
+            if [ -L /etc/resolv.conf ]; then
+                sudo rm /etc/resolv.conf
+                echo "nameserver 1.1.1.1" | sudo tee /etc/resolv.conf > /dev/null
+                echo "nameserver 8.8.8.8" | sudo tee -a /etc/resolv.conf > /dev/null
+            fi
+
+            success "✓ Disabled systemd-resolved DNS stub listener"
+            log "Port 53 is now available for Pi-Hole"
+        else
+            warning "Port 53 is in use by: $process"
+            warning "Pi-Hole may fail to start. Please manually stop $process"
+        fi
+    else
+        success "✓ Port 53 is available"
+    fi
+}
+
 # Start Docker containers from docker-compose.yml
 install_docker_containers() {
     local compose_file="$(pwd)/docker-compose.yml"
 
     log "Starting Docker containers..."
+
+    # Disable systemd-resolved stub listener before starting Pi-Hole
+    disable_systemd_resolved_stub
 
     # Validate docker-compose.yml exists
     if [ ! -f "$compose_file" ]; then
@@ -304,7 +449,7 @@ pull_ollama_models() {
     fi
 
     log "Pulling Ollama models (this may take a while)..."
-    log "Note: Large models (30B) may take 30+ minutes on first pull"
+    log "Note: Large models (30B) may take 30+ minutes to several hours depending on network speed"
 
     # Get models from configuration
     local models=()
@@ -318,25 +463,16 @@ pull_ollama_models() {
     local successful_models=()
     local failed_models=()
 
-    # Get model pull timeout from configuration
-    local model_timeout="${MODEL_PULL_TIMEOUT:-7200}"
-
-    debug "Using model pull timeout: $model_timeout seconds ($((model_timeout / 60)) minutes)"
-
     for model in "${models[@]}"; do
-        log "Pulling model: $model (timeout: $((model_timeout / 60)) minutes)"
+        log "Pulling model: $model (no timeout - may take a long time for large models)"
 
-        # Use timeout command to prevent hanging
-        if timeout "$model_timeout" sudo docker exec ollama ollama pull "$model"; then
+        # Pull model without timeout to allow large models to download fully
+        if sudo docker exec ollama ollama pull "$model"; then
             success "Successfully pulled: $model"
             successful_models+=("$model")
         else
             local exit_code=$?
-            if [ $exit_code -eq 124 ]; then
-                warning "Model pull timed out: $model (exceeded $((model_timeout / 60)) minutes)"
-            else
-                warning "Failed to pull $model (exit code: $exit_code)"
-            fi
+            warning "Failed to pull $model (exit code: $exit_code)"
             failed_models+=("$model")
         fi
     done

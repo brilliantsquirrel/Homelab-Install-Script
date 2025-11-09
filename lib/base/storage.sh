@@ -101,8 +101,9 @@ configure_storage_tiers() {
     if ! detect_available_drives; then
         warning "No additional drives available"
         warning "All data will be stored on boot drive (not recommended for production)"
-        read -p "Continue with boot drive only? (y/N): " use_boot_only
-        if [[ ! "$use_boot_only" =~ ^[Yy]$ ]]; then
+        read -p "Continue with boot drive only? (y/N): " -n 1 -r use_boot_only
+        echo
+        if [[ ! "$REPLY" =~ ^[Yy]$ ]]; then
             error "Storage configuration cancelled"
             return 1
         fi
@@ -124,8 +125,9 @@ configure_storage_tiers() {
     echo "For each tier, you'll select a drive and partition size."
     echo ""
 
-    read -p "Continue with automatic partitioning? (y/N): " confirm
-    if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+    read -p "Continue with automatic partitioning? (y/N): " -n 1 -r
+    echo
+    if [[ ! "$REPLY" =~ ^[Yy]$ ]]; then
         error "Storage configuration cancelled"
         return 1
     fi
@@ -139,8 +141,9 @@ configure_storage_tiers() {
     # Display configuration summary
     display_storage_summary
 
-    read -p "Proceed with creating partitions? (y/N): " final_confirm
-    if [[ ! "$final_confirm" =~ ^[Yy]$ ]]; then
+    read -p "Proceed with creating partitions? (y/N): " -n 1 -r
+    echo
+    if [[ ! "$REPLY" =~ ^[Yy]$ ]]; then
         error "Partition creation cancelled"
         return 1
     fi
@@ -334,28 +337,21 @@ create_partition() {
     # Calculate end position for parted
     local parted_end
     if [ "$size" = "remaining" ]; then
-        parted_end="-1s"  # Use -1s to mean "end of disk"
+        parted_end="100%"  # Use 100% to mean "end of disk"
         log "Using all remaining space on /dev/$drive"
+    elif [[ "$start_pos" =~ s$ ]]; then
+        # Start is in sectors (e.g., "195311616s")
+        local start_sector=$(echo "$start_pos" | sed 's/s$//')
+        # Convert GB to sectors (assuming 512 byte sectors: 1GB = 2097152 sectors)
+        local size_sectors=$((size * 2097152))
+        parted_end="$((start_sector + size_sectors))s"
+    elif [ "$start_pos" = "0%" ]; then
+        # First partition starting at beginning of disk
+        parted_end="${size}GB"
     else
-        # Calculate end position by adding size to start
-        # If start is in sectors, calculate end in sectors
-        if [[ "$start_pos" =~ s$ ]]; then
-            # Start is in sectors (e.g., "195311616s")
-            local start_sector=$(echo "$start_pos" | sed 's/s$//')
-            # Convert GB to sectors (assuming 512 byte sectors: 1GB = 2097152 sectors)
-            local size_sectors=$((size * 2097152))
-            parted_end="$((start_sector + size_sectors))s"
-        else
-            # Start is in percentage or other unit, use GB offset
-            # Get current position in GB and add size
-            local start_gb=$(sudo parted -s /dev/$drive unit GB print free | grep "^  *[0-9]" | tail -1 | awk '{print $2}' | sed 's/GB$//' | cut -d'.' -f1)
-            if [ -z "$start_gb" ] || [ "$start_gb" = "0" ]; then
-                # First partition, start at 0
-                parted_end="${size}GB"
-            else
-                parted_end="$((start_gb + size))GB"
-            fi
-        fi
+        # Start position is in another unit (e.g., "MiB", "GB")
+        # This shouldn't happen with current logic, but handle it
+        parted_end="${size}GB"
     fi
 
     # Create partition using parted
@@ -456,7 +452,10 @@ get_partition_start_position() {
             echo "1MiB"
         else
             # Start next partition at next sector after last partition
-            echo "$((end_sector + 1))s"
+            # Align to 2048-sector boundary (1MiB for 512-byte sectors) for optimal performance
+            local next_sector=$((end_sector + 1))
+            local aligned_sector=$(( (next_sector + 2047) / 2048 * 2048 ))
+            echo "${aligned_sector}s"
         fi
     fi
 }

@@ -251,7 +251,7 @@ echo -e "${YELLOW}This installation will take 30-60 minutes depending on your sy
 echo -e "${YELLOW}Ollama model pulling may take 1-2 hours additional.${NC}"
 echo ""
 
-read -p "Do you want to continue with installation? (type 'y' to proceed): " -n 1 -r
+read -p "Do you want to continue with installation? (y/N): " -n 1 -r
 echo
 
 if [[ ! $REPLY =~ ^[Yy]$ ]]; then
