@@ -70,9 +70,16 @@ sudo usermod -aG docker $USER
 
 ## Step 1: Clone Repository and Prepare Dependencies
 
+**⚠️ IMPORTANT: Run these commands on your BUILD MACHINE, NOT in Cubic chroot!**
+
 First, clone the homelab repository and download all dependencies:
 
 ```bash
+# ============================================
+# RUN ON YOUR BUILD MACHINE (your laptop/desktop)
+# NOT in Cubic chroot environment!
+# ============================================
+
 # Clone the repository
 cd ~
 git clone https://github.com/brilliantsquirrel/Homelab-Install-Script.git
@@ -84,6 +91,7 @@ git checkout main
 # git checkout claude/homelab-ai-server-setup-011CUtxQCR38wt4JF7UqHJVZ
 
 # Download all Docker images and Ollama models
+# This requires Docker to be running on your BUILD MACHINE
 ./cubic-prepare.sh
 ```
 
@@ -92,7 +100,10 @@ This will create `cubic-artifacts/` directory containing:
 - `ollama-models/` - All Ollama models as compressed archive (~80 GB)
 - `scripts/` - Installation scripts for offline deployment
 
-**Note**: This process can take several hours depending on your internet connection.
+**Note**:
+- This process can take **several hours** depending on your internet connection
+- Verify `cubic-artifacts/` directory exists before proceeding to Step 2
+- You must complete this step BEFORE launching Cubic
 
 ## Step 2: Launch Cubic
 
@@ -113,29 +124,47 @@ In Cubic GUI:
 
 ## Step 3: Customize the ISO (Chroot Terminal)
 
+**⚠️ You are now INSIDE the Cubic chroot environment (you are 'root' here)**
+
 Cubic will open a terminal inside the ISO's chroot environment. Run these commands:
 
 ### 3.1: Copy Homelab Files
 
 ```bash
+# ============================================
+# RUN THESE COMMANDS IN CUBIC CHROOT (you are root@cubic)
+# ============================================
+
 # Create directories
 mkdir -p /opt/homelab
 mkdir -p /opt/homelab-offline
 
-# Note: In Cubic's chroot environment, you need to access files from your host system
-# Cubic automatically mounts your home directory, so you can access it
+# In Cubic chroot, you can access your build machine's home directory
+# Cubic mounts it automatically (usually at /root or your username)
 
-# Copy homelab installation scripts from your home directory
-# Replace 'youruser' with your actual username
-cp -r /home/youruser/Homelab-Install-Script/* /opt/homelab/
-cp -r /home/youruser/Homelab-Install-Script/cubic-artifacts/* /opt/homelab-offline/
+# First, verify the artifacts exist on your build machine:
+ls /root/Homelab-Install-Script/cubic-artifacts/
+
+# If that doesn't work, try:
+# ls ~/Homelab-Install-Script/cubic-artifacts/
+
+# Copy homelab installation scripts
+# Adjust path based on where you see the files above
+cp -r /root/Homelab-Install-Script/* /opt/homelab/
+cp -r /root/Homelab-Install-Script/cubic-artifacts/* /opt/homelab-offline/
 
 # Alternative: Use Cubic's file manager to copy files graphically
-# Right-click in Cubic -> Open File Manager -> Navigate to ~/Homelab-Install-Script
+# Right-click in Cubic -> Open File Manager -> Navigate to build machine's home
+# Look for Homelab-Install-Script directory
 
 # Set permissions
 chmod +x /opt/homelab/*.sh
 chmod +x /opt/homelab-offline/scripts/*.sh
+
+# Verify files were copied
+ls -lh /opt/homelab/
+ls -lh /opt/homelab-offline/docker-images/
+ls -lh /opt/homelab-offline/ollama-models/
 ```
 
 ### 3.2: Pre-install Docker
@@ -379,6 +408,47 @@ menuentry "Ubuntu AI Homelab - Automated Install" {
 ```
 
 ## Troubleshooting
+
+### Error: "Please run this script as a regular user, not as root"
+
+**Problem**: Getting this error when running `cubic-prepare.sh` inside Cubic chroot
+
+**Cause**: You're trying to run `cubic-prepare.sh` in the wrong place!
+
+**Solution**:
+- `cubic-prepare.sh` must be run on your **BUILD MACHINE** (before launching Cubic)
+- NOT inside the Cubic chroot environment
+- Exit the Cubic chroot and run it on your laptop/desktop
+
+```bash
+# On your BUILD MACHINE (not in Cubic):
+cd ~/Homelab-Install-Script
+./cubic-prepare.sh
+
+# Wait for downloads to complete, then go back to Cubic
+```
+
+**Why**: The chroot environment doesn't have Docker running and you're always root there. The script needs Docker on your build machine to download images.
+
+### cubic-artifacts Directory Not Found in Chroot
+
+**Problem**: Can't find `~/Homelab-Install-Script/cubic-artifacts/` in Cubic chroot
+
+**Cause**: The artifacts weren't downloaded yet, or you're looking in the wrong path
+
+**Solution**:
+1. Verify artifacts exist on build machine (exit Cubic first):
+   ```bash
+   ls ~/Homelab-Install-Script/cubic-artifacts/
+   ```
+2. If missing, run `./cubic-prepare.sh` on build machine
+3. In Cubic chroot, try different paths:
+   ```bash
+   ls /root/Homelab-Install-Script/cubic-artifacts/
+   # Or
+   ls ~/Homelab-Install-Script/cubic-artifacts/
+   ```
+4. Use Cubic's file manager to locate files graphically
 
 ### ISO Too Large for DVD
 
