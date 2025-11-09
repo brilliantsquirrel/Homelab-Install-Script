@@ -371,16 +371,9 @@ else
             if sudo docker save "$image" | gzip > "$local_file"; then
                 success "✓ Saved: ${filename}.tar.gz"
 
-                # Upload to GCS bucket and delete local copy
+                # Upload to GCS bucket for backup/caching
                 if [ "$GCS_ENABLED" = true ]; then
-                    if upload_to_gcs "$local_file" "$gcs_filename"; then
-                        # Delete local file after successful upload to save disk space
-                        log "Removing local copy (now in GCS bucket)..."
-                        rm -f "$local_file"
-                        success "✓ Cleaned up local file to save disk space"
-                    else
-                        warning "Failed to upload to GCS, keeping local copy"
-                    fi
+                    upload_to_gcs "$local_file" "$gcs_filename" || warning "Failed to upload to GCS"
                 fi
             else
                 error "Failed to save: $image"
@@ -421,13 +414,9 @@ else
                 if sudo docker save homelab-install-script-nginx:latest | gzip > "$nginx_local_file"; then
                     success "✓ Saved: ${nginx_filename}.tar.gz"
 
-                    # Upload to GCS bucket and delete local copy
+                    # Upload to GCS bucket for backup/caching
                     if [ "$GCS_ENABLED" = true ]; then
-                        if upload_to_gcs "$nginx_local_file" "$nginx_gcs_filename"; then
-                            log "Removing local copy (now in GCS bucket)..."
-                            rm -f "$nginx_local_file"
-                            success "✓ Cleaned up local file to save disk space"
-                        fi
+                        upload_to_gcs "$nginx_local_file" "$nginx_gcs_filename" || warning "Failed to upload to GCS"
                     fi
                 fi
             else
@@ -438,10 +427,9 @@ else
         fi
     fi
 
+    success "✓ All Docker images saved to: $DOCKER_DIR"
     if [ "$GCS_ENABLED" = true ]; then
-        success "✓ All Docker images processed and uploaded to GCS: $GCS_BUCKET/docker-images/"
-    else
-        success "✓ All Docker images saved to: $DOCKER_DIR"
+        log "Also uploaded to GCS bucket: $GCS_BUCKET/docker-images/"
     fi
 fi
 
@@ -522,15 +510,9 @@ if [ ! -f "$ollama_models_file" ]; then
             size=$(du -h "$ollama_models_file" | cut -f1)
             success "✓ Exported models: ollama-models.tar.gz ($size)"
 
-            # Upload to GCS bucket and delete local copy
+            # Upload to GCS bucket for backup/caching
             if [ "$GCS_ENABLED" = true ]; then
-                if upload_to_gcs "$ollama_models_file" "$ollama_gcs_filename"; then
-                    log "Removing local copy (now in GCS bucket)..."
-                    rm -f "$ollama_models_file"
-                    success "✓ Cleaned up local file to save disk space"
-                else
-                    warning "Failed to upload to GCS, keeping local copy"
-                fi
+                upload_to_gcs "$ollama_models_file" "$ollama_gcs_filename" || warning "Failed to upload to GCS"
             fi
         else
             error "Failed to export models"
