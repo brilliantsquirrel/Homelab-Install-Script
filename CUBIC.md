@@ -10,7 +10,7 @@ This guide explains how to create a custom Ubuntu ISO with all homelab dependenc
 
 ```bash
 # 1. Install prerequisites
-sudo apt update && sudo apt install -y git
+sudo apt update && sudo apt install -y git rsync
 sudo apt-add-repository ppa:cubic-wizard/release && sudo apt update
 sudo apt install --no-install-recommends cubic
 curl -fsSL https://get.docker.com | sh && sudo usermod -aG docker $USER
@@ -23,45 +23,51 @@ git clone https://github.com/brilliantsquirrel/Homelab-Install-Script.git
 cd Homelab-Install-Script
 git checkout main
 
-# 3. Download all dependencies (70-110GB, takes several hours)
+# 3. Download all dependencies and create Cubic project (70-110GB, takes several hours)
 ./cubic-prepare.sh
+
+# This creates cubic-artifacts/ which IS your Cubic project directory!
 
 # 4. Verify downloads completed
 ls -lh cubic-artifacts/
+ls -lh cubic-artifacts/homelab/
+ls -lh cubic-artifacts/docker-images/
 ```
 
 ### Launch Cubic (GUI)
 
 ```bash
-# 5. Launch Cubic and follow GUI wizard
+# 5. Launch Cubic
 cubic
-# - Select project directory: ~/cubic-homelab
+
+# In Cubic GUI:
+# - Project Directory: ~/Homelab-Install-Script/cubic-artifacts  (IMPORTANT!)
 # - Select Ubuntu Server 24.04 LTS ISO
 # - Click Next through extraction
 ```
 
 ### In Cubic Chroot Terminal (root@cubic)
 
+All your files are already accessible! No imports needed!
+
 ```bash
-# 6. Copy homelab files to ISO
+# 6. Verify files are accessible
+ls ~/homelab/           # Should show all homelab scripts
+ls ~/docker-images/     # Should show Docker image .tar.gz files
+ls ~/ollama-models/     # Should show ollama-models.tar.gz
+
+# 7. Copy files to ISO
 mkdir -p /opt/homelab /opt/homelab-offline
 
-# Verify artifacts exist (cubic-artifacts is at root level, separate from Homelab-Install-Script)
-ls ~/cubic-artifacts/
+cp -r ~/homelab/* /opt/homelab/
+cp -r ~/docker-images ~/ollama-models ~/scripts /opt/homelab-offline/
 
-# Copy homelab scripts
-cp -r /root/Homelab-Install-Script/* /opt/homelab/
-
-# Copy pre-downloaded artifacts (from separate directory at root level)
-cp -r ~/cubic-artifacts/* /opt/homelab-offline/
-
-# Set permissions
 chmod +x /opt/homelab/*.sh /opt/homelab-offline/scripts/*.sh
 
-# 7. Pre-install Docker (see Step 3.2 below for full commands)
-# 8. Optionally pre-install NVIDIA drivers (see Step 3.3)
-# 9. Create systemd services and desktop shortcuts (see Step 3.4-3.5)
-# 10. Clean up and exit Cubic chroot
+# 8. Pre-install Docker (see Step 3.2 below for full commands)
+# 9. Optionally pre-install NVIDIA drivers (see Step 3.3)
+# 10. Create systemd services and desktop shortcuts (see Step 3.4-3.5)
+# 11. Clean up and exit Cubic chroot
 
 # See detailed steps below for complete customization
 ```
@@ -135,9 +141,12 @@ git checkout main
 ```
 
 This will create `cubic-artifacts/` directory containing:
+- `homelab/` - Complete copy of all homelab scripts
 - `docker-images/` - All Docker images as compressed tar files (~30 GB)
 - `ollama-models/` - All Ollama models as compressed archive (~80 GB)
 - `scripts/` - Installation scripts for offline deployment
+
+**IMPORTANT**: The `cubic-artifacts/` directory IS your Cubic project directory!
 
 **Note**:
 - This process can take **several hours** depending on your internet connection
@@ -146,20 +155,23 @@ This will create `cubic-artifacts/` directory containing:
 
 ## Step 2: Launch Cubic
 
+**⚠️ IMPORTANT: Point Cubic to the cubic-artifacts/ directory!**
+
 ```bash
-# Create a project directory
-mkdir -p ~/cubic-homelab
-cd ~/cubic-homelab
+# Navigate to homelab repository
+cd ~/Homelab-Install-Script
 
 # Launch Cubic
 cubic
 ```
 
 In Cubic GUI:
-1. **Project Directory**: Select `~/cubic-homelab`
+1. **Project Directory**: Select `~/Homelab-Install-Script/cubic-artifacts` ← **CRITICAL!**
 2. **Original ISO**: Download and select Ubuntu Server 24.04 LTS
 3. **Custom ISO filename**: `ubuntu-24.04-homelab-amd64.iso`
 4. Click **Next** through the extraction process
+
+**Why this matters**: By using `cubic-artifacts/` as the project directory, all your downloaded files are automatically accessible in the Cubic chroot environment. No manual copying needed!
 
 ## Step 3: Customize the ISO (Chroot Terminal)
 
@@ -174,35 +186,30 @@ Cubic will open a terminal inside the ISO's chroot environment. Run these comman
 # RUN THESE COMMANDS IN CUBIC CHROOT (you are root@cubic)
 # ============================================
 
-# Create directories
+# Because you pointed Cubic to cubic-artifacts/, all files are already here!
+# Cubic mounts the project directory at /root/
+
+# First, verify all files are accessible:
+ls ~/
+# You should see:
+#   homelab/           (all homelab scripts)
+#   docker-images/     (Docker .tar.gz files)
+#   ollama-models/     (Ollama models)
+#   scripts/           (offline install scripts)
+
+ls ~/homelab/
+ls ~/docker-images/ | head
+ls ~/ollama-models/
+
+# Create destination directories in the ISO
 mkdir -p /opt/homelab
 mkdir -p /opt/homelab-offline
 
-# In Cubic chroot, you can access your build machine's home directory
-# Cubic mounts it automatically at /root/
+# Copy homelab installation scripts to ISO
+cp -r ~/homelab/* /opt/homelab/
 
-# IMPORTANT: cubic-artifacts is a separate directory at root level,
-# NOT inside Homelab-Install-Script/
-
-# First, verify the directories exist:
-ls ~/
-# You should see two separate directories:
-#   Homelab-Install-Script/
-#   cubic-artifacts/
-
-# Verify artifacts exist:
-ls ~/cubic-artifacts/docker-images/
-ls ~/cubic-artifacts/ollama-models/
-
-# Copy homelab installation scripts
-cp -r /root/Homelab-Install-Script/* /opt/homelab/
-
-# Copy pre-downloaded artifacts (from separate directory at root level)
-cp -r ~/cubic-artifacts/* /opt/homelab-offline/
-
-# Alternative: Use Cubic's file manager to copy files graphically
-# Right-click in Cubic -> Open File Manager -> Navigate to /root
-# You'll see both Homelab-Install-Script and cubic-artifacts directories
+# Copy pre-downloaded artifacts to ISO
+cp -r ~/docker-images ~/ollama-models ~/scripts /opt/homelab-offline/
 
 # Set permissions
 chmod +x /opt/homelab/*.sh
@@ -210,7 +217,8 @@ chmod +x /opt/homelab-offline/scripts/*.sh
 
 # Verify files were copied
 ls -lh /opt/homelab/
-ls -lh /opt/homelab-offline/docker-images/
+ls -lh /opt/homelab-offline/
+ls -lh /opt/homelab-offline/docker-images/ | head
 ls -lh /opt/homelab-offline/ollama-models/
 ```
 
@@ -477,32 +485,59 @@ cd ~/Homelab-Install-Script
 
 **Why**: The chroot environment doesn't have Docker running and you're always root there. The script needs Docker on your build machine to download images.
 
-### cubic-artifacts Directory Not Found in Chroot
+### Homelab Files Not Found in Chroot
 
-**Problem**: Can't find cubic-artifacts in Cubic chroot
+**Problem**: Can't find homelab files in Cubic chroot
 
-**Cause**: The artifacts weren't downloaded yet, OR you're looking in the wrong path
+**Cause**: You didn't point Cubic to the correct project directory
 
-**IMPORTANT**: In Cubic chroot, `cubic-artifacts/` is a separate directory at `/root/cubic-artifacts/`, NOT inside the Homelab-Install-Script directory!
+**IMPORTANT**: You must select `cubic-artifacts/` as your Cubic project directory!
 
 **Solution**:
-1. Verify artifacts exist on build machine (exit Cubic first):
+1. Exit Cubic if it's running
+2. Verify cubic-artifacts exists on build machine:
    ```bash
    ls ~/Homelab-Install-Script/cubic-artifacts/
+   ls ~/Homelab-Install-Script/cubic-artifacts/homelab/
+   ls ~/Homelab-Install-Script/cubic-artifacts/docker-images/
    ```
-2. If missing, run `./cubic-prepare.sh` on build machine
-3. In Cubic chroot, the directory structure is different:
+3. If missing, run `./cubic-prepare.sh` on build machine first
+4. Relaunch Cubic and **IMPORTANT**: Select the correct project directory:
    ```bash
-   # List root home directory - you'll see TWO separate directories:
-   ls ~/
-   # Output: Homelab-Install-Script  cubic-artifacts
+   # In Cubic GUI "Project Directory" field:
+   ~/Homelab-Install-Script/cubic-artifacts
 
-   # Access cubic-artifacts directly:
-   ls ~/cubic-artifacts/
-   # Or
-   ls /root/cubic-artifacts/
+   # NOT ~/cubic-homelab
+   # NOT ~/Homelab-Install-Script
    ```
-4. Use Cubic's file manager to locate files graphically (navigate to /root, you'll see both directories)
+5. Once in Cubic chroot, verify files:
+   ```bash
+   ls ~/
+   # Should show: homelab/ docker-images/ ollama-models/ scripts/
+
+   ls ~/homelab/post-install.sh
+   # Should exist
+   ```
+
+### Wrong Directory Structure in Chroot
+
+**Problem**: Seeing `Homelab-Install-Script/` and `cubic-artifacts/` as separate directories in chroot
+
+**Cause**: You're using an old workflow or didn't run the updated `cubic-prepare.sh`
+
+**Solution**:
+1. Exit Cubic
+2. Delete old cubic-artifacts:
+   ```bash
+   rm -rf ~/Homelab-Install-Script/cubic-artifacts/
+   ```
+3. Re-run cubic-prepare.sh:
+   ```bash
+   cd ~/Homelab-Install-Script
+   git pull  # Get latest changes
+   ./cubic-prepare.sh
+   ```
+4. Relaunch Cubic pointing to `~/Homelab-Install-Script/cubic-artifacts/`
 
 ### ISO Too Large for DVD
 

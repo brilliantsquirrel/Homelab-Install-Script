@@ -1,9 +1,12 @@
 #!/bin/bash
 
 # Cubic ISO Preparation Script
-# Downloads all large dependencies for inclusion in custom Ubuntu ISO
-# Usage: Run this script to download Docker images and Ollama models
-#        Then copy the generated artifacts to your Cubic ISO
+# Downloads all large dependencies and creates a Cubic project directory
+# Usage: Run this script, then launch Cubic pointing to cubic-artifacts/ as project directory
+#
+# This script creates cubic-artifacts/ which serves as BOTH:
+# - The download location for Docker images and models
+# - The Cubic project directory (point Cubic here!)
 
 set -e
 
@@ -45,24 +48,42 @@ if [ "$EUID" -eq 0 ]; then
     exit 1
 fi
 
+# Get the repository root directory
+REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 header "Cubic ISO Preparation - Homelab Dependencies"
 
-log "This script will download all large dependencies for offline installation"
+log "This script will:"
+log "  1. Create cubic-artifacts/ as your Cubic project directory"
+log "  2. Copy all homelab scripts into cubic-artifacts/homelab/"
+log "  3. Download Docker images (~20-30GB)"
+log "  4. Download Ollama models (~50-80GB)"
+log ""
 log "Total download size: ~50-100GB depending on selected models"
 echo ""
 
 # Create output directory structure
-CUBIC_DIR="$(pwd)/cubic-artifacts"
+CUBIC_DIR="$REPO_DIR/cubic-artifacts"
+HOMELAB_DIR="$CUBIC_DIR/homelab"
 DOCKER_DIR="$CUBIC_DIR/docker-images"
 MODELS_DIR="$CUBIC_DIR/ollama-models"
 SCRIPTS_DIR="$CUBIC_DIR/scripts"
 
-log "Creating directory structure..."
+log "Creating Cubic project directory structure..."
+mkdir -p "$HOMELAB_DIR"
 mkdir -p "$DOCKER_DIR"
 mkdir -p "$MODELS_DIR"
 mkdir -p "$SCRIPTS_DIR"
 
-success "✓ Created: $CUBIC_DIR"
+success "✓ Created: $CUBIC_DIR (this will be your Cubic project directory)"
+
+# Copy homelab scripts to cubic-artifacts/homelab/
+header "Copying Homelab Scripts"
+
+log "Copying all homelab files to cubic-artifacts/homelab/..."
+rsync -av --exclude='cubic-artifacts' --exclude='.git' "$REPO_DIR/" "$HOMELAB_DIR/"
+
+success "✓ Copied homelab scripts to: $HOMELAB_DIR"
 
 # Check if Docker is installed
 if ! command -v docker &> /dev/null; then
@@ -352,62 +373,90 @@ success "✓ Created: install-offline.sh"
 
 # Create README for Cubic integration
 cat > "$CUBIC_DIR/README.md" << 'EOF'
-# Homelab Cubic ISO Integration
+# Homelab Cubic Project Directory
 
-This directory contains all pre-downloaded dependencies for offline homelab installation.
+**IMPORTANT**: This directory IS your Cubic project directory!
+When launching Cubic, select THIS directory as your project directory.
 
 ## Directory Structure
 
 ```
-cubic-artifacts/
-├── docker-images/          # Docker images as .tar.gz files
-├── ollama-models/          # Ollama models as .tar.gz file
-├── scripts/                # Installation scripts
+cubic-artifacts/              # <- Point Cubic here!
+├── homelab/                  # All homelab installation scripts
+│   ├── post-install.sh
+│   ├── docker-compose.yml
+│   ├── lib/
+│   ├── nginx/
+│   └── ... (all homelab files)
+├── docker-images/            # Pre-downloaded Docker images (.tar.gz)
+├── ollama-models/            # Pre-downloaded Ollama models (.tar.gz)
+├── scripts/                  # Offline installation scripts
 │   ├── load-docker-images.sh
 │   ├── load-ollama-models.sh
 │   └── install-offline.sh
-└── README.md              # This file
+└── README.md                 # This file
 ```
 
-## Integration with Cubic
+## How to Use with Cubic
 
-### 1. Copy to ISO
+### Step 1: Launch Cubic
 
-In Cubic, copy this entire `cubic-artifacts` directory to your custom ISO:
+```bash
+# Launch Cubic and point it to THIS directory
+cubic
+
+# In Cubic GUI:
+# - Project Directory: /path/to/Homelab-Install-Script/cubic-artifacts
+# - Select Ubuntu Server 24.04 LTS ISO
+# - Click Next
+```
+
+### Step 2: In Cubic Chroot Terminal
+
+When Cubic opens the chroot terminal, all files are already accessible!
+
+```bash
+# You are now root@cubic inside the ISO chroot environment
+# All your files are accessible at /root/
+
+# Verify files exist
+ls ~/homelab/
+ls ~/docker-images/
+ls ~/ollama-models/
+
+# Copy to ISO locations
+mkdir -p /opt/homelab /opt/homelab-offline
+
+# Copy homelab scripts
+cp -r ~/homelab/* /opt/homelab/
+
+# Copy offline artifacts
+cp -r ~/docker-images ~/ollama-models ~/scripts /opt/homelab-offline/
+
+# Set permissions
+chmod +x /opt/homelab/*.sh
+chmod +x /opt/homelab-offline/scripts/*.sh
+```
+
+### Step 3: Create Desktop Shortcut (Optional)
 
 ```bash
 # In Cubic chroot environment
-mkdir -p /opt/homelab-offline
-cp -r /path/to/cubic-artifacts/* /opt/homelab-offline/
-```
+mkdir -p /etc/skel/Desktop
 
-### 2. Copy Homelab Scripts
-
-Copy the main homelab repository to the ISO:
-
-```bash
-# In Cubic chroot environment
-mkdir -p /opt/homelab
-cp -r /path/to/Homelab-Install-Script/* /opt/homelab/
-```
-
-### 3. Create Desktop Shortcut (Optional)
-
-```bash
-# In Cubic chroot environment
-cat > /home/ubuntu/Desktop/install-homelab.desktop << 'DESKTOP'
+cat > /etc/skel/Desktop/install-homelab.desktop << 'DESKTOP'
 [Desktop Entry]
 Version=1.0
 Type=Application
 Name=Install Homelab (Offline)
 Comment=Install homelab with pre-downloaded dependencies
-Exec=gnome-terminal -- bash -c "cd /opt/homelab && /opt/homelab-offline/scripts/install-offline.sh; read -p 'Press Enter to close...'"
+Exec=gnome-terminal -- bash -c "cd /opt/homelab && sudo /opt/homelab-offline/scripts/install-offline.sh; read -p 'Press Enter to close...'"
 Icon=system-run
 Terminal=true
 Categories=System;
 DESKTOP
 
-chmod +x /home/ubuntu/Desktop/install-homelab.desktop
+chmod +x /etc/skel/Desktop/install-homelab.desktop
 ```
 
 ## Manual Installation from ISO
@@ -474,12 +523,13 @@ success "✓ Created: README.md"
 
 header "Preparation Complete!"
 
-echo "Artifacts saved to: $CUBIC_DIR"
+echo "Cubic project directory: $CUBIC_DIR"
 echo ""
 echo "Directory contents:"
+echo "  - homelab/           : All homelab installation scripts"
 echo "  - docker-images/     : $(ls -1 "$DOCKER_DIR" 2>/dev/null | wc -l) Docker image tar files"
 echo "  - ollama-models/     : $(ls -1 "$MODELS_DIR" 2>/dev/null | wc -l) Ollama model archives"
-echo "  - scripts/           : 3 installation scripts"
+echo "  - scripts/           : 3 offline installation scripts"
 echo "  - README.md          : Integration instructions"
 echo ""
 
@@ -493,8 +543,18 @@ echo ""
 success "✓ Ready for Cubic ISO integration"
 echo ""
 log "Next steps:"
-echo "  1. Copy cubic-artifacts/ to your Cubic ISO project"
-echo "  2. Follow instructions in cubic-artifacts/README.md"
-echo "  3. Build your custom ISO with Cubic"
 echo ""
-log "See CUBIC.md for detailed integration guide"
+echo "  1. Launch Cubic:"
+echo "     $ cubic"
+echo ""
+echo "  2. In Cubic GUI, select PROJECT DIRECTORY:"
+echo "     $CUBIC_DIR"
+echo ""
+echo "  3. Select Ubuntu Server 24.04 LTS ISO"
+echo ""
+echo "  4. In Cubic chroot terminal, run:"
+echo "     # mkdir -p /opt/homelab /opt/homelab-offline"
+echo "     # cp -r ~/homelab/* /opt/homelab/"
+echo "     # cp -r ~/docker-images ~/ollama-models ~/scripts /opt/homelab-offline/"
+echo ""
+log "See CUBIC.md for detailed step-by-step guide"
