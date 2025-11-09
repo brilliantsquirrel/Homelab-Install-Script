@@ -41,10 +41,10 @@ header() {
 # Configuration
 PROJECT_ID=""
 VM_NAME="cubic-builder"
-ZONE="us-central1-a"
-MACHINE_TYPE="n2-standard-8"  # 8 vCPU, 32GB RAM
+ZONE="us-west1-a"
+MACHINE_TYPE="e2-standard-4"  # 4 vCPU, 16GB RAM
 BOOT_DISK_SIZE="100GB"
-BUCKET_NAME=""
+BUCKET_NAME="cloud-ai-server-cubic-artifacts"
 IMAGE_FAMILY="ubuntu-2204-lts"  # Ubuntu 22.04 LTS (stable, well-supported)
 IMAGE_PROJECT="ubuntu-os-cloud"
 # Alternative options:
@@ -93,7 +93,8 @@ log "  Large files (70-110GB) will be stored in a cloud storage bucket"
 log "  This bucket will be mounted to the VM using gcsfuse"
 echo ""
 
-read -p "Storage bucket name (e.g., ${PROJECT_ID}-cubic-artifacts): " BUCKET_NAME
+read -p "Storage bucket name [$BUCKET_NAME]: " input_bucket
+BUCKET_NAME="${input_bucket:-$BUCKET_NAME}"
 
 if [ -z "$BUCKET_NAME" ]; then
     error "Bucket name is required"
@@ -223,7 +224,7 @@ gcloud compute instances create "$VM_NAME" \
     --zone="$ZONE" \
     --machine-type="$MACHINE_TYPE" \
     --network-interface=network-tier=PREMIUM,stack-type=IPV4_ONLY,subnet=default \
-    --maintenance-policy=TERMINATE \
+    --maintenance-policy=MIGRATE \
     --provisioning-model=STANDARD \
     --scopes=https://www.googleapis.com/auth/devstorage.read_write,https://www.googleapis.com/auth/logging.write,https://www.googleapis.com/auth/monitoring.write,https://www.googleapis.com/auth/servicecontrol,https://www.googleapis.com/auth/service.management.readonly,https://www.googleapis.com/auth/trace.append \
     --create-disk=auto-delete=yes,boot=yes,device-name="$VM_NAME",image=projects/$IMAGE_PROJECT/global/images/family/$IMAGE_FAMILY,mode=rw,size=$BOOT_DISK_SIZE,type=pd-balanced \
