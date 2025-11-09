@@ -78,6 +78,84 @@ mkdir -p "$SCRIPTS_DIR"
 
 success "✓ Created: $CUBIC_DIR (this will be your Cubic project directory)"
 
+# ========================================
+# Google Cloud Storage Configuration
+# ========================================
+
+# GCS bucket for storing large artifacts
+GCS_BUCKET="${GCS_BUCKET:-gs://homelab-artifacts}"
+
+# Check if gsutil is available
+check_gcs_available() {
+    if command -v gsutil &> /dev/null; then
+        if gsutil ls "$GCS_BUCKET" &> /dev/null; then
+            return 0
+        else
+            warning "GCS bucket $GCS_BUCKET not accessible or doesn't exist"
+            return 1
+        fi
+    else
+        return 1
+    fi
+}
+
+# Check if file exists in GCS bucket
+check_gcs_file() {
+    local filename="$1"
+    if check_gcs_available; then
+        if gsutil -q stat "$GCS_BUCKET/$filename"; then
+            return 0
+        fi
+    fi
+    return 1
+}
+
+# Download file from GCS bucket
+download_from_gcs() {
+    local filename="$1"
+    local destination="$2"
+
+    log "Downloading from GCS bucket: $filename"
+    if gsutil cp "$GCS_BUCKET/$filename" "$destination"; then
+        success "✓ Downloaded from GCS: $filename"
+        return 0
+    else
+        error "Failed to download from GCS: $filename"
+        return 1
+    fi
+}
+
+# Upload file to GCS bucket
+upload_to_gcs() {
+    local filepath="$1"
+    local destination="${2:-$(basename "$filepath")}"  # Optional destination path in bucket
+
+    if ! check_gcs_available; then
+        warning "GCS not available, skipping upload: $(basename "$filepath")"
+        return 1
+    fi
+
+    log "Uploading to GCS bucket: $destination"
+    if gsutil cp "$filepath" "$GCS_BUCKET/$destination"; then
+        success "✓ Uploaded to GCS: $destination"
+        return 0
+    else
+        error "Failed to upload to GCS: $destination"
+        return 1
+    fi
+}
+
+# Check GCS availability at startup
+if check_gcs_available; then
+    success "✓ GCS bucket accessible: $GCS_BUCKET"
+    GCS_ENABLED=true
+else
+    warning "GCS not available - files will only be stored locally"
+    warning "To enable GCS: install gcloud CLI and set GCS_BUCKET environment variable"
+    GCS_ENABLED=false
+fi
+echo ""
+
 # Copy homelab scripts to cubic-artifacts/homelab/
 header "Copying Homelab Scripts"
 
@@ -164,6 +242,52 @@ fi
 success "✓ Docker is available"
 
 # ========================================
+# Step 0.5: Install Google Cloud Ops Agent
+# ========================================
+
+header "Step 0.5: Installing Google Cloud Ops Agent"
+
+install_ops_agent() {
+    # Check if ops agent is already installed
+    if systemctl is-active --quiet google-cloud-ops-agent; then
+        log "Google Cloud Ops Agent is already installed and running"
+        return 0
+    fi
+
+    log "Installing Google Cloud Ops Agent for metrics and logging..."
+
+    # Download and run the installation script
+    if curl -sSO https://dl.google.com/cloudagents/add-google-cloud-ops-agent-repo.sh; then
+        sudo bash add-google-cloud-ops-agent-repo.sh --also-install || {
+            warning "Failed to install Google Cloud Ops Agent"
+            rm -f add-google-cloud-ops-agent-repo.sh
+            return 1
+        }
+        rm -f add-google-cloud-ops-agent-repo.sh
+
+        # Start and enable the service
+        sudo systemctl enable google-cloud-ops-agent
+        sudo systemctl start google-cloud-ops-agent
+
+        success "✓ Google Cloud Ops Agent installed and started"
+        return 0
+    else
+        warning "Failed to download Google Cloud Ops Agent installation script"
+        return 1
+    fi
+}
+
+# Ask user for confirmation
+read -p "Install Google Cloud Ops Agent for metrics and logging? (y/N): " -n 1 -r
+echo
+if [[ $REPLY =~ ^[Yy]$ ]]; then
+    install_ops_agent || warning "Continuing without Ops Agent"
+else
+    warning "Skipping Google Cloud Ops Agent installation"
+fi
+echo ""
+
+# ========================================
 # Step 1: Pull and Save Docker Images
 # ========================================
 
@@ -204,16 +328,60 @@ if [[ ! $REPLY =~ ^[Yy]$ ]]; then
     warning "Skipping Docker image download"
 else
     for image in "${DOCKER_IMAGES[@]}"; do
+        filename=$(echo "$image" | sed 's/[\/:]/_/g')
+        local_file="$DOCKER_DIR/${filename}.tar.gz"
+        gcs_filename="docker-images/${filename}.tar.gz"
+
+        # Check if file exists locally
+        if [ -f "$local_file" ]; then
+            existing_size=$(du -h "$local_file" | cut -f1)
+            log "Image already exists locally: ${filename}.tar.gz ($existing_size)"
+            success "✓ Skipping: $image (already downloaded)"
+            echo ""
+            continue
+        fi
+
+        # Check if file exists in GCS bucket
+        if [ "$GCS_ENABLED" = true ] && check_gcs_file "$gcs_filename"; then
+            log "Image found in GCS bucket: ${filename}.tar.gz"
+            if download_from_gcs "$gcs_filename" "$local_file"; then
+                success "✓ Retrieved from GCS: $image"
+                # Load the image into Docker
+                log "Loading image into Docker..."
+                if gunzip -c "$local_file" | sudo docker load; then
+                    success "✓ Loaded: $image"
+                else
+                    warning "Failed to load image from GCS archive"
+                fi
+                echo ""
+                continue
+            else
+                warning "Failed to download from GCS, will pull from Docker Hub"
+            fi
+        fi
+
+        # File not found locally or in GCS, pull from Docker Hub
         log "Pulling: $image"
         if sudo docker pull "$image"; then
             success "✓ Pulled: $image"
 
             # Save image to tar file
-            filename=$(echo "$image" | sed 's/[\/:]/_/g')
-            log "Saving to: $DOCKER_DIR/${filename}.tar"
+            log "Saving to: ${filename}.tar.gz"
 
-            if sudo docker save "$image" | gzip > "$DOCKER_DIR/${filename}.tar.gz"; then
+            if sudo docker save "$image" | gzip > "$local_file"; then
                 success "✓ Saved: ${filename}.tar.gz"
+
+                # Upload to GCS bucket and delete local copy
+                if [ "$GCS_ENABLED" = true ]; then
+                    if upload_to_gcs "$local_file" "$gcs_filename"; then
+                        # Delete local file after successful upload to save disk space
+                        log "Removing local copy (now in GCS bucket)..."
+                        rm -f "$local_file"
+                        success "✓ Cleaned up local file to save disk space"
+                    else
+                        warning "Failed to upload to GCS, keeping local copy"
+                    fi
+                fi
             else
                 error "Failed to save: $image"
             fi
@@ -225,22 +393,56 @@ else
 
     # Build custom nginx image
     log "Building custom nginx image..."
-    if [ -d "nginx" ] && [ -f "nginx/Dockerfile" ]; then
-        if sudo docker build -t homelab-install-script-nginx:latest nginx/; then
-            success "✓ Built custom nginx image"
+    nginx_filename="homelab-install-script-nginx_latest"
+    nginx_local_file="$DOCKER_DIR/${nginx_filename}.tar.gz"
+    nginx_gcs_filename="docker-images/${nginx_filename}.tar.gz"
 
-            log "Saving custom nginx image..."
-            if sudo docker save homelab-install-script-nginx:latest | gzip > "$DOCKER_DIR/homelab-install-script-nginx_latest.tar.gz"; then
-                success "✓ Saved: homelab-install-script-nginx_latest.tar.gz"
+    # Check if nginx image exists locally or in GCS
+    nginx_exists=false
+    if [ -f "$nginx_local_file" ]; then
+        log "Custom nginx image already exists locally"
+        nginx_exists=true
+    elif [ "$GCS_ENABLED" = true ] && check_gcs_file "$nginx_gcs_filename"; then
+        log "Custom nginx image found in GCS bucket"
+        if download_from_gcs "$nginx_gcs_filename" "$nginx_local_file"; then
+            if gunzip -c "$nginx_local_file" | sudo docker load; then
+                success "✓ Loaded custom nginx from GCS"
+                nginx_exists=true
             fi
-        else
-            warning "Failed to build custom nginx image"
         fi
-    else
-        warning "nginx directory not found, skipping custom image"
     fi
 
-    success "✓ All Docker images saved to: $DOCKER_DIR"
+    if [ "$nginx_exists" = false ]; then
+        if [ -d "nginx" ] && [ -f "nginx/Dockerfile" ]; then
+            if sudo docker build -t homelab-install-script-nginx:latest nginx/; then
+                success "✓ Built custom nginx image"
+
+                log "Saving custom nginx image..."
+                if sudo docker save homelab-install-script-nginx:latest | gzip > "$nginx_local_file"; then
+                    success "✓ Saved: ${nginx_filename}.tar.gz"
+
+                    # Upload to GCS bucket and delete local copy
+                    if [ "$GCS_ENABLED" = true ]; then
+                        if upload_to_gcs "$nginx_local_file" "$nginx_gcs_filename"; then
+                            log "Removing local copy (now in GCS bucket)..."
+                            rm -f "$nginx_local_file"
+                            success "✓ Cleaned up local file to save disk space"
+                        fi
+                    fi
+                fi
+            else
+                warning "Failed to build custom nginx image"
+            fi
+        else
+            warning "nginx directory not found, skipping custom image"
+        fi
+    fi
+
+    if [ "$GCS_ENABLED" = true ]; then
+        success "✓ All Docker images processed and uploaded to GCS: $GCS_BUCKET/docker-images/"
+    else
+        success "✓ All Docker images saved to: $DOCKER_DIR"
+    fi
 fi
 
 # ========================================
@@ -256,13 +458,29 @@ OLLAMA_MODELS=(
     "qwen3:8b"
 )
 
-# Check if models already exist
-if [ -f "$MODELS_DIR/ollama-models.tar.gz" ]; then
-    existing_size=$(du -h "$MODELS_DIR/ollama-models.tar.gz" | cut -f1)
+ollama_models_file="$MODELS_DIR/ollama-models.tar.gz"
+ollama_gcs_filename="ollama-models/ollama-models.tar.gz"
+
+# Check if models already exist locally
+if [ -f "$ollama_models_file" ]; then
+    existing_size=$(du -h "$ollama_models_file" | cut -f1)
     log "Ollama models already downloaded: ollama-models.tar.gz ($existing_size)"
-    success "✓ Skipping Ollama model download (already exists)"
+    success "✓ Skipping Ollama model download (already exists locally)"
     echo ""
-else
+elif [ "$GCS_ENABLED" = true ] && check_gcs_file "$ollama_gcs_filename"; then
+    # Check if models exist in GCS bucket
+    log "Ollama models found in GCS bucket"
+    if download_from_gcs "$ollama_gcs_filename" "$ollama_models_file"; then
+        existing_size=$(du -h "$ollama_models_file" | cut -f1)
+        success "✓ Retrieved Ollama models from GCS ($existing_size)"
+        echo ""
+    else
+        warning "Failed to download from GCS, will download models fresh"
+    fi
+fi
+
+# If models still don't exist, download them
+if [ ! -f "$ollama_models_file" ]; then
     log "Found ${#OLLAMA_MODELS[@]} Ollama models to download"
     log "WARNING: This will download 50-80GB of model data"
     echo ""
@@ -272,54 +490,65 @@ else
     if [[ ! $REPLY =~ ^[Yy]$ ]]; then
         warning "Skipping Ollama model download"
     else
-    # Check if Ollama container is running, start if needed
-    if ! sudo docker ps | grep -q ollama; then
-        log "Starting Ollama container for model downloads..."
-        sudo docker run -d --name ollama-temp -v ollama-models:/root/.ollama ollama/ollama:latest
-        sleep 5
-    else
-        log "Using existing Ollama container"
-    fi
-
-    for model in "${OLLAMA_MODELS[@]}"; do
-        log "Downloading model: $model (this may take a long time)"
-        log "Press Ctrl+C to skip this model and continue with the next one"
-
-        if sudo docker exec ollama-temp ollama pull "$model"; then
-            success "✓ Downloaded: $model"
+        # Check if Ollama container is running, start if needed
+        if ! sudo docker ps | grep -q ollama; then
+            log "Starting Ollama container for model downloads..."
+            sudo docker run -d --name ollama-temp -v ollama-models:/root/.ollama ollama/ollama:latest
+            sleep 5
         else
-            warning "Failed to download: $model"
+            log "Using existing Ollama container"
         fi
-        echo ""
-    done
 
-    # Export models from Docker volume
-    log "Exporting models from Docker volume..."
+        for model in "${OLLAMA_MODELS[@]}"; do
+            log "Downloading model: $model (this may take a long time)"
+            log "Press Ctrl+C to skip this model and continue with the next one"
 
-    # Create a temporary container to copy models from volume
-    sudo docker run --rm -v ollama-models:/models -v "$MODELS_DIR":/backup alpine \
-        sh -c "cd /models && tar czf /backup/ollama-models.tar.gz ."
+            if sudo docker exec ollama-temp ollama pull "$model"; then
+                success "✓ Downloaded: $model"
+            else
+                warning "Failed to download: $model"
+            fi
+            echo ""
+        done
 
-    if [ -f "$MODELS_DIR/ollama-models.tar.gz" ]; then
-        size=$(du -h "$MODELS_DIR/ollama-models.tar.gz" | cut -f1)
-        success "✓ Exported models: ollama-models.tar.gz ($size)"
-    else
-        error "Failed to export models"
-    fi
+        # Export models from Docker volume
+        log "Exporting models from Docker volume..."
 
-    # Clean up temporary container
-    if sudo docker ps -a | grep -q ollama-temp; then
-        sudo docker stop ollama-temp 2>/dev/null || true
-        sudo docker rm ollama-temp 2>/dev/null || true
-    fi
+        # Create a temporary container to copy models from volume
+        sudo docker run --rm -v ollama-models:/models -v "$MODELS_DIR":/backup alpine \
+            sh -c "cd /models && tar czf /backup/ollama-models.tar.gz ."
 
-    # Clean up temporary volume
-    read -p "Remove temporary Ollama volume? (y/N): " -n 1 -r
-    echo
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-        sudo docker volume rm ollama-models 2>/dev/null || true
-        log "Cleaned up temporary volume"
-    fi
+        if [ -f "$ollama_models_file" ]; then
+            size=$(du -h "$ollama_models_file" | cut -f1)
+            success "✓ Exported models: ollama-models.tar.gz ($size)"
+
+            # Upload to GCS bucket and delete local copy
+            if [ "$GCS_ENABLED" = true ]; then
+                if upload_to_gcs "$ollama_models_file" "$ollama_gcs_filename"; then
+                    log "Removing local copy (now in GCS bucket)..."
+                    rm -f "$ollama_models_file"
+                    success "✓ Cleaned up local file to save disk space"
+                else
+                    warning "Failed to upload to GCS, keeping local copy"
+                fi
+            fi
+        else
+            error "Failed to export models"
+        fi
+
+        # Clean up temporary container
+        if sudo docker ps -a | grep -q ollama-temp; then
+            sudo docker stop ollama-temp 2>/dev/null || true
+            sudo docker rm ollama-temp 2>/dev/null || true
+        fi
+
+        # Clean up temporary volume
+        read -p "Remove temporary Ollama volume? (y/N): " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            sudo docker volume rm ollama-models 2>/dev/null || true
+            log "Cleaned up temporary volume"
+        fi
     fi
 fi
 
