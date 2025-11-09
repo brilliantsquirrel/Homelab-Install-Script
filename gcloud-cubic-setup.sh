@@ -44,7 +44,7 @@ VM_NAME="cubic-builder"
 ZONE="us-west1-a"
 MACHINE_TYPE="e2-standard-4"  # 4 vCPU, 16GB RAM
 BOOT_DISK_SIZE="100GB"
-BUCKET_NAME=""
+BUCKET_NAME="cloud-ai-server-cubic-artifacts"
 IMAGE_FAMILY="ubuntu-2204-lts"  # Ubuntu 22.04 LTS (stable, well-supported)
 IMAGE_PROJECT="ubuntu-os-cloud"
 # Alternative options:
@@ -93,7 +93,8 @@ log "  Large files (70-110GB) will be stored in a cloud storage bucket"
 log "  This bucket will be mounted to the VM using gcsfuse"
 echo ""
 
-read -p "Storage bucket name (e.g., ${PROJECT_ID}-cubic-artifacts): " BUCKET_NAME
+read -p "Storage bucket name [$BUCKET_NAME]: " input_bucket
+BUCKET_NAME="${input_bucket:-$BUCKET_NAME}"
 
 if [ -z "$BUCKET_NAME" ]; then
     error "Bucket name is required"
