@@ -47,6 +47,32 @@ Designed to be used with customized Ubuntu Server installations via Cubic, this 
 - `qwen3-coder:30b` - Code-specialized model (30B)
 - `qwen3:8b` - General-purpose model (8B)
 
+## Custom ISO Creation
+
+Want to create a custom Ubuntu ISO with all dependencies pre-installed for offline deployment?
+
+### Local Build Machine
+See [CUBIC.md](CUBIC.md) for creating custom ISOs on your local machine.
+
+### Google Cloud VM (Recommended for Large Builds)
+For a turnkey cloud-based build environment:
+- **No local disk space required** (70-110GB stored in cloud bucket)
+- **Powerful VM** (8 vCPU, 32GB RAM) spun up on-demand
+- **Pay only when building** (~$0.30/hour, stop when not in use)
+- **Access from anywhere** via SSH with X11 forwarding
+
+See [GCLOUD-CUBIC.md](GCLOUD-CUBIC.md) for complete setup instructions:
+```bash
+# One-time setup (10-15 minutes)
+./gcloud-cubic-setup.sh
+
+# Start VM, build ISO, stop VM
+./gcloud-cubic-vm.sh start
+./gcloud-cubic-vm.sh ssh
+# ... build ISO in Cubic GUI ...
+./gcloud-cubic-vm.sh stop
+```
+
 ## Quick Start
 
 ### On a Fresh Ubuntu Server Installation
@@ -238,6 +264,8 @@ Individual service URLs:
 
 - [README.md](README.md) - This file
 - [CLAUDE.md](CLAUDE.md) - Architecture, implementation details, and modification guide
+- [CUBIC.md](CUBIC.md) - Creating custom Ubuntu ISOs with Cubic
+- [GCLOUD-CUBIC.md](GCLOUD-CUBIC.md) - Google Cloud VM setup for Cubic ISO creation
 - [SECURITY.md](SECURITY.md) - Security audit, vulnerabilities, and recommendations
 - [SECRETS.md](SECRETS.md) - Secret management and setup guide
 - [.env.example](.env.example) - Environment variables reference
