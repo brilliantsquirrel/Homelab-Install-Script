@@ -173,14 +173,28 @@ header "Step 0: Downloading Ubuntu Server 24.04 LTS ISO"
 UBUNTU_VERSION="24.04.3"
 UBUNTU_ISO_URL="https://releases.ubuntu.com/24.04/ubuntu-${UBUNTU_VERSION}-live-server-amd64.iso"
 UBUNTU_ISO_FILE="$CUBIC_DIR/ubuntu-${UBUNTU_VERSION}-live-server-amd64.iso"
+UBUNTU_ISO_GCS="iso/ubuntu-${UBUNTU_VERSION}-live-server-amd64.iso"
 
-# Check if ISO already exists
+# Check if ISO already exists locally
 if [ -f "$UBUNTU_ISO_FILE" ]; then
     existing_size=$(du -h "$UBUNTU_ISO_FILE" | cut -f1)
     log "Ubuntu Server ISO already downloaded: $(basename $UBUNTU_ISO_FILE) ($existing_size)"
-    success "✓ Skipping ISO download (already exists)"
+    success "✓ Skipping ISO download (already exists locally)"
     echo ""
-else
+elif [ "$GCS_ENABLED" = true ] && check_gcs_file "$UBUNTU_ISO_GCS"; then
+    # Check if ISO exists in GCS bucket
+    log "Ubuntu Server ISO found in GCS bucket"
+    if download_from_gcs "$UBUNTU_ISO_GCS" "$UBUNTU_ISO_FILE"; then
+        existing_size=$(du -h "$UBUNTU_ISO_FILE" | cut -f1)
+        success "✓ Retrieved Ubuntu ISO from GCS ($existing_size)"
+        echo ""
+    else
+        warning "Failed to download from GCS, will download from Ubuntu releases"
+    fi
+fi
+
+# If ISO still doesn't exist, download it
+if [ ! -f "$UBUNTU_ISO_FILE" ]; then
     log "Downloading Ubuntu Server 24.04 LTS ISO (~2.5GB)"
     log "Source: $UBUNTU_ISO_URL"
     echo ""
@@ -217,6 +231,11 @@ else
             iso_size=$(du -h "$UBUNTU_ISO_FILE" | cut -f1)
             success "✓ Downloaded: $(basename $UBUNTU_ISO_FILE) ($iso_size)"
             log "ISO location: $UBUNTU_ISO_FILE"
+
+            # Upload to GCS bucket for backup/caching
+            if [ "$GCS_ENABLED" = true ]; then
+                upload_to_gcs "$UBUNTU_ISO_FILE" "$UBUNTU_ISO_GCS" || warning "Failed to upload to GCS"
+            fi
         else
             error "ISO download failed"
             exit 1
