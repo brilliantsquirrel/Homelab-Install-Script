@@ -194,15 +194,22 @@ OLLAMA_MODELS=(
     "qwen3:8b"
 )
 
-log "Found ${#OLLAMA_MODELS[@]} Ollama models to download"
-log "WARNING: This will download 50-80GB of model data"
-echo ""
-
-read -p "Download all Ollama models (50-80GB, may take hours)? (y/N): " -n 1 -r
-echo
-if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-    warning "Skipping Ollama model download"
+# Check if models already exist
+if [ -f "$MODELS_DIR/ollama-models.tar.gz" ]; then
+    existing_size=$(du -h "$MODELS_DIR/ollama-models.tar.gz" | cut -f1)
+    log "Ollama models already downloaded: ollama-models.tar.gz ($existing_size)"
+    success "✓ Skipping Ollama model download (already exists)"
+    echo ""
 else
+    log "Found ${#OLLAMA_MODELS[@]} Ollama models to download"
+    log "WARNING: This will download 50-80GB of model data"
+    echo ""
+
+    read -p "Download all Ollama models (50-80GB, may take hours)? (y/N): " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        warning "Skipping Ollama model download"
+    else
     # Check if Ollama container is running, start if needed
     if ! sudo docker ps | grep -q ollama; then
         log "Starting Ollama container for model downloads..."
@@ -250,6 +257,7 @@ else
     if [[ $REPLY =~ ^[Yy]$ ]]; then
         sudo docker volume rm ollama-models 2>/dev/null || true
         log "Cleaned up temporary volume"
+    fi
     fi
 fi
 
