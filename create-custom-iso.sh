@@ -157,11 +157,19 @@ header "Step 3: Customizing the filesystem"
 
 log "Copying homelab scripts..."
 sudo mkdir -p "$SQUASHFS_EXTRACT/opt/homelab"
-sudo cp -r "$REPO_DIR"/* "$SQUASHFS_EXTRACT/opt/homelab/" || {
+
+# Copy only necessary files, exclude large directories
+# Use rsync to exclude cubic-artifacts, iso-build, and .git
+sudo rsync -a \
+    --exclude='cubic-artifacts' \
+    --exclude='iso-build' \
+    --exclude='.git' \
+    --exclude='.github' \
+    "$REPO_DIR/" "$SQUASHFS_EXTRACT/opt/homelab/" || {
     error "Failed to copy homelab scripts"
     exit 1
 }
-success "Homelab scripts copied to /opt/homelab"
+success "Homelab scripts copied to /opt/homelab (excluded large data directories)"
 
 # Copy Docker images if available
 if [ -d "$DOCKER_DIR" ] && [ "$(ls -A "$DOCKER_DIR" 2>/dev/null)" ]; then
