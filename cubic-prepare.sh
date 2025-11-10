@@ -17,35 +17,36 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-# Logging functions
+# Logging functions with thread-safe output for parallel operations
 log() {
-    echo -e "${GREEN}[INFO]${NC} $1"
+    echo -e "${GREEN}[INFO]${NC} $1" >&2
 }
 
 error() {
-    echo -e "${RED}[ERROR]${NC} $1"
+    echo -e "${RED}[ERROR]${NC} $1" >&2
 }
 
 warning() {
-    echo -e "${YELLOW}[WARNING]${NC} $1"
+    echo -e "${YELLOW}[WARNING]${NC} $1" >&2
 }
 
 success() {
-    echo -e "${GREEN}[SUCCESS]${NC} $1"
+    echo -e "${GREEN}[SUCCESS]${NC} $1" >&2
 }
 
 header() {
-    echo ""
-    echo -e "${BLUE}========================================${NC}"
-    echo -e "${BLUE}$1${NC}"
-    echo -e "${BLUE}========================================${NC}"
-    echo ""
+    echo "" >&2
+    echo -e "${BLUE}========================================${NC}" >&2
+    echo -e "${BLUE}$1${NC}" >&2
+    echo -e "${BLUE}========================================${NC}" >&2
+    echo "" >&2
 }
 
 # Performance configuration
 MAX_PARALLEL_DOWNLOADS=4  # Number of parallel Docker image downloads
 
 # Process a single Docker image (pull, compress, upload)
+# This function runs in background, so output is suppressed and only status is shown
 process_docker_image() {
     local image="$1"
     local filename=$(echo "$image" | sed 's/[\/:]/_/g')
@@ -54,77 +55,58 @@ process_docker_image() {
 
     # Check if file exists locally
     if [ -f "$local_file" ]; then
-        existing_size=$(du -h "$local_file" | cut -f1)
-        log "[$image] Already exists locally: ${filename}.tar.gz ($existing_size)"
-        success "✓ Skipping: $image (already downloaded)"
+        printf "${GREEN}✓${NC} %-50s %s\n" "$image" "(already exists)" >&2
         return 0
     fi
 
     # Check if file exists in GCS bucket
-    if [ "$GCS_ENABLED" = true ] && check_gcs_file "$gcs_filename"; then
-        log "[$image] Found in GCS bucket: ${filename}.tar.gz"
-        if download_from_gcs "$gcs_filename" "$local_file"; then
-            success "✓ Retrieved from GCS: $image"
+    if [ "$GCS_ENABLED" = true ] && check_gcs_file "$gcs_filename" 2>/dev/null; then
+        printf "${GREEN}⬇${NC} %-50s %s\n" "$image" "(downloading from GCS...)" >&2
+        if download_from_gcs "$gcs_filename" "$local_file" >/dev/null 2>&1; then
             # Load the image into Docker
-            log "[$image] Loading into Docker..."
-            if gunzip -c "$local_file" | sudo docker load; then
-                success "✓ Loaded: $image"
-            else
-                warning "[$image] Failed to load from GCS archive"
+            if gunzip -c "$local_file" | sudo docker load >/dev/null 2>&1; then
+                printf "${GREEN}✓${NC} %-50s %s\n" "$image" "(loaded from GCS)" >&2
+                return 0
             fi
-            return 0
-        else
-            warning "[$image] Failed to download from GCS, will pull from Docker Hub"
         fi
     fi
 
     # File not found locally or in GCS, pull from Docker Hub
-    log "[$image] Pulling from Docker Hub..."
-    if ! sudo docker pull "$image"; then
-        error "[$image] Failed to pull"
+    printf "${BLUE}↓${NC} %-50s %s\n" "$image" "(pulling...)" >&2
+    if ! sudo docker pull "$image" >/dev/null 2>&1; then
+        printf "${RED}✗${NC} %-50s %s\n" "$image" "(pull failed)" >&2
         return 1
     fi
-    success "✓ Pulled: $image"
 
     # Save image to tar file with parallel compression
-    log "[$image] Compressing with pigz..."
     if command -v pigz &> /dev/null; then
-        if sudo docker save "$image" | pigz -p 2 > "$local_file"; then
-            success "✓ Compressed: ${filename}.tar.gz"
-        else
-            error "[$image] Failed to compress"
-            return 1
-        fi
+        sudo docker save "$image" | pigz -p 2 > "$local_file" 2>/dev/null
     else
-        # Fallback to regular gzip if pigz not available
-        if sudo docker save "$image" | gzip > "$local_file"; then
-            success "✓ Compressed: ${filename}.tar.gz"
-        else
-            error "[$image] Failed to compress"
-            return 1
-        fi
+        sudo docker save "$image" | gzip > "$local_file" 2>/dev/null
+    fi
+
+    if [ ! -f "$local_file" ]; then
+        printf "${RED}✗${NC} %-50s %s\n" "$image" "(compress failed)" >&2
+        return 1
     fi
 
     # Upload to GCS bucket and delete local copy after verification
     if [ "$GCS_ENABLED" = true ]; then
-        log "[$image] Uploading to GCS (parallel mode)..."
-        if gsutil -m -o GSUtil:parallel_composite_upload_threshold=150M cp "$local_file" "$GCS_BUCKET/$gcs_filename"; then
+        if gsutil -m -o GSUtil:parallel_composite_upload_threshold=150M cp "$local_file" "$GCS_BUCKET/$gcs_filename" >/dev/null 2>&1; then
             # Verify the upload succeeded
-            if check_gcs_file "$gcs_filename"; then
-                log "[$image] Verifying GCS upload..."
-                success "✓ Verified: ${filename}.tar.gz exists in GCS bucket"
-                log "[$image] Removing local copy (now in GCS bucket)..."
+            if check_gcs_file "$gcs_filename" 2>/dev/null; then
                 rm -f "$local_file"
-                success "✓ Cleaned up local tar file"
+                printf "${GREEN}✓${NC} %-50s %s\n" "$image" "(uploaded to GCS)" >&2
             else
-                warning "[$image] Upload verification failed, keeping local copy"
+                printf "${GREEN}✓${NC} %-50s %s\n" "$image" "(saved locally)" >&2
             fi
         else
-            warning "[$image] Failed to upload to GCS, keeping local copy"
+            printf "${GREEN}✓${NC} %-50s %s\n" "$image" "(saved locally)" >&2
         fi
+    else
+        printf "${GREEN}✓${NC} %-50s %s\n" "$image" "(saved locally)" >&2
     fi
 
-    success "✓ Complete: $image"
     return 0
 }
 
@@ -169,15 +151,29 @@ success "✓ Created: $CUBIC_DIR (this will be your Cubic project directory)"
 # ========================================
 
 # GCS bucket for storing large artifacts
-GCS_BUCKET="${GCS_BUCKET:-gs://homelab-artifacts}"
+# Try to get bucket name from GCloud VM metadata, fallback to environment variable
+if command -v curl &> /dev/null && curl -s -f -H "Metadata-Flavor: Google" \
+    "http://metadata.google.internal/computeMetadata/v1/instance/attributes/bucket-name" &> /dev/null; then
+    # Running on GCloud VM - get bucket name from metadata
+    BUCKET_NAME=$(curl -s -H "Metadata-Flavor: Google" \
+        "http://metadata.google.internal/computeMetadata/v1/instance/attributes/bucket-name" 2>/dev/null)
+    GCS_BUCKET="gs://${BUCKET_NAME}"
+else
+    # Not on GCloud VM or metadata not available - use environment variable
+    GCS_BUCKET="${GCS_BUCKET:-}"
+fi
 
 # Check if gsutil is available
 check_gcs_available() {
+    # Check if GCS_BUCKET is set
+    if [ -z "$GCS_BUCKET" ]; then
+        return 1
+    fi
+
     if command -v gsutil &> /dev/null; then
-        if gsutil ls "$GCS_BUCKET" &> /dev/null; then
+        if gsutil ls "$GCS_BUCKET" &> /dev/null 2>&1; then
             return 0
         else
-            warning "GCS bucket $GCS_BUCKET not accessible or doesn't exist"
             return 1
         fi
     else
@@ -235,10 +231,19 @@ upload_to_gcs() {
 # Check GCS availability at startup
 if check_gcs_available; then
     success "✓ GCS bucket accessible: $GCS_BUCKET"
+    log "Files will be uploaded to GCS and local copies will be removed to save disk space"
     GCS_ENABLED=true
 else
-    warning "GCS not available - files will only be stored locally"
-    warning "To enable GCS: install gcloud CLI and set GCS_BUCKET environment variable"
+    if [ -z "$GCS_BUCKET" ]; then
+        warning "GCS bucket not configured - files will only be stored locally"
+        log "To enable GCS: set GCS_BUCKET environment variable or run on GCloud VM"
+    elif ! command -v gsutil &> /dev/null; then
+        warning "gsutil not found - files will only be stored locally"
+        log "To enable GCS: install gcloud CLI (https://cloud.google.com/sdk/docs/install)"
+    else
+        warning "GCS bucket $GCS_BUCKET not accessible - files will only be stored locally"
+        log "Verify bucket exists and you have access: gsutil ls $GCS_BUCKET"
+    fi
     GCS_ENABLED=false
 fi
 echo ""
@@ -552,15 +557,10 @@ for model in "${OLLAMA_MODELS[@]}"; do
         # Export this specific model to a tar file
         log "Exporting $model from Docker volume..."
 
-        # Use pigz for faster compression if available
-        if command -v pigz &> /dev/null; then
-            log "Using pigz for parallel compression..."
-            sudo docker run --rm -v "$volume_name":/models -v "$MODELS_DIR":/backup alpine \
-                sh -c "cd /models && tar -c . | pigz -p 4 > /backup/${model_filename}.tar.gz"
-        else
-            sudo docker run --rm -v "$volume_name":/models -v "$MODELS_DIR":/backup alpine \
-                sh -c "cd /models && tar czf /backup/${model_filename}.tar.gz ."
-        fi
+        # Use regular tar with gzip compression (Alpine doesn't have pigz)
+        # Compression happens inside the container to avoid copying large uncompressed data
+        sudo docker run --rm -v "$volume_name":/models -v "$MODELS_DIR":/backup alpine \
+            sh -c "cd /models && tar czf /backup/${model_filename}.tar.gz ."
 
         if [ -f "$model_tar_file" ]; then
             size=$(du -h "$model_tar_file" | cut -f1)
