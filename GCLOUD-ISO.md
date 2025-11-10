@@ -8,44 +8,34 @@ Creating custom Ubuntu ISOs for homelab deployment requires:
 - **70-110GB** of storage for Docker images and Ollama models
 - **Significant compute** for downloading and processing (optimized for **60% faster execution**)
 - **Flexibility** to power on/off as needed
+- **Elastic scaling** for CPU, memory, and disk resources
 
 This setup uses:
 - **GCloud Compute VM**: Ubuntu with Docker and ISO building tools
 - **Cloud Storage Bucket**: Stores large files (iso-artifacts), mounted via gcsfuse
-- **Script-based ISO builder**: Fully automated, no GUI required (recommended)
-- **Alternative: Cubic GUI**: Traditional GUI-based approach (requires X11 forwarding)
+- **Script-based ISO builder**: Fully automated, headless approach
+- **Local SSDs**: Ultra-fast scratch space for builds (750GB default)
+- **Elastic resources**: Scale CPU/memory/disk on-demand
 - **Cost Optimization**: Stop VM when not in use, only pay for storage
-- **Easy Management**: Simple scripts for start/stop/ssh/status
+- **Easy Management**: Simple scripts for start/stop/ssh/status/scaling
 
-## ISO Creation Methods
+## ISO Creation Method
 
-### Method 1: Script-Based (Recommended ⭐)
+**Fully Automated Script-Based Approach:**
 
 **Advantages:**
 - ✅ Fully automated - no GUI needed
 - ✅ Works perfectly on headless GCloud VMs
 - ✅ Faster and more reliable
 - ✅ Easy to debug and customize
+- ✅ Elastic scaling capabilities
 - ✅ No X11 forwarding required
 
 **How it works:**
-1. Run `./iso-prepare.sh` to download dependencies
-2. Run `./create-custom-iso.sh` to build the ISO
+1. Run `./iso-prepare.sh` to download dependencies (~1-1.5 hours)
+2. Run `./create-custom-iso.sh` to build the ISO (~30-45 minutes)
 3. Script extracts ISO, modifies filesystem, repacks it
 4. Output: `ubuntu-24.04.3-homelab-amd64.iso`
-
-### Method 2: Cubic GUI (Alternative)
-
-**Advantages:**
-- ✅ Visual interface
-- ✅ More interactive control
-
-**Disadvantages:**
-- ❌ Requires X11 forwarding (slower over network)
-- ❌ Can have ISO mounting issues with FUSE filesystems
-- ❌ More complex troubleshooting
-
-**Use when:** You prefer a GUI and are familiar with Cubic
 
 ## Architecture
 
@@ -53,8 +43,8 @@ This setup uses:
 ┌─────────────────────────────────────────┐
 │  Your Local Machine                     │
 │  ├─ gcloud CLI                          │
-│  ├─ gcloud-iso-setup.sh (one-time)    │
-│  └─ gcloud-iso-vm.sh (management)     │
+│  ├─ gcloud-iso-setup.sh (one-time)     │
+│  └─ gcloud-iso-vm.sh (management)      │
 └─────────────────────────────────────────┘
               │
               │ gcloud commands
@@ -63,12 +53,13 @@ This setup uses:
 │  Google Cloud                           │
 │                                         │
 │  ┌────────────────────────────────┐    │
-│  │ Compute Engine VM              │    │
-│  │ ├─ Ubuntu 24.04 LTS            │    │
-│  │ ├─ Docker + Cubic              │    │
-│  │ ├─ Desktop Environment         │    │
+│  │ Compute Engine VM (iso-builder)│    │
+│  │ ├─ Ubuntu 22.04 LTS            │    │
+│  │ ├─ Docker Engine               │    │
+│  │ ├─ xorriso + squashfs-tools    │    │
 │  │ ├─ gcsfuse (bucket mounting)   │    │
-│  │ └─ ~/iso-artifacts/ (mount)  │    │
+│  │ ├─ ~/iso-artifacts/ (mount)    │    │
+│  │ └─ /mnt/disks/ssd (local SSD)  │    │
 │  └────────────────────────────────┘    │
 │              │                          │
 │              │ gcsfuse mount            │
@@ -95,9 +86,10 @@ This setup includes significant performance optimizations for faster ISO builds:
 1. **Parallel Downloads**: 4 concurrent Docker image downloads instead of sequential
 2. **Fast Compression**: pigz (parallel gzip) provides 4-8x faster compression than standard gzip
 3. **Parallel GCS Uploads**: 8 threads with 150MB composite upload threshold
-4. **SSD Storage**: pd-ssd persistent disks for faster I/O vs pd-balanced
+4. **SSD Storage**: pd-ssd persistent disks + local SSDs for ultra-fast I/O
 5. **Smart Caching**: Checks GCS before downloading from original sources
 6. **Automated Execution**: No user prompts - fully hands-off operation
+7. **Elastic Scaling**: Scale resources up during build, down when idle
 
 ### Technical Details
 - **MAX_PARALLEL_DOWNLOADS**: 4 (configurable in iso-prepare.sh)
@@ -105,6 +97,7 @@ This setup includes significant performance optimizations for faster ISO builds:
 - **GCS Configuration**: Parallel composite uploads via /etc/boto.cfg
 - **Job Control**: Background processes with wait for completion
 - **Status Tracking**: Temp files for clean output summary
+- **Local SSDs**: 2 × 375GB = 750GB of ultra-fast scratch space
 
 ## Prerequisites
 
@@ -144,11 +137,9 @@ This setup includes significant performance optimizations for faster ISO builds:
 
 - **Active GCP Project** with billing enabled
 - **Permissions**: Compute Admin, Storage Admin (or Owner role)
-- **Billing**: Understand VM costs (~$0.30-0.50/hour for n2-standard-8)
+- **Billing**: Understand VM costs (~$0.76/hour for n2-standard-16)
 
-## Quick Start (Script-Based Method)
-
-This is the recommended approach - fully automated with no GUI required.
+## Quick Start
 
 ### Step 1: Create the VM and Bucket
 
@@ -166,24 +157,33 @@ chmod +x gcloud-iso-setup.sh
 
 **What this does:**
 1. Creates a Cloud Storage bucket for large files
-2. Creates a VM with Docker, Cubic, and desktop environment
+2. Creates a VM with Docker and ISO building tools
 3. Configures gcsfuse for bucket mounting
-4. Creates management scripts
-5. Installs helper scripts on the VM
+4. Sets up local SSDs for fast scratch space
+5. Creates management scripts
+6. Installs helper scripts on the VM
 
 **Interactive Prompts:**
-- VM name (default: `cubic-builder`)
-- Zone (default: `us-central1-a`)
-- Machine type (default: `n2-standard-8` - 8 vCPU, 32GB RAM)
-- Boot disk size (default: `200GB`)
+- VM name (default: `iso-builder`)
+- Zone (default: `us-west1-a`)
+- Machine type (default: `n2-standard-16` - 16 vCPU, 64GB RAM)
+- Boot disk size (default: `500GB`)
+- Local SSD count (default: `2` × 375GB = 750GB)
 - Storage bucket name (required)
 
 **Recommended Configuration:**
-- **Machine type**: `n2-standard-8` (8 vCPU, 32GB RAM) - good balance
-- **Boot disk**: `200GB` - OS, temp files, Cubic working directory, ISO building (~150GB needed for full ISO with images/models)
+- **Machine type**: `n2-standard-16` (16 vCPU, 64GB RAM) - fast builds
+- **Boot disk**: `500GB` pd-ssd - OS and persistent storage
+- **Local SSDs**: `2` (750GB) - ultra-fast scratch for builds
 - **Zone**: Choose closest to your location for better latency
 
-**Duration**: 10-15 minutes (VM initialization takes 5-10 minutes)
+**Note on Local SSDs:**
+- N2 machine types support: 0, 2, 4, 8, 16, or 24 SSDs (not 1)
+- Each SSD is 375GB
+- 10x faster than persistent disks
+- Ephemeral (deleted when VM stops) - perfect for temporary build files
+
+**Duration**: 5-10 minutes (VM initialization takes 3-5 minutes)
 
 ### Step 2: Wait for Initialization
 
@@ -191,901 +191,589 @@ The VM runs a startup script that installs all dependencies:
 
 ```bash
 # Monitor initialization progress
-gcloud compute ssh cubic-builder -- tail -f /var/log/cubic-setup.log
+gcloud compute ssh iso-builder -- tail -f /var/log/iso-setup.log
 ```
 
 **Installed on VM:**
-- Ubuntu Desktop (minimal)
 - Docker Engine
-- Cubic (ISO creator)
-- gcsfuse (Cloud Storage mounting)
-- Git, rsync, and build tools
+- xorriso (ISO creation)
+- squashfs-tools (filesystem modification)
+- gcsfuse (bucket mounting)
+- pigz (parallel compression)
+- Local SSD mounted at `/mnt/disks/ssd`
 
-**When complete**, you'll see: `VM initialization complete!`
+**Initialization time**: 3-5 minutes
 
-### Step 3: Connect and Mount Storage
+### Step 3: Connect and Mount Bucket
 
 ```bash
-# Connect to VM with X11 forwarding (for Cubic GUI)
+# Connect to VM using management script
 ./gcloud-iso-vm.sh ssh
 
-# On the VM, mount the storage bucket
-~/mount-bucket.sh
+# Or connect directly
+gcloud compute ssh iso-builder --zone=us-west1-a
 ```
 
-This mounts the Cloud Storage bucket at `~/iso-artifacts/`.
-
-### Step 4: Prepare Dependencies
-
-```bash
-# On the VM, clone the repository
-cd ~
-git clone https://github.com/brilliantsquirrel/Homelab-Install-Script.git
-cd Homelab-Install-Script
-
-# Set the GCS bucket environment variable (auto-detected from VM metadata)
-export GCS_BUCKET=gs://$(curl -s "http://metadata.google.internal/computeMetadata/v1/instance/attributes/bucket-name" -H "Metadata-Flavor: Google")
-
-# Download all dependencies (70-110GB, takes 1-1.5 hours with optimizations)
-# Runs fully automated - no prompts required
-# Features: parallel downloads (4 concurrent), fast compression (pigz), parallel GCS uploads
-./iso-prepare.sh
-```
-
-**How it works**:
-- Downloads Ubuntu ISO, Docker images (16 images), and Ollama models (4 models)
-- **Performance optimizations**:
-  - Parallel Docker image downloads (4 concurrent streams)
-  - Fast compression with pigz (4-8x faster than gzip)
-  - Parallel GCS uploads (8 threads, 150MB composite threshold)
-  - SSD persistent disks (pd-ssd) for faster I/O
-  - Smart caching: checks GCS before downloading from source
-- Automatically uploads each file to GCS bucket after creation
-- Verifies the upload succeeded before cleanup
-- Keeps Ubuntu ISO locally (required by Cubic GUI)
-- Deletes Docker images and models after GCS upload (~50-80GB saved)
-- Files persist in GCS bucket even if VM is deleted
-- On subsequent runs, downloads from GCS (much faster than original sources)
-- **Result**: ~60% faster execution (2.5-4 hours → 1-1.5 hours)
-
-### Step 5: Mount Bucket and Access Files
-
-```bash
-# On the VM, mount the bucket to access uploaded files
-~/mount-bucket.sh
-```
-
-This mounts the GCS bucket at `~/iso-artifacts/`, giving you access to all files uploaded by `iso-prepare.sh`.
-
-### Step 6: Create Custom ISO (Script-Based)
-
-```bash
-# On the VM, run the automated ISO builder
-cd ~/Homelab-Install-Script
-./create-custom-iso.sh
-```
-
-**What this script does:**
-1. Extracts the Ubuntu ISO (~5 minutes)
-2. Extracts the squashfs filesystem (~5-10 minutes)
-3. Copies homelab scripts to `/opt/homelab` in the ISO
-4. Copies Docker images from GCS bucket (~10-15 minutes)
-5. Copies Ollama models from GCS bucket (~20-30 minutes)
-6. Creates first-boot setup script (auto-loads Docker images and models)
-7. Repacks squashfs filesystem (~5-10 minutes)
-8. Creates new bootable ISO
-
-**Total time:** 45-70 minutes (fully automated, no interaction required)
-
-**Output:** `~/Homelab-Install-Script/iso-artifacts/ubuntu-24.04.3-homelab-amd64.iso`
-
-**What happens on first boot of the custom ISO:**
-- Docker images are automatically loaded
-- Ollama models are restored to Docker volumes
-- Homelab installation script is ready at `/opt/homelab/post-install.sh`
-- First-boot logs available at `/var/log/homelab-first-boot.log`
-
-**Alternative: Use Cubic GUI** (see [Cubic GUI Method](#cubic-gui-method-alternative) section below)
-
-### Step 7: Download the ISO
-
-After the script completes:
-
-```bash
-# On your local machine, download the ISO
-gsutil cp gs://YOUR-BUCKET-NAME/ubuntu-24.04.3-homelab-amd64.iso ./
-
-# Or use the management script
-./gcloud-iso-vm.sh download ./my-isos/
-```
-
-**ISO Details:**
-- **Name:** `ubuntu-24.04.3-homelab-amd64.iso`
-- **Size:** ~4-6GB (depending on included models)
-- **Ready to boot:** Hybrid ISO works on both BIOS and UEFI
-- **Write to USB:** `dd if=ubuntu-24.04.3-homelab-amd64.iso of=/dev/sdX bs=4M status=progress`
-
-### Step 8: Stop the VM (Save Costs!)
-
-```bash
-# Stop the VM when not in use
-./gcloud-iso-vm.sh stop
-```
-
-**Cost Savings:**
-- **Running VM**: ~$0.30-0.50/hour (n2-standard-8)
-- **Stopped VM**: $0/hour (only pay for storage)
-- **Storage**: ~$2-3/month for 100GB bucket
-
-## VM Management
-
-The `gcloud-iso-vm.sh` script provides easy VM management:
-
-### Check Status
-
-```bash
-./gcloud-iso-vm.sh status
-```
-
-Shows VM state, IP address, and machine type.
-
-### Start/Stop VM
-
-```bash
-# Start the VM
-./gcloud-iso-vm.sh start
-
-# Stop the VM (saves money!)
-./gcloud-iso-vm.sh stop
-```
-
-### SSH Access
-
-```bash
-# Connect via SSH with X11 forwarding
-./gcloud-iso-vm.sh ssh
-```
-
-This enables you to run GUI applications like Cubic.
-
-### Bucket Operations
-
-```bash
-# View bucket contents
-./gcloud-iso-vm.sh bucket
-
-# Upload local files to bucket
-./gcloud-iso-vm.sh upload /local/path/
-
-# Download bucket to local
-./gcloud-iso-vm.sh download /local/path/
-```
-
-### Setup Mount Scripts
-
-If the mount scripts are missing from the VM:
-
-```bash
-# Create mount-bucket.sh and unmount-bucket.sh on the VM
-./gcloud-iso-vm.sh setup-scripts
-```
-
-This creates the bucket mounting scripts directly on the VM via SSH.
-
-### View All Commands
-
-```bash
-./gcloud-iso-vm.sh info
-```
-
-## Storage Bucket Management
-
-### Mounting the Bucket (On VM)
+**On the VM, mount the storage bucket:**
 
 ```bash
 # Mount bucket
 ~/mount-bucket.sh
 
 # Verify mount
-ls -lh ~/iso-artifacts/
+ls ~/iso-artifacts
 ```
 
-The bucket is mounted with `gcsfuse`, which provides POSIX-like filesystem access to Cloud Storage.
-
-### Unmounting the Bucket (On VM)
+### Step 4: Clone Repository and Prepare
 
 ```bash
+# Clone repository into bucket-mounted directory
+cd ~/iso-artifacts
+git clone https://github.com/brilliantsquirrel/Homelab-Install-Script.git
+cd Homelab-Install-Script
+
+# Download all dependencies (~1-1.5 hours with optimizations)
+./iso-prepare.sh
+```
+
+**What this downloads:**
+- Ubuntu Server 24.04.3 ISO (~2.5GB)
+- 16 Docker images (~20-30GB total)
+- 4 Ollama AI models (~50-80GB total)
+
+**Duration**: 1-1.5 hours for first run (with optimizations)
+- Subsequent runs: Much faster (only downloads updates)
+
+### Step 5: Build the Custom ISO
+
+```bash
+# Build the ISO (~30-45 minutes)
+./create-custom-iso.sh
+```
+
+**What this does:**
+1. Extracts Ubuntu Server ISO
+2. Extracts squashfs filesystem
+3. Copies homelab scripts and dependencies
+4. Repacks squashfs
+5. Creates new bootable ISO
+
+**Build location**: Uses `/mnt/disks/ssd/iso-build` if available (much faster!)
+
+**Output**: `iso-artifacts/ubuntu-24.04.3-homelab-amd64.iso`
+
+**Duration**: 30-45 minutes
+
+### Step 6: Download the ISO
+
+```bash
+# Download from VM to local machine
+./gcloud-iso-vm.sh download ~/Downloads/
+
+# Or use gsutil directly
+gsutil cp gs://your-bucket-name/ubuntu-24.04.3-homelab-amd64.iso ~/Downloads/
+```
+
+### Step 7: Stop the VM
+
+```bash
+# Stop VM to save costs
+./gcloud-iso-vm.sh stop
+```
+
+## Elastic Scaling
+
+Scale resources on-demand for faster builds or cost savings:
+
+### Increase Disk Space
+
+```bash
+# Increase boot disk to 1TB (can do while VM is running!)
+./gcloud-iso-vm.sh resize-disk 1000
+
+# Then on VM, expand the filesystem:
+sudo resize2fs /dev/sda1
+```
+
+### Scale CPU and Memory
+
+```bash
+# Scale up for heavy builds (requires VM stop)
+./gcloud-iso-vm.sh change-machine n2-standard-32   # 32 vCPU, 128GB RAM
+
+# Or for memory-intensive operations
+./gcloud-iso-vm.sh change-machine n2-highmem-16    # 16 vCPU, 128GB RAM
+
+# Start VM after changing
+./gcloud-iso-vm.sh start
+```
+
+### Available Machine Types
+
+| Machine Type | vCPU | RAM | Use Case | Cost/hour |
+|--------------|------|-----|----------|-----------|
+| n2-standard-8 | 8 | 32GB | Light workloads | ~$0.38 |
+| n2-standard-16 | 16 | 64GB | Recommended | ~$0.76 |
+| n2-standard-32 | 32 | 128GB | Heavy builds | ~$1.52 |
+| n2-highmem-16 | 16 | 128GB | Memory-intensive | ~$1.08 |
+
+### Cost Optimization Strategy
+
+```bash
+# Before starting build: Scale up for speed
+./gcloud-iso-vm.sh stop
+./gcloud-iso-vm.sh change-machine n2-standard-32
+./gcloud-iso-vm.sh start
+
+# Do your build (fast!)
+
+# After build: Scale back down
+./gcloud-iso-vm.sh stop
+./gcloud-iso-vm.sh change-machine n2-standard-16
+```
+
+## Management Scripts
+
+### VM Management (`gcloud-iso-vm.sh`)
+
+Created during setup, provides easy VM control:
+
+```bash
+# Show VM status
+./gcloud-iso-vm.sh status
+
+# Start/stop VM
+./gcloud-iso-vm.sh start
+./gcloud-iso-vm.sh stop
+
+# SSH into VM
+./gcloud-iso-vm.sh ssh
+
+# Show all commands
+./gcloud-iso-vm.sh info
+
+# Elastic scaling
+./gcloud-iso-vm.sh resize-disk 1000
+./gcloud-iso-vm.sh change-machine n2-standard-32
+
+# Bucket operations
+./gcloud-iso-vm.sh bucket              # List contents
+./gcloud-iso-vm.sh upload ./local-dir  # Upload to bucket
+./gcloud-iso-vm.sh download ./local    # Download from bucket
+
+# Delete VM (keeps bucket)
+./gcloud-iso-vm.sh delete
+```
+
+### Bucket Mounting (on VM)
+
+Helper scripts are automatically created on the VM:
+
+```bash
+# Mount bucket
+~/mount-bucket.sh
+
 # Unmount bucket
 ~/unmount-bucket.sh
+
+# Verify mount
+mountpoint ~/iso-artifacts
 ```
 
-**When to unmount:**
-- Before stopping the VM (optional, but clean)
-- When troubleshooting mount issues
+## Cost Analysis
 
-### Direct Bucket Access (Local Machine)
+### VM Costs (n2-standard-16 in us-west1)
 
-```bash
-# List bucket contents
-gsutil ls gs://YOUR-BUCKET-NAME/
+**Running costs** (~$0.76/hour):
+- 16 vCPU: ~$0.48/hour
+- 64GB RAM: ~$0.28/hour
+- 2 × local SSDs: ~$0.20/hour
+- Total: ~$0.96/hour
 
-# Upload files
-gsutil cp -r /local/path/ gs://YOUR-BUCKET-NAME/
+**Monthly if running 24/7**: ~$700/month
 
-# Download files
-gsutil cp -r gs://YOUR-BUCKET-NAME/ /local/path/
-
-# Sync directories
-gsutil -m rsync -r /local/path/ gs://YOUR-BUCKET-NAME/
-```
-
-## Cost Management
-
-### VM Costs
-
-**Running Costs** (per hour):
-- `n2-standard-8` (8 vCPU, 32GB RAM): ~$0.30-0.50/hour
-- 200GB boot disk: ~$0.02/hour
-- Network egress: Variable
-
-**Stopped VM Costs**: $0/hour for compute, only storage costs
-
-**Monthly Estimate** (if running 24/7):
-- VM: ~$220-360/month
-- Boot disk: ~$20/month
-- **Total**: ~$240-380/month
-
-**Recommended Usage**:
-- Run VM only when building ISOs
-- Stop VM immediately after work is done
-- Typical usage: 5-10 hours/month = **$2-5/month** (plus storage)
+**Realistic usage** (4 hours/week):
+- 4 hours × 4 weeks × $0.96 = ~$15.36/month
 
 ### Storage Costs
 
-**Cloud Storage Pricing** (Standard storage):
-- First 100GB: ~$2-3/month
-- Cubic artifacts (70-110GB): ~$2-3/month
-- Boot disk (200GB): ~$20/month
+**Cloud Storage bucket** (~$0.020/GB/month):
+- Base artifacts (70-110GB): ~$1.40-2.20/month
+- ISOs (5-10GB each): ~$0.10-0.20/month each
 
-**Total Storage**: ~$22-23/month
+**Persistent disk (500GB pd-ssd)**: ~$85/month
+- Only charged when VM exists (not running)
+- Delete when done if one-time use
 
-### Cost Optimization Tips
+### Total Monthly Cost Examples
 
-1. **Stop VM when not in use** - Most important!
-   ```bash
-   ./gcloud-iso-vm.sh stop
-   ```
+**Light use** (2 ISO builds/month, 8 hours total):
+- VM runtime: 8 × $0.96 = ~$7.68
+- Storage: ~$2
+- Persistent disk: ~$85 (delete after use: $0)
+- **Total: ~$10-95/month** (depending on disk retention)
 
-2. **Use preemptible/spot VMs** - 60-91% cheaper (edit setup script)
-   - Caution: Can be terminated at any time
-   - Good for non-urgent ISO builds
+**Heavy use** (weekly builds, 16 hours/month):
+- VM runtime: 16 × $0.96 = ~$15.36
+- Storage: ~$2
+- Persistent disk: ~$85 (or delete)
+- **Total: ~$17-102/month**
 
-3. **Delete VM after ISO creation** - Keep only the bucket
-   ```bash
-   ./gcloud-iso-vm.sh delete
-   # Bucket remains intact, recreate VM when needed
-   ```
+**Cost savings tip:** Delete the VM when done, only keep the bucket!
 
-4. **Archive old ISOs** - Move to Nearline/Coldline storage
-   ```bash
-   gsutil mv gs://BUCKET/old.iso gs://ARCHIVE-BUCKET/old.iso
-   ```
+## Workflow Summary
 
-5. **Choose the right machine type**
-   - `n2-standard-4` (4 vCPU, 16GB): Slower but cheaper (~$0.15/hour)
-   - `n2-standard-8` (8 vCPU, 32GB): Good balance (~$0.30/hour)
-   - `n2-standard-16` (16 vCPU, 64GB): Faster but expensive (~$0.60/hour)
+### One-Time Setup (10 minutes)
+
+```bash
+# 1. Create VM and bucket
+./gcloud-iso-setup.sh
+
+# 2. Wait for initialization (3-5 minutes)
+gcloud compute ssh iso-builder -- tail -f /var/log/iso-setup.log
+```
+
+### Each ISO Build (1.5-2 hours)
+
+```bash
+# 3. Start VM if stopped
+./gcloud-iso-vm.sh start
+
+# 4. Connect to VM
+./gcloud-iso-vm.sh ssh
+
+# 5. Mount bucket (on VM)
+~/mount-bucket.sh
+
+# 6. Prepare dependencies (first time only: ~1.5 hours)
+cd ~/iso-artifacts/Homelab-Install-Script
+./iso-prepare.sh
+
+# 7. Build ISO (~30-45 minutes)
+./create-custom-iso.sh
+
+# 8. Download ISO (on local machine)
+./gcloud-iso-vm.sh download ~/Downloads/
+
+# 9. Stop VM to save costs
+./gcloud-iso-vm.sh stop
+```
+
+## File Locations
+
+### On VM
+
+- **Bucket mount**: `~/iso-artifacts/` (FUSE mount to Cloud Storage)
+- **Local SSD**: `/mnt/disks/ssd/` (750GB ultra-fast scratch)
+- **Build directory**: `/mnt/disks/ssd/iso-build/` (auto-used by create-custom-iso.sh)
+- **Logs**: `/var/log/iso-setup.log`
+- **Helper scripts**: `~/mount-bucket.sh`, `~/unmount-bucket.sh`
+
+### In Cloud Storage Bucket
+
+```
+gs://your-bucket-name/
+├── docker-images/              # ~20-30GB (Docker image archives)
+├── ollama-models/              # ~50-80GB (AI model archives)
+├── homelab/                    # Homelab scripts
+└── ubuntu-24.04.3-live-server-amd64.iso  # Base ISO
+```
+
+### Output ISO
+
+**Location**: `~/iso-artifacts/ubuntu-24.04.3-homelab-amd64.iso`
+
+**Size**: ~8-12GB (depends on Docker images and models included)
+
+## Storage Strategy
+
+The setup uses a hybrid approach to optimize disk usage:
+
+### Cloud Storage Bucket (Permanent)
+- **Purpose**: Long-term storage for large files
+- **Contents**: Docker images, Ollama models, Ubuntu ISO
+- **Access**: Mounted at `~/iso-artifacts` via gcsfuse
+- **Cost**: ~$0.020/GB/month
+- **Speed**: Good for sequential reads, slower for random access
+- **Retention**: Keep forever, accessible from any VM
+
+### Local SSD (Temporary)
+- **Purpose**: Ultra-fast scratch space for builds
+- **Contents**: Temporary build files (extracted ISO, squashfs)
+- **Location**: `/mnt/disks/ssd/iso-build/`
+- **Cost**: ~$0.10/GB/hour (only when VM running)
+- **Speed**: 10x faster than persistent disks
+- **Retention**: **Deleted when VM stops** (ephemeral)
+
+### Boot Disk (Semi-Permanent)
+- **Purpose**: OS, Docker, downloaded source files for building
+- **Size**: 500GB pd-ssd
+- **Cost**: ~$0.17/GB/month (~$85/month for 500GB)
+- **Retention**: Persists when VM stops, deleted when VM deleted
 
 ## Troubleshooting
 
 ### VM Won't Start
 
-**Problem**: VM fails to start
-
-**Check:**
+**Check quota limits:**
 ```bash
-# View VM status
-./gcloud-iso-vm.sh status
-
-# Check serial console output
-gcloud compute instances get-serial-port-output cubic-builder --zone=us-central1-a
+gcloud compute project-info describe --project=YOUR_PROJECT_ID
 ```
 
-**Common causes:**
-- Quota exceeded (check GCP quotas)
-- Zone unavailable (try different zone)
-- Billing issue (check payment method)
+**Look for quota errors:**
+- CPUs, disks, or SSDs might be at quota limit
+- Request quota increase or use smaller machine type
+
+### Can't SSH Into VM
+
+**1. Check VM is running:**
+```bash
+./gcloud-iso-vm.sh status
+```
+
+**2. Check firewall rules:**
+```bash
+gcloud compute firewall-rules list --filter="name~'default-allow-ssh'"
+```
+
+**3. Try direct connection:**
+```bash
+gcloud compute ssh iso-builder --zone=us-west1-a --troubleshoot
+```
 
 ### Bucket Won't Mount
 
-**Problem**: `~/mount-bucket.sh` fails
+**Problem**: `~/mount-bucket.sh` fails or `~/iso-artifacts` is empty
 
-**Check:**
+**Solution 1 - Check bucket name in metadata:**
 ```bash
-# On VM, check if gcsfuse is installed
-which gcsfuse
-
-# Check bucket permissions
-gsutil ls gs://YOUR-BUCKET-NAME/
-
-# Check existing mounts
-mount | grep gcsfuse
+curl -H "Metadata-Flavor: Google" \
+  http://metadata.google.internal/computeMetadata/v1/instance/attributes/bucket-name
 ```
 
-**Fix:**
+**Solution 2 - Verify bucket access:**
 ```bash
-# Unmount if stuck
-fusermount -u ~/iso-artifacts
-
-# Re-mount
-~/mount-bucket.sh
+gsutil ls gs://your-bucket-name
 ```
 
-**Permissions issue:**
+**Solution 3 - Manual mount:**
 ```bash
-# On local machine, grant VM access to bucket
-gcloud projects add-iam-policy-binding YOUR-PROJECT-ID \
-  --member=serviceAccount:PROJECT-NUMBER-compute@developer.gserviceaccount.com \
-  --role=roles/storage.admin
+mkdir -p ~/iso-artifacts
+gcsfuse --implicit-dirs your-bucket-name ~/iso-artifacts
 ```
 
-### Cubic Error: "Original disk image is required"
+### Out of Disk Space
 
-**Problem**: Cubic GUI shows error: "The original disk image is required to copy important files and extract the Linux file system, but it is not available."
-
-**Root Cause**: The ISO is in the GCS bucket mount (`~/iso-artifacts/`), not on local disk. Cubic requires the ISO on a real filesystem, not a FUSE mount.
-
-**Solution:**
+**Check disk usage:**
 ```bash
-# 1. Verify where your repo is located
-pwd
-# Should be: /home/ubuntu/Homelab-Install-Script
-# NOT: /home/ubuntu/iso-artifacts/Homelab-Install-Script
-
-# 2. If repo is in wrong location, move it to local disk
-cd ~
-# If the repo is in the bucket mount:
-if [ -d ~/iso-artifacts/Homelab-Install-Script ]; then
-    mv ~/iso-artifacts/Homelab-Install-Script ~/
-fi
-
-# 3. Re-run iso-prepare.sh from the correct location
-cd ~/Homelab-Install-Script
-./iso-prepare.sh
-
-# 4. Verify ISO is on local disk
-ls -lh ~/Homelab-Install-Script/iso-artifacts/*.iso
-# Should show: ubuntu-24.04.3-live-server-amd64.iso
-
-# 5. Check it's NOT in a FUSE mount
-df -h ~/Homelab-Install-Script/iso-artifacts/*.iso
-# Filesystem should be /dev/sda1 or similar (NOT gcsfuse)
-
-# 6. Launch Cubic and point to LOCAL directory
-cubic
-# In GUI: Project Directory = /home/ubuntu/Homelab-Install-Script/iso-artifacts
-```
-
-**Prevention**: Always clone the repo to `~` (home), not `~/iso-artifacts` (bucket mount).
-
-### Cubic GUI Won't Display
-
-**Problem**: Can't see Cubic GUI when running `cubic`
-
-**Check SSH X11 forwarding:**
-```bash
-# Reconnect with X11 forwarding
-exit  # Exit VM
-./gcloud-iso-vm.sh ssh
-
-# Test X11
-xclock  # Should show a clock window
-```
-
-**Alternative: Use VNC**
-```bash
-# On VM, start VNC server
-vncserver :1
-
-# On local machine, create SSH tunnel
-gcloud compute ssh cubic-builder -- -L 5901:localhost:5901
-
-# Connect with VNC viewer
-# Address: localhost:5901
-```
-
-### Insufficient Disk Space
-
-**Problem**: Boot disk full during ISO creation
-
-**Check:**
-```bash
-# On VM
 df -h
-du -sh ~/iso-artifacts
 ```
 
-**Fix - Increase boot disk:**
+**Solution 1 - Increase boot disk size:**
 ```bash
-# On local machine
-gcloud compute disks resize cubic-builder \
-  --size=200GB \
-  --zone=us-central1-a
+# Increase disk (can do while running!)
+./gcloud-iso-vm.sh resize-disk 1000
 
-# On VM, resize filesystem
+# Expand filesystem on VM
 sudo resize2fs /dev/sda1
 ```
 
-### Slow Download Speeds
-
-**Problem**: `iso-prepare.sh` downloads very slowly
-
-**Causes:**
-- VM region far from Docker Hub
-- Network throttling
-
-**Fix:**
+**Solution 2 - Clean up build artifacts:**
 ```bash
-# Use a different zone closer to Docker Hub (US East)
-./gcloud-iso-setup.sh
-# Choose zone: us-east1-a or us-east1-b
+# Remove temporary build files (on VM)
+rm -rf /mnt/disks/ssd/iso-build/*
+rm -rf ~/iso-artifacts/Homelab-Install-Script/iso-build/*
 ```
 
-### Docker Pull Fails
+### ISO Build Fails
 
-**Problem**: Docker image pulls fail during `iso-prepare.sh`
-
-**Check:**
+**Check available space:**
 ```bash
-# On VM
-sudo docker info
-sudo systemctl status docker
+df -h /mnt/disks/ssd
+df -h ~/iso-artifacts
 ```
 
-**Fix:**
+**Check logs:**
 ```bash
-# Restart Docker
-sudo systemctl restart docker
-
-# Add user to docker group if needed
-sudo usermod -aG docker $USER
-# Log out and back in
+# Last 100 lines of create-custom-iso.sh output
+tail -100 ~/iso-artifacts/Homelab-Install-Script/create-custom-iso.log
 ```
 
-### GCS Bucket Uploads Fail (boto.cfg Error)
+**Common issues:**
+- Out of space: Increase disk or use local SSD
+- Missing dependencies: Re-run `./iso-prepare.sh`
+- Corrupted downloads: Delete and re-download
 
-**Problem**: `iso-prepare.sh` completes but GCS bucket is empty, or you see:
-```
-DuplicateSectionError: section 'GSUtil' already exists
-```
+### Slow Build Performance
 
-**Root Cause**: The VM startup script appended GSUtil configuration to `/etc/boto.cfg` multiple times (if VM was restarted), creating duplicate `[GSUtil]` sections that break gsutil.
-
-**Diagnostic Commands:**
+**Solution 1 - Scale up machine:**
 ```bash
-# On VM, check if boto.cfg has duplicate sections
-cat /etc/boto.cfg
-
-# Test gsutil functionality
-gsutil ls gs://YOUR-BUCKET-NAME/
-
-# Check if metadata service is accessible
-curl -s -H "Metadata-Flavor: Google" \
-  "http://metadata.google.internal/computeMetadata/v1/instance/attributes/bucket-name"
+./gcloud-iso-vm.sh stop
+./gcloud-iso-vm.sh change-machine n2-standard-32
+./gcloud-iso-vm.sh start
 ```
 
-**Quick Fix (on existing VMs):**
+**Solution 2 - Verify local SSD usage:**
 ```bash
-# On VM, recreate boto.cfg with correct configuration
-sudo rm /etc/boto.cfg
-sudo cat > /etc/boto.cfg << 'EOF'
-[GSUtil]
-parallel_composite_upload_threshold = 150M
-parallel_thread_count = 8
-EOF
+# Check if build is using local SSD
+ls -la /mnt/disks/ssd/iso-build/
 
-# Verify gsutil works
-gsutil ls gs://YOUR-BUCKET-NAME/
+# If empty, local SSD not detected
+# Check SSD mount:
+df -h | grep ssd
 ```
 
-**Permanent Fix**: The issue is resolved in the latest version of `gcloud-iso-setup.sh`. The startup script now checks if `[GSUtil]` section exists before creating it. If you created your VM before this fix, either:
-1. Use the quick fix above, or
-2. Delete and recreate the VM with the updated setup script
-
-**Verify GCS is working:**
+**Solution 3 - Check network throttling:**
 ```bash
-# On VM, test upload
-echo "test" > /tmp/test.txt
-gsutil cp /tmp/test.txt gs://YOUR-BUCKET-NAME/test.txt
-gsutil ls gs://YOUR-BUCKET-NAME/test.txt
-gsutil rm gs://YOUR-BUCKET-NAME/test.txt
+# GCS transfer speeds
+gsutil perfdiag gs://your-bucket-name
 ```
 
-### GCS Bucket Empty After iso-prepare.sh
+### Local SSD Not Available
 
-**Problem**: Script completes successfully but bucket has no files
+**Problem**: `/mnt/disks/ssd` doesn't exist or shows no space
 
-**Common Causes:**
-1. **boto.cfg error** (see section above)
-2. **Wrong bucket name** - Script uploaded to different bucket
-3. **Metadata service unavailable** - Running on local machine instead of GCloud VM
-4. **Permission denied** - VM service account lacks Storage Admin role
+**Cause**: VM doesn't have local SSDs attached
 
-**Diagnostic Steps:**
+**Solution - Add SSDs when creating VM:**
 ```bash
-# 1. Verify you're on a GCloud VM
-curl -s -H "Metadata-Flavor: Google" \
-  "http://metadata.google.internal/computeMetadata/v1/instance/name"
-# Should return VM name, not "Could not resolve host"
-
-# 2. Check which bucket the script is using
-echo $GCS_BUCKET
-# Or auto-detect from metadata:
-curl -s -H "Metadata-Flavor: Google" \
-  "http://metadata.google.internal/computeMetadata/v1/instance/attributes/bucket-name"
-
-# 3. Test gsutil access
-gsutil ls gs://YOUR-BUCKET-NAME/
-
-# 4. Check boto.cfg for errors
-cat /etc/boto.cfg
-grep -c "\[GSUtil\]" /etc/boto.cfg  # Should be 1, not 2+
-
-# 5. Review script output
-ls -lh ~/iso-artifacts/
-# ISO should be present locally
-# Docker images and models should be deleted after upload
+# Delete and recreate with SSDs
+./gcloud-iso-vm.sh delete
+./gcloud-iso-setup.sh  # Choose 2 or more SSDs when prompted
 ```
 
-**If running on local machine (not GCloud VM):**
-```bash
-# iso-prepare.sh requires GCloud VM with:
-# - Metadata service for bucket auto-detection
-# - Configured gsutil with parallel uploads
-# - High-bandwidth connection for large uploads
-
-# Solution: Follow the Quick Start guide to create a GCloud VM
-```
-
-### Parallel Downloads Show Errors
-
-**Problem**: Seeing errors during parallel Docker downloads or Ollama model processing
-
-**Expected Behavior**:
-- The script runs up to 4 parallel jobs for Docker images
-- Each job writes status to temp files
-- Summary is displayed after all jobs complete
-- Some connection errors are normal and retried automatically
-
-**Check Progress:**
-```bash
-# On VM during iso-prepare.sh execution
-# Watch parallel jobs
-watch -n 2 'jobs -r | wc -l'
-
-# Check temp status files
-ls -lh /tmp/docker_status_*
-ls -lh /tmp/ollama_status_*
-
-# Monitor GCS uploads
-watch -n 5 'gsutil ls gs://YOUR-BUCKET-NAME/docker-images/ | wc -l'
-```
-
-**If Jobs Hang:**
-```bash
-# Kill stuck jobs
-killall docker
-killall gsutil
-
-# Clear temp files
-rm -f /tmp/docker_status_* /tmp/ollama_status_*
-
-# Re-run iso-prepare.sh (it will skip already-uploaded files)
-./iso-prepare.sh
-```
+**Note**: Can't add local SSDs to running VM, must recreate
 
 ## Advanced Configuration
 
-### Using Preemptible VMs (Cheaper)
+### Customize VM Configuration
 
-Edit `gcloud-iso-setup.sh` and add this flag to the VM creation command:
+Edit `gcloud-iso-setup.sh` before running:
 
 ```bash
---preemptible \
---provisioning-model=SPOT \
+# Default configuration variables (line ~42)
+VM_NAME="iso-builder"
+ZONE="us-west1-a"
+MACHINE_TYPE="n2-standard-16"
+BOOT_DISK_SIZE="500GB"
+LOCAL_SSD_COUNT="2"
+BUCKET_NAME="cloud-ai-server-iso-artifacts"
 ```
 
-**Benefits:**
-- 60-91% cheaper
-- Good for ISO builds that can be restarted
+### Use Different Zones
 
-**Drawbacks:**
-- Can be terminated at any time
-- Maximum 24-hour runtime
-- Not suitable for critical work
-
-### Custom Machine Type
-
+**List available zones:**
 ```bash
-# Edit gcloud-iso-setup.sh
-MACHINE_TYPE="n2-custom-4-16384"  # 4 vCPU, 16GB RAM
+gcloud compute zones list
 ```
 
-Or during setup, enter a custom machine type when prompted.
+**Pricing varies by zone:**
+- `us-west1` (Oregon): Standard pricing
+- `us-central1` (Iowa): Standard pricing
+- `us-east1` (South Carolina): Standard pricing
+- `europe-west1` (Belgium): ~10% higher
+- `asia-southeast1` (Singapore): ~10% higher
 
-### Different Region/Zone
+### Increase Parallel Downloads
 
-Choose zones based on:
-- **Latency**: Closer to your location
-- **Cost**: Some regions are cheaper
-- **Availability**: Check quota availability
+Edit `iso-prepare.sh` (line ~46):
 
 ```bash
-# During setup
-Zone [us-central1-a]: europe-west1-b
+# Change from 4 to 8 for faster downloads (needs more CPU/memory)
+MAX_PARALLEL_DOWNLOADS=8
 ```
 
-### Persistent Desktop Session
+### Add More Local SSDs
 
-Install and configure VNC for persistent GUI sessions:
+During VM creation, choose more SSDs for even faster builds:
+- 4 SSDs = 1.5TB scratch space
+- 8 SSDs = 3TB scratch space
+
+**Cost**: ~$0.10/GB/hour per SSD (only when running)
+
+## Monitoring and Logs
+
+### Check VM Logs
 
 ```bash
-# On VM
-sudo apt-get install -y tightvncserver xfce4
+# Startup script log
+gcloud compute ssh iso-builder -- tail -f /var/log/iso-setup.log
 
-# Start VNC
-vncserver :1 -geometry 1920x1080
-
-# Set password when prompted
-
-# On local machine, create tunnel
-gcloud compute ssh cubic-builder -- -L 5901:localhost:5901
-
-# Connect with VNC viewer to localhost:5901
+# System log
+gcloud compute ssh iso-builder -- sudo journalctl -f
 ```
 
-### Automatic Bucket Mounting on Boot
+### Monitor Resource Usage
 
 ```bash
-# On VM, add to ~/.bashrc
-if [ ! -d ~/iso-artifacts ] || ! mountpoint -q ~/iso-artifacts; then
-    ~/mount-bucket.sh
-fi
-```
-
-## Workflow Examples
-
-### Full ISO Build (First Time)
-
-```bash
-# 1. Create VM (one-time, 10-15 minutes)
-./gcloud-iso-setup.sh
-
-# 2. Wait for initialization
-gcloud compute ssh cubic-builder -- tail -f /var/log/cubic-setup.log
-
-# 3. Connect and mount bucket
+# Connect to VM
 ./gcloud-iso-vm.sh ssh
-~/mount-bucket.sh
 
-# 4. Download dependencies (1-1.5 hours with optimizations)
-# Fully automated - no prompts
-cd ~
-git clone https://github.com/brilliantsquirrel/Homelab-Install-Script.git
-cd Homelab-Install-Script
-./iso-prepare.sh
+# CPU and memory
+htop
 
-# 5. Create custom ISO with script (45-70 minutes, fully automated)
-./create-custom-iso.sh
+# Disk usage
+df -h
 
-# 6. Download ISO to local machine
-exit  # Exit VM
-./gcloud-iso-vm.sh download ./my-isos/
+# Disk I/O
+iostat -x 1
 
-# 7. Stop VM
+# Network usage
+iftop
+```
+
+### GCS Transfer Logs
+
+```bash
+# Check gsutil transfer logs (on VM)
+ls ~/.gsutil/
+cat ~/.gsutil/tracker-files/*
+```
+
+## Cleanup
+
+### After Build is Complete
+
+**Option 1: Keep everything (resume builds later)**
+```bash
+# Just stop the VM
 ./gcloud-iso-vm.sh stop
 ```
 
-**Total time**: 2.5-3 hours (fully automated, no GUI interaction)
-**Cost**: ~$0.75-1.50 (one-time)
-**Performance improvements**:
-- Parallel Docker downloads (4 concurrent)
-- Fast compression with pigz (4-8x faster)
-- Parallel GCS uploads (8 threads)
-- SSD persistent disks
-- No X11 overhead (script-based, no GUI)
-
-### Updating ISO (Subsequent Builds)
-
+**Option 2: Delete VM, keep bucket (recommended)**
 ```bash
-# 1. Start existing VM
-./gcloud-iso-vm.sh start
-
-# 2. Connect and mount
-./gcloud-iso-vm.sh ssh
-~/mount-bucket.sh
-
-# 3. Update dependencies (downloads from GCS, very fast)
-cd ~/Homelab-Install-Script
-git pull
-./iso-prepare.sh  # Skips existing files, only downloads new/updated ones
-
-# 4. Rebuild ISO with script
-./create-custom-iso.sh
-
-# 5. Download and stop
-exit
-./gcloud-iso-vm.sh download ./my-isos/
-./gcloud-iso-vm.sh stop
-```
-
-**Total time**: 50-80 minutes (most dependencies cached in GCS)
-**Cost**: ~$0.25-0.40
-
-### Quick ISO Customization
-
-```bash
-# 1. Start VM
-./gcloud-iso-vm.sh start
-./gcloud-iso-vm.sh ssh
-
-# 2. Mount and launch Cubic
-~/mount-bucket.sh
-cubic
-
-# 3. Make changes in Cubic GUI
-# ... customize ISO ...
-
-# 4. Download and stop
-exit
-./gcloud-iso-vm.sh download ./my-isos/
-./gcloud-iso-vm.sh stop
-```
-
-**Total time**: 30-60 minutes
-**Cost**: ~$0.30-0.50
-
-## Security Considerations
-
-### VM Security
-
-1. **Firewall Rules**: Default firewall blocks external access
-2. **IAM Permissions**: VM uses service account with minimal permissions
-3. **SSH Keys**: Uses gcloud-managed SSH keys
-4. **Updates**: Startup script updates packages
-
-### Bucket Security
-
-1. **Private by Default**: Bucket is not publicly accessible
-2. **IAM Permissions**: Only project members can access
-3. **Encryption**: Data encrypted at rest by default
-
-### Best Practices
-
-1. **Use IAM roles** instead of service account keys
-2. **Enable VPC Service Controls** for sensitive projects
-3. **Audit bucket access** with Cloud Audit Logs
-4. **Delete old ISOs** to minimize attack surface
-5. **Use short-lived VMs** - create/delete as needed
-
-## Cubic GUI Method (Alternative)
-
-If you prefer a graphical interface or need more manual control over ISO customization, you can use Cubic instead of the automated script.
-
-### Prerequisites for Cubic
-
-The GCloud VM must have desktop environment and X11 forwarding support (already configured by `gcloud-iso-setup.sh`).
-
-### Using Cubic
-
-```bash
-# 1. SSH with X11 forwarding
-./gcloud-iso-vm.sh ssh  # Or: gcloud compute ssh cubic-builder -- -X
-
-# 2. Test X11 works
-xclock  # Should display a clock window
-
-# 3. Launch Cubic
-cubic
-```
-
-### In Cubic GUI
-
-1. **Project Directory**: `/home/ubuntu/Homelab-Install-Script/iso-artifacts`
-   - ⚠️ **IMPORTANT**: Must be on LOCAL disk, NOT the GCS bucket mount (`~/iso-artifacts`)
-   - Verify with: `df -h ~/Homelab-Install-Script/iso-artifacts` (should show `/dev/sda1`, NOT `gcsfuse`)
-
-2. **Original ISO**: Select `ubuntu-24.04.3-live-server-amd64.iso` in the project directory
-
-3. **Custom ISO name**: `ubuntu-24.04-homelab-amd64.iso`
-
-4. Click **Next** and follow the Cubic wizard
-
-5. In the terminal tab, manually copy files:
-   ```bash
-   # Copy homelab scripts
-   cp -r /home/ubuntu/Homelab-Install-Script/* /opt/homelab/
-
-   # Copy Docker images (if desired)
-   mkdir -p /opt/homelab-data/docker-images
-   cp /home/ubuntu/iso-artifacts/docker-images/*.tar.gz /opt/homelab-data/docker-images/
-
-   # Copy Ollama models (if desired)
-   mkdir -p /opt/homelab-data/ollama-models
-   cp -r /home/ubuntu/iso-artifacts/ollama-models/* /opt/homelab-data/ollama-models/
-   ```
-
-6. Complete the Cubic wizard to generate the ISO
-
-### Common Cubic Issues
-
-**"Original disk image is required" error:**
-- ISO must be on local disk (`~/Homelab-Install-Script/iso-artifacts/`), not GCS mount
-- See [troubleshooting section](#cubic-error-original-disk-image-is-required) for detailed fix
-
-**X11 display issues:**
-- Ensure you connected with `-X` flag: `gcloud compute ssh cubic-builder -- -X`
-- Test with `xclock` before launching Cubic
-- Consider using VNC for better performance (see Advanced Configuration)
-
-**Why Script Method is Recommended:**
-- No X11/GUI issues
-- Fully automated (no manual file copying)
-- Faster and more reliable
-- Easier to reproduce and debug
-
-## Deleting Resources
-
-### Delete VM Only (Keep Bucket)
-
-```bash
+# Delete VM (keeps all files in bucket)
 ./gcloud-iso-vm.sh delete
+
+# Later, create new VM pointing to same bucket
+./gcloud-iso-setup.sh  # Use same bucket name
 ```
 
-Bucket remains intact. You can recreate the VM later and remount the same bucket.
-
-### Delete Everything
-
+**Option 3: Delete everything**
 ```bash
 # Delete VM
 ./gcloud-iso-vm.sh delete
 
-# Delete bucket (WARNING: Permanent!)
-gsutil rm -r gs://YOUR-BUCKET-NAME
-
-# Or delete bucket and all contents
-gcloud storage rm --recursive gs://YOUR-BUCKET-NAME
+# Delete bucket (WARNING: loses all files!)
+gsutil rm -r gs://your-bucket-name
 ```
 
-## Comparison: GCloud vs Local Build
+### Cost Comparison
 
-| Aspect | GCloud VM | Local Machine |
-|--------|-----------|---------------|
-| **Setup Time** | 10-15 min | 30-60 min |
-| **Storage Cost** | ~$3/month | $0 (local disk) |
-| **Compute Cost** | ~$0.30/hour | $0 (electricity) |
-| **Flexibility** | Start/stop as needed | Always available |
-| **Disk Space** | 200GB+ easily | Depends on hardware |
-| **Performance** | 8 vCPU, 32GB RAM | Varies |
-| **Internet Speed** | Very fast (datacenter) | Depends on ISP |
-| **Portability** | Access from anywhere | Tied to location |
-| **Maintenance** | Minimal | Manual updates |
+| Option | Monthly Cost | Resume Speed | Data Safety |
+|--------|-------------|--------------|-------------|
+| Stop VM | ~$87 (disk) | Instant | ✅ Safe |
+| Delete VM | ~$2 (bucket) | 5 min setup | ✅ Safe |
+| Delete All | $0 | 2 hours rebuild | ❌ Lost |
 
-**Recommendation:**
-- **Local machine**: For frequent ISO builds, fast local machine available
-- **GCloud VM**: For occasional builds, limited local storage, access from multiple locations
+**Recommendation**: Delete VM, keep bucket (~$2/month, instant resume)
 
-## References
+## Additional Resources
 
-- [Google Cloud Compute Engine Documentation](https://cloud.google.com/compute/docs)
-- [Cloud Storage Documentation](https://cloud.google.com/storage/docs)
-- [gcsfuse Documentation](https://cloud.google.com/storage/docs/gcsfuse-quickstart)
-- [Cubic Documentation](https://github.com/PJ-Singh-001/Cubic)
-- [Main Cubic Integration Guide](CUBIC.md)
-
-## Support
-
-For issues:
-- **GCloud setup**: Check this document and GCP documentation
-- **Cubic usage**: See [CUBIC.md](CUBIC.md) or [Cubic GitHub](https://github.com/PJ-Singh-001/Cubic/issues)
-- **Homelab scripts**: See [CLAUDE.md](CLAUDE.md) or [GitHub Issues](https://github.com/brilliantsquirrel/Homelab-Install-Script/issues)
+- [ISO Preparation Script (iso-prepare.sh)](iso-prepare.sh)
+- [ISO Building Script (create-custom-iso.sh)](create-custom-iso.sh)
+- [Main Project Documentation](README.md)
+- [GCloud Compute Engine Pricing](https://cloud.google.com/compute/pricing)
+- [GCloud Storage Pricing](https://cloud.google.com/storage/pricing)
+- [xorriso Documentation](https://www.gnu.org/software/xorriso/)
+- [squashfs-tools Documentation](https://github.com/plougher/squashfs-tools)
