@@ -161,18 +161,37 @@ This mounts the Cloud Storage bucket at `~/cubic-artifacts/`.
 ### Step 4: Prepare Dependencies
 
 ```bash
-# On the VM, clone the repository into the mounted bucket
-cd ~/cubic-artifacts
+# On the VM, clone the repository
+cd ~
 git clone https://github.com/brilliantsquirrel/Homelab-Install-Script.git
 cd Homelab-Install-Script
 
+# Set the GCS bucket environment variable
+export GCS_BUCKET=gs://$(curl -s "http://metadata.google.internal/computeMetadata/v1/instance/attributes/bucket-name" -H "Metadata-Flavor: Google")
+
 # Download all dependencies (70-110GB, takes 2-4 hours)
+# Files are automatically uploaded to GCS and local copies are deleted to save disk space
 ./cubic-prepare.sh
 ```
 
-**Important**: This downloads large files directly into the Cloud Storage bucket, so they persist even if the VM is deleted.
+**How it works**:
+- Downloads Ubuntu ISO, Docker images, and Ollama models
+- Automatically uploads each file to GCS bucket after creation
+- Verifies the upload succeeded
+- Deletes local copy to save VM disk space (~70-110GB saved)
+- Files persist in GCS bucket even if VM is deleted
+- On subsequent runs, downloads from GCS (much faster than original sources)
 
-### Step 5: Launch Cubic
+### Step 5: Mount Bucket and Access Files
+
+```bash
+# On the VM, mount the bucket to access uploaded files
+~/mount-bucket.sh
+```
+
+This mounts the GCS bucket at `~/cubic-artifacts/`, giving you access to all files uploaded by `cubic-prepare.sh`.
+
+### Step 6: Launch Cubic
 
 ```bash
 # On the VM, launch Cubic GUI
@@ -180,14 +199,16 @@ cubic
 ```
 
 **In Cubic GUI:**
-1. **Project Directory**: Select `/home/ubuntu/cubic-artifacts`
-2. **Original ISO**: Select Ubuntu Server 24.04 LTS
+1. **Project Directory**: Select `/home/ubuntu/cubic-artifacts` (the mounted bucket)
+2. **Original ISO**: Will be available from GCS bucket
 3. **Custom ISO name**: `ubuntu-24.04-homelab-amd64.iso`
 4. Click **Next** to proceed
 
 Follow the instructions in [CUBIC.md](CUBIC.md) for customizing the ISO.
 
-### Step 6: Download the ISO
+**Note**: All Docker images and Ollama models are available in the mounted bucket's subdirectories (`docker-images/`, `ollama-models/`).
+
+### Step 7: Download the ISO
 
 After Cubic generates the ISO:
 
@@ -202,7 +223,7 @@ Or use the management script:
 ./gcloud-cubic-vm.sh download ./my-isos/
 ```
 
-### Step 7: Stop the VM (Save Costs!)
+### Step 8: Stop the VM (Save Costs!)
 
 ```bash
 # Stop the VM when not in use
@@ -257,6 +278,17 @@ This enables you to run GUI applications like Cubic.
 # Download bucket to local
 ./gcloud-cubic-vm.sh download /local/path/
 ```
+
+### Setup Mount Scripts
+
+If the mount scripts are missing from the VM:
+
+```bash
+# Create mount-bucket.sh and unmount-bucket.sh on the VM
+./gcloud-cubic-vm.sh setup-scripts
+```
+
+This creates the bucket mounting scripts directly on the VM via SSH.
 
 ### View All Commands
 
