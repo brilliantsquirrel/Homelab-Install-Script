@@ -44,7 +44,7 @@ VM_NAME="cubic-builder"
 ZONE="us-west1-a"
 MACHINE_TYPE="n2-standard-8"  # 8 vCPU, 32GB RAM
 BOOT_DISK_SIZE="200GB"
-BUCKET_NAME="cloud-ai-server-cubic-artifacts"
+BUCKET_NAME="cloud-ai-server-iso-artifacts"
 IMAGE_FAMILY="ubuntu-2204-lts"  # Ubuntu 22.04 LTS (stable, well-supported)
 IMAGE_PROJECT="ubuntu-os-cloud"
 # Alternative options:
@@ -262,7 +262,7 @@ cat > /tmp/mount-bucket.sh << 'MOUNT_SCRIPT'
 #!/bin/bash
 
 # Mount Google Cloud Storage Bucket
-# This script mounts the cloud storage bucket to ~/cubic-artifacts
+# This script mounts the cloud storage bucket to ~/iso-artifacts
 
 set -e
 
@@ -283,7 +283,7 @@ if [ -z "$BUCKET_NAME" ]; then
     exit 1
 fi
 
-MOUNT_POINT="$HOME/cubic-artifacts"
+MOUNT_POINT="$HOME/iso-artifacts"
 
 log "Mounting bucket: gs://${BUCKET_NAME}"
 log "Mount point: $MOUNT_POINT"
@@ -330,7 +330,7 @@ log() { echo -e "${GREEN}[INFO]${NC} $1"; }
 error() { echo -e "${RED}[ERROR]${NC} $1"; }
 success() { echo -e "${GREEN}[SUCCESS]${NC} $1"; }
 
-MOUNT_POINT="$HOME/cubic-artifacts"
+MOUNT_POINT="$HOME/iso-artifacts"
 
 if ! mountpoint -q "$MOUNT_POINT"; then
     log "Bucket not mounted at $MOUNT_POINT"
@@ -456,7 +456,7 @@ cmd_setup_scripts() {
 #!/bin/bash
 
 # Mount Google Cloud Storage Bucket
-# This script mounts the cloud storage bucket to ~/cubic-artifacts
+# This script mounts the cloud storage bucket to ~/iso-artifacts
 
 set -e
 
@@ -477,7 +477,7 @@ if [ -z \"\\\$BUCKET_NAME\" ]; then
     exit 1
 fi
 
-MOUNT_POINT=\"\\\$HOME/cubic-artifacts\"
+MOUNT_POINT=\"\\\$HOME/iso-artifacts\"
 
 log \"Mounting bucket: gs://\\\${BUCKET_NAME}\"
 log \"Mount point: \\\$MOUNT_POINT\"
@@ -528,7 +528,7 @@ log() { echo -e \"\\\${GREEN}[INFO]\\\${NC} \\\$1\"; }
 error() { echo -e \"\\\${RED}[ERROR]\\\${NC} \\\$1\"; }
 success() { echo -e \"\\\${GREEN}[SUCCESS]\\\${NC} \\\$1\"; }
 
-MOUNT_POINT=\"\\\$HOME/cubic-artifacts\"
+MOUNT_POINT=\"\\\$HOME/iso-artifacts\"
 
 if ! mountpoint -q \"\\\$MOUNT_POINT\"; then
     log \"Bucket not mounted at \\\$MOUNT_POINT\"
@@ -716,7 +716,7 @@ echo "3. Mount the storage bucket (on VM):"
 echo "   ~/mount-bucket.sh"
 echo ""
 echo "4. Clone this repository (on VM):"
-echo "   cd ~/cubic-artifacts"
+echo "   cd ~/iso-artifacts"
 echo "   git clone https://github.com/brilliantsquirrel/Homelab-Install-Script.git"
 echo "   cd Homelab-Install-Script"
 echo ""
@@ -725,7 +725,7 @@ echo "   ./cubic-prepare.sh"
 echo ""
 echo "6. Launch Cubic (on VM):"
 echo "   cubic"
-echo "   # In Cubic GUI, set project directory to: ~/cubic-artifacts"
+echo "   # In Cubic GUI, set project directory to: ~/iso-artifacts"
 echo ""
 echo "Management commands:"
 echo "  ./gcloud-cubic-vm.sh status    - Show VM status"

@@ -1,12 +1,12 @@
 #!/bin/bash
 
 # Cubic ISO Preparation Script
-# Downloads all large dependencies and creates a Cubic project directory
-# Usage: Run this script, then launch Cubic pointing to cubic-artifacts/ as project directory
+# Downloads all large dependencies and creates an ISO build artifacts directory
+# Usage: Run this script, then launch Cubic pointing to iso-artifacts/ as project directory
 #
-# This script creates cubic-artifacts/ which serves as BOTH:
+# This script creates iso-artifacts/ which serves as BOTH:
 # - The download location for Docker images and models
-# - The Cubic project directory (point Cubic here!)
+# - The ISO build directory (point Cubic here!)
 
 set -e
 
@@ -119,8 +119,8 @@ REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 header "Cubic ISO Preparation - Homelab Dependencies"
 
 log "This script will:"
-log "  1. Create cubic-artifacts/ as your Cubic project directory"
-log "  2. Copy all homelab scripts into cubic-artifacts/homelab/"
+log "  1. Create iso-artifacts/ as your ISO build directory"
+log "  2. Copy all homelab scripts into iso-artifacts/homelab/"
 log "  3. Download Ubuntu Server 24.04 LTS ISO (~2.5GB)"
 log "  4. Download Docker images (~20-30GB)"
 log "  5. Download Ollama models (~50-80GB)"
@@ -129,19 +129,19 @@ log "Total download size: ~52-102GB depending on selected models"
 echo ""
 
 # Create output directory structure
-CUBIC_DIR="$REPO_DIR/cubic-artifacts"
-HOMELAB_DIR="$CUBIC_DIR/homelab"
-DOCKER_DIR="$CUBIC_DIR/docker-images"
-MODELS_DIR="$CUBIC_DIR/ollama-models"
-SCRIPTS_DIR="$CUBIC_DIR/scripts"
+ISO_DIR="$REPO_DIR/iso-artifacts"
+HOMELAB_DIR="$ISO_DIR/homelab"
+DOCKER_DIR="$ISO_DIR/docker-images"
+MODELS_DIR="$ISO_DIR/ollama-models"
+SCRIPTS_DIR="$ISO_DIR/scripts"
 
-log "Creating Cubic project directory structure..."
+log "Creating ISO project directory structure..."
 mkdir -p "$HOMELAB_DIR"
 mkdir -p "$DOCKER_DIR"
 mkdir -p "$MODELS_DIR"
 mkdir -p "$SCRIPTS_DIR"
 
-success "✓ Created: $CUBIC_DIR (this will be your Cubic project directory)"
+success "✓ Created: $ISO_DIR (this will be your ISO build directory)"
 
 # ========================================
 # Google Cloud Storage Configuration
@@ -266,11 +266,11 @@ else
 fi
 echo ""
 
-# Copy homelab scripts to cubic-artifacts/homelab/
+# Copy homelab scripts to iso-artifacts/homelab/
 header "Copying Homelab Scripts"
 
-log "Copying all homelab files to cubic-artifacts/homelab/..."
-rsync -av --exclude='cubic-artifacts' --exclude='.git' "$REPO_DIR/" "$HOMELAB_DIR/"
+log "Copying all homelab files to iso-artifacts/homelab/..."
+rsync -av --exclude='iso-artifacts' --exclude='.git' "$REPO_DIR/" "$HOMELAB_DIR/"
 
 success "✓ Copied homelab scripts to: $HOMELAB_DIR"
 
@@ -282,7 +282,7 @@ header "Step 0: Downloading Ubuntu Server 24.04 LTS ISO"
 
 UBUNTU_VERSION="24.04.3"
 UBUNTU_ISO_URL="https://releases.ubuntu.com/24.04/ubuntu-${UBUNTU_VERSION}-live-server-amd64.iso"
-UBUNTU_ISO_FILE="$CUBIC_DIR/ubuntu-${UBUNTU_VERSION}-live-server-amd64.iso"
+UBUNTU_ISO_FILE="$ISO_DIR/ubuntu-${UBUNTU_VERSION}-live-server-amd64.iso"
 UBUNTU_ISO_GCS="iso/ubuntu-${UBUNTU_VERSION}-live-server-amd64.iso"
 
 # Check if ISO already exists locally
@@ -779,16 +779,16 @@ chmod +x "$SCRIPTS_DIR/install-offline.sh"
 success "✓ Created: install-offline.sh"
 
 # Create README for Cubic integration
-cat > "$CUBIC_DIR/README.md" << 'EOF'
+cat > "$ISO_DIR/README.md" << 'EOF'
 # Homelab Cubic Project Directory
 
-**IMPORTANT**: This directory IS your Cubic project directory!
+**IMPORTANT**: This directory IS your ISO build directory!
 When launching Cubic, select THIS directory as your project directory.
 
 ## Directory Structure
 
 ```
-cubic-artifacts/              # <- Point Cubic here!
+iso-artifacts/              # <- Point Cubic here!
 ├── ubuntu-24.04.3-live-server-amd64.iso  # Ubuntu Server ISO
 ├── homelab/                  # All homelab installation scripts
 │   ├── post-install.sh
@@ -814,7 +814,7 @@ cubic-artifacts/              # <- Point Cubic here!
 cubic
 
 # In Cubic GUI:
-# - Project Directory: /path/to/Homelab-Install-Script/cubic-artifacts
+# - Project Directory: /path/to/Homelab-Install-Script/iso-artifacts
 # - Original ISO: Select ubuntu-24.04.3-live-server-amd64.iso (in this directory)
 # - Click Next
 ```
@@ -904,7 +904,7 @@ Ensure your system has sufficient space for these artifacts.
 ## Updating Dependencies
 
 To update the offline artifacts, run `cubic-prepare.sh` again on a system
-with internet access, then replace the contents of `cubic-artifacts/`.
+with internet access, then replace the contents of `iso-artifacts/`.
 
 ## Verification
 
@@ -912,13 +912,13 @@ After running `cubic-prepare.sh`, verify:
 
 ```bash
 # Check Docker images
-ls -lh cubic-artifacts/docker-images/
+ls -lh iso-artifacts/docker-images/
 
 # Check Ollama models
-ls -lh cubic-artifacts/ollama-models/
+ls -lh iso-artifacts/ollama-models/
 
 # Check scripts
-ls -lh cubic-artifacts/scripts/
+ls -lh iso-artifacts/scripts/
 ```
 
 All files should be present and have reasonable sizes.
@@ -932,7 +932,7 @@ success "✓ Created: README.md"
 
 header "Preparation Complete!"
 
-echo "Cubic project directory: $CUBIC_DIR"
+echo "ISO build directory: $ISO_DIR"
 echo ""
 echo "Directory contents:"
 if [ -f "$UBUNTU_ISO_FILE" ]; then
@@ -950,7 +950,7 @@ echo ""
 
 # Calculate total size
 if command -v du &> /dev/null; then
-    TOTAL_SIZE=$(du -sh "$CUBIC_DIR" | cut -f1)
+    TOTAL_SIZE=$(du -sh "$ISO_DIR" | cut -f1)
     log "Total size: $TOTAL_SIZE"
 fi
 
@@ -963,7 +963,7 @@ echo "  1. Launch Cubic:"
 echo "     $ cubic"
 echo ""
 echo "  2. In Cubic GUI, select PROJECT DIRECTORY:"
-echo "     $CUBIC_DIR"
+echo "     $ISO_DIR"
 echo ""
 if [ -f "$UBUNTU_ISO_FILE" ]; then
     echo "  3. Select Ubuntu Server 24.04 LTS ISO:"
