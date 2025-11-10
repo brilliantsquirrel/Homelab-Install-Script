@@ -24,14 +24,14 @@ cd Homelab-Install-Script
 git checkout main
 
 # 3. Download all dependencies and create Cubic project (70-110GB, takes several hours)
-./cubic-prepare.sh
+./iso-prepare.sh
 
-# This creates cubic-artifacts/ which IS your Cubic project directory!
+# This creates iso-artifacts/ which IS your Cubic project directory!
 
 # 4. Verify downloads completed
-ls -lh cubic-artifacts/
-ls -lh cubic-artifacts/homelab/
-ls -lh cubic-artifacts/docker-images/
+ls -lh iso-artifacts/
+ls -lh iso-artifacts/homelab/
+ls -lh iso-artifacts/docker-images/
 ```
 
 ### Launch Cubic (GUI)
@@ -41,7 +41,7 @@ ls -lh cubic-artifacts/docker-images/
 cubic
 
 # In Cubic GUI:
-# - Project Directory: ~/Homelab-Install-Script/cubic-artifacts  (IMPORTANT!)
+# - Project Directory: ~/Homelab-Install-Script/iso-artifacts  (IMPORTANT!)
 # - Select Ubuntu Server 24.04 LTS ISO
 # - Click Next through extraction
 ```
@@ -137,25 +137,25 @@ git checkout main
 
 # Download all Docker images and Ollama models
 # This requires Docker to be running on your BUILD MACHINE
-./cubic-prepare.sh
+./iso-prepare.sh
 ```
 
-This will create `cubic-artifacts/` directory containing:
+This will create `iso-artifacts/` directory containing:
 - `homelab/` - Complete copy of all homelab scripts
 - `docker-images/` - All Docker images as compressed tar files (~30 GB)
 - `ollama-models/` - All Ollama models as compressed archive (~80 GB)
 - `scripts/` - Installation scripts for offline deployment
 
-**IMPORTANT**: The `cubic-artifacts/` directory IS your Cubic project directory!
+**IMPORTANT**: The `iso-artifacts/` directory IS your Cubic project directory!
 
 **Note**:
 - This process can take **several hours** depending on your internet connection
-- Verify `cubic-artifacts/` directory exists before proceeding to Step 2
+- Verify `iso-artifacts/` directory exists before proceeding to Step 2
 - You must complete this step BEFORE launching Cubic
 
 ## Step 2: Launch Cubic
 
-**⚠️ IMPORTANT: Point Cubic to the cubic-artifacts/ directory!**
+**⚠️ IMPORTANT: Point Cubic to the iso-artifacts/ directory!**
 
 ```bash
 # Navigate to homelab repository
@@ -166,12 +166,12 @@ cubic
 ```
 
 In Cubic GUI:
-1. **Project Directory**: Select `~/Homelab-Install-Script/cubic-artifacts` ← **CRITICAL!**
+1. **Project Directory**: Select `~/Homelab-Install-Script/iso-artifacts` ← **CRITICAL!**
 2. **Original ISO**: Download and select Ubuntu Server 24.04 LTS
 3. **Custom ISO filename**: `ubuntu-24.04-homelab-amd64.iso`
 4. Click **Next** through the extraction process
 
-**Why this matters**: By using `cubic-artifacts/` as the project directory, all your downloaded files are automatically accessible in the Cubic chroot environment. No manual copying needed!
+**Why this matters**: By using `iso-artifacts/` as the project directory, all your downloaded files are automatically accessible in the Cubic chroot environment. No manual copying needed!
 
 ## Step 3: Customize the ISO (Chroot Terminal)
 
@@ -186,7 +186,7 @@ Cubic will open a terminal inside the ISO's chroot environment. Run these comman
 # RUN THESE COMMANDS IN CUBIC CHROOT (you are root@cubic)
 # ============================================
 
-# Because you pointed Cubic to cubic-artifacts/, all files are already here!
+# Because you pointed Cubic to iso-artifacts/, all files are already here!
 # Cubic mounts the project directory at /root/
 
 # First, verify all files are accessible:
@@ -466,19 +466,19 @@ menuentry "Ubuntu AI Homelab - Automated Install" {
 
 ### Error: "Please run this script as a regular user, not as root"
 
-**Problem**: Getting this error when running `cubic-prepare.sh` inside Cubic chroot
+**Problem**: Getting this error when running `iso-prepare.sh` inside Cubic chroot
 
-**Cause**: You're trying to run `cubic-prepare.sh` in the wrong place!
+**Cause**: You're trying to run `iso-prepare.sh` in the wrong place!
 
 **Solution**:
-- `cubic-prepare.sh` must be run on your **BUILD MACHINE** (before launching Cubic)
+- `iso-prepare.sh` must be run on your **BUILD MACHINE** (before launching Cubic)
 - NOT inside the Cubic chroot environment
 - Exit the Cubic chroot and run it on your laptop/desktop
 
 ```bash
 # On your BUILD MACHINE (not in Cubic):
 cd ~/Homelab-Install-Script
-./cubic-prepare.sh
+./iso-prepare.sh
 
 # Wait for downloads to complete, then go back to Cubic
 ```
@@ -491,21 +491,21 @@ cd ~/Homelab-Install-Script
 
 **Cause**: You didn't point Cubic to the correct project directory
 
-**IMPORTANT**: You must select `cubic-artifacts/` as your Cubic project directory!
+**IMPORTANT**: You must select `iso-artifacts/` as your Cubic project directory!
 
 **Solution**:
 1. Exit Cubic if it's running
-2. Verify cubic-artifacts exists on build machine:
+2. Verify iso-artifacts exists on build machine:
    ```bash
-   ls ~/Homelab-Install-Script/cubic-artifacts/
-   ls ~/Homelab-Install-Script/cubic-artifacts/homelab/
-   ls ~/Homelab-Install-Script/cubic-artifacts/docker-images/
+   ls ~/Homelab-Install-Script/iso-artifacts/
+   ls ~/Homelab-Install-Script/iso-artifacts/homelab/
+   ls ~/Homelab-Install-Script/iso-artifacts/docker-images/
    ```
-3. If missing, run `./cubic-prepare.sh` on build machine first
+3. If missing, run `./iso-prepare.sh` on build machine first
 4. Relaunch Cubic and **IMPORTANT**: Select the correct project directory:
    ```bash
    # In Cubic GUI "Project Directory" field:
-   ~/Homelab-Install-Script/cubic-artifacts
+   ~/Homelab-Install-Script/iso-artifacts
 
    # NOT ~/cubic-homelab
    # NOT ~/Homelab-Install-Script
@@ -521,23 +521,23 @@ cd ~/Homelab-Install-Script
 
 ### Wrong Directory Structure in Chroot
 
-**Problem**: Seeing `Homelab-Install-Script/` and `cubic-artifacts/` as separate directories in chroot
+**Problem**: Seeing `Homelab-Install-Script/` and `iso-artifacts/` as separate directories in chroot
 
-**Cause**: You're using an old workflow or didn't run the updated `cubic-prepare.sh`
+**Cause**: You're using an old workflow or didn't run the updated `iso-prepare.sh`
 
 **Solution**:
 1. Exit Cubic
-2. Delete old cubic-artifacts:
+2. Delete old iso-artifacts:
    ```bash
-   rm -rf ~/Homelab-Install-Script/cubic-artifacts/
+   rm -rf ~/Homelab-Install-Script/iso-artifacts/
    ```
-3. Re-run cubic-prepare.sh:
+3. Re-run iso-prepare.sh:
    ```bash
    cd ~/Homelab-Install-Script
    git pull  # Get latest changes
-   ./cubic-prepare.sh
+   ./iso-prepare.sh
    ```
-4. Relaunch Cubic pointing to `~/Homelab-Install-Script/cubic-artifacts/`
+4. Relaunch Cubic pointing to `~/Homelab-Install-Script/iso-artifacts/`
 
 ### ISO Too Large for DVD
 
@@ -598,7 +598,7 @@ cd ~/Homelab-Install-Script
 git pull
 
 # 2. Re-run preparation script
-./cubic-prepare.sh
+./iso-prepare.sh
 
 # 3. Rebuild ISO in Cubic
 # - Replace /opt/homelab-offline/ contents
@@ -620,7 +620,7 @@ sha256sum ubuntu-24.04-homelab-v1.0-amd64.iso > ubuntu-24.04-homelab-v1.0-amd64.
 ## Best Practices
 
 1. **Test ISO in VM first** before deploying to physical hardware
-2. **Keep source files** - Save cubic-artifacts/ for future rebuilds
+2. **Keep source files** - Save iso-artifacts/ for future rebuilds
 3. **Document customizations** - Track any manual changes made in Cubic
 4. **Regular updates** - Rebuild ISO monthly for security updates
 5. **Verify checksums** - Always verify ISO integrity before deployment

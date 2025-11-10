@@ -1,7 +1,7 @@
 #!/bin/bash
 #
 # create-custom-iso.sh - Script-based Ubuntu ISO Customization
-# Replaces Cubic with a fully automated, headless approach
+# Fully automated, headless ISO building approach
 #
 # This script:
 # 1. Extracts the Ubuntu Server ISO
@@ -57,17 +57,26 @@ header "Custom Ubuntu ISO Builder - Homelab Edition"
 
 # Configuration
 UBUNTU_VERSION="24.04.3"
-ISO_INPUT="$REPO_DIR/cubic-artifacts/ubuntu-${UBUNTU_VERSION}-live-server-amd64.iso"
-ISO_OUTPUT="$REPO_DIR/cubic-artifacts/ubuntu-${UBUNTU_VERSION}-homelab-amd64.iso"
-WORK_DIR="$REPO_DIR/iso-build"
+ISO_INPUT="$REPO_DIR/iso-artifacts/ubuntu-${UBUNTU_VERSION}-live-server-amd64.iso"
+ISO_OUTPUT="$REPO_DIR/iso-artifacts/ubuntu-${UBUNTU_VERSION}-homelab-amd64.iso"
+
+# Use local SSD if available for faster builds, otherwise use boot disk
+if [ -d "/mnt/disks/ssd/iso-build" ]; then
+    WORK_DIR="/mnt/disks/ssd/iso-build"
+    log "Using local SSD for build: $WORK_DIR (much faster!)"
+else
+    WORK_DIR="$REPO_DIR/iso-build"
+    log "Using boot disk for build: $WORK_DIR"
+fi
+
 ISO_EXTRACT="$WORK_DIR/iso"
 SQUASHFS_EXTRACT="$WORK_DIR/squashfs"
 # SQUASHFS_FILE will be auto-detected after ISO extraction (Server vs Desktop ISO)
 
 # Homelab data sources
-HOMELAB_DIR="$REPO_DIR/cubic-artifacts/homelab"
-DOCKER_DIR="$REPO_DIR/cubic-artifacts/docker-images"
-MODELS_DIR="$REPO_DIR/cubic-artifacts/ollama-models"
+HOMELAB_DIR="$REPO_DIR/iso-artifacts/homelab"
+DOCKER_DIR="$REPO_DIR/iso-artifacts/docker-images"
+MODELS_DIR="$REPO_DIR/iso-artifacts/ollama-models"
 
 # Check prerequisites
 log "Checking prerequisites..."
@@ -88,7 +97,7 @@ fi
 # Check if input ISO exists
 if [ ! -f "$ISO_INPUT" ]; then
     error "Input ISO not found: $ISO_INPUT"
-    error "Please run ./cubic-prepare.sh first to download the ISO"
+    error "Please run ./iso-prepare.sh first to download the ISO"
     exit 1
 fi
 
@@ -159,9 +168,9 @@ log "Copying homelab scripts..."
 sudo mkdir -p "$SQUASHFS_EXTRACT/opt/homelab"
 
 # Copy only necessary files, exclude large directories
-# Use rsync to exclude cubic-artifacts, iso-build, and .git
+# Use rsync to exclude iso-artifacts, iso-build, and .git
 sudo rsync -a \
-    --exclude='cubic-artifacts' \
+    --exclude='iso-artifacts' \
     --exclude='iso-build' \
     --exclude='.git' \
     --exclude='.github' \
@@ -177,7 +186,7 @@ if [ -d "$DOCKER_DIR" ] && [ "$(ls -A "$DOCKER_DIR" 2>/dev/null)" ]; then
     sudo mkdir -p "$SQUASHFS_EXTRACT/opt/homelab-data/docker-images"
 
     # Copy from GCS bucket mount or local directory
-    if mountpoint -q "$REPO_DIR/cubic-artifacts" 2>/dev/null; then
+    if mountpoint -q "$REPO_DIR/iso-artifacts" 2>/dev/null; then
         # Files are in GCS bucket, copy them
         log "Copying Docker images from GCS bucket..."
         sudo rsync -ah --info=progress2 "$DOCKER_DIR/" "$SQUASHFS_EXTRACT/opt/homelab-data/docker-images/" || {
@@ -198,7 +207,7 @@ if [ -d "$MODELS_DIR" ] && [ "$(ls -A "$MODELS_DIR" 2>/dev/null)" ]; then
     log "Copying Ollama models (~50-80GB, may take 20-30 minutes)..."
     sudo mkdir -p "$SQUASHFS_EXTRACT/opt/homelab-data/ollama-models"
 
-    if mountpoint -q "$REPO_DIR/cubic-artifacts" 2>/dev/null; then
+    if mountpoint -q "$REPO_DIR/iso-artifacts" 2>/dev/null; then
         log "Copying Ollama models from GCS bucket..."
         sudo rsync -ah --info=progress2 "$MODELS_DIR/" "$SQUASHFS_EXTRACT/opt/homelab-data/ollama-models/" || {
             warning "Failed to copy Ollama models, continuing..."

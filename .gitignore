@@ -104,5 +104,6 @@ docker-compose.override.yml
 # Generated files
 nginx/certs/
 
-# Cubic ISO artifacts (large downloads)
-cubic-artifacts/
+# ISO build artifacts (large downloads)
+iso-artifacts/
+iso-build/
