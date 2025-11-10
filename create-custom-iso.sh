@@ -169,7 +169,8 @@ sudo mkdir -p "$SQUASHFS_EXTRACT/opt/homelab"
 
 # Copy only necessary files, exclude large directories
 # Use rsync to exclude iso-artifacts, iso-build, and .git
-sudo rsync -a \
+# Note: --no-times for compatibility with gcsfuse-mounted source directories
+sudo rsync -rl --no-times \
     --exclude='iso-artifacts' \
     --exclude='iso-build' \
     --exclude='.git' \
@@ -189,7 +190,8 @@ if [ -d "$DOCKER_DIR" ] && [ "$(ls -A "$DOCKER_DIR" 2>/dev/null)" ]; then
     if mountpoint -q "$REPO_DIR/iso-artifacts" 2>/dev/null; then
         # Files are in GCS bucket, copy them
         log "Copying Docker images from GCS bucket..."
-        sudo rsync -ah --info=progress2 "$DOCKER_DIR/" "$SQUASHFS_EXTRACT/opt/homelab-data/docker-images/" || {
+        # Note: --no-times for compatibility with gcsfuse filesystem
+        sudo rsync -rlh --no-times --info=progress2 "$DOCKER_DIR/" "$SQUASHFS_EXTRACT/opt/homelab-data/docker-images/" || {
             warning "Failed to copy Docker images, continuing..."
         }
     else
@@ -209,7 +211,8 @@ if [ -d "$MODELS_DIR" ] && [ "$(ls -A "$MODELS_DIR" 2>/dev/null)" ]; then
 
     if mountpoint -q "$REPO_DIR/iso-artifacts" 2>/dev/null; then
         log "Copying Ollama models from GCS bucket..."
-        sudo rsync -ah --info=progress2 "$MODELS_DIR/" "$SQUASHFS_EXTRACT/opt/homelab-data/ollama-models/" || {
+        # Note: --no-times for compatibility with gcsfuse filesystem
+        sudo rsync -rlh --no-times --info=progress2 "$MODELS_DIR/" "$SQUASHFS_EXTRACT/opt/homelab-data/ollama-models/" || {
             warning "Failed to copy Ollama models, continuing..."
         }
     else

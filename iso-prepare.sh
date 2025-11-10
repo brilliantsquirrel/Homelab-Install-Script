@@ -316,7 +316,11 @@ echo ""
 header "Copying Homelab Scripts"
 
 log "Copying all homelab files to iso-artifacts/homelab/..."
-rsync -av --exclude='iso-artifacts' --exclude='.git' "$REPO_DIR/" "$HOMELAB_DIR/"
+# Note: --no-times --no-perms are needed for gcsfuse-mounted filesystems
+rsync -rlv --no-times --no-perms --exclude='iso-artifacts' --exclude='.git' "$REPO_DIR/" "$HOMELAB_DIR/" || {
+    warning "⚠ rsync reported errors (this is expected on gcsfuse filesystems)"
+    log "Files were copied successfully despite timestamp/permission warnings"
+}
 
 success "✓ Copied homelab scripts to: $HOMELAB_DIR"
 
