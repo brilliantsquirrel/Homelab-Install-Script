@@ -460,79 +460,85 @@ OLLAMA_MODELS=(
     "qwen3:8b"
 )
 
-ollama_models_file="$MODELS_DIR/ollama-models.tar.gz"
-ollama_gcs_filename="ollama-models/ollama-models.tar.gz"
+# Process each model individually to save disk space
+for model in "${OLLAMA_MODELS[@]}"; do
+    # Create a safe filename from the model name
+    model_filename=$(echo "$model" | sed 's/[\/:]/_/g')
+    model_tar_file="$MODELS_DIR/${model_filename}.tar.gz"
+    model_gcs_filename="ollama-models/${model_filename}.tar.gz"
 
-# Check if models already exist locally
-if [ -f "$ollama_models_file" ]; then
-    existing_size=$(du -h "$ollama_models_file" | cut -f1)
-    log "Ollama models already downloaded: ollama-models.tar.gz ($existing_size)"
-    success "✓ Skipping Ollama model download (already exists locally)"
-    echo ""
-elif [ "$GCS_ENABLED" = true ] && check_gcs_file "$ollama_gcs_filename"; then
-    # Check if models exist in GCS bucket
-    log "Ollama models found in GCS bucket"
-    if download_from_gcs "$ollama_gcs_filename" "$ollama_models_file"; then
-        existing_size=$(du -h "$ollama_models_file" | cut -f1)
-        success "✓ Retrieved Ollama models from GCS ($existing_size)"
+    # Check if model already exists locally
+    if [ -f "$model_tar_file" ]; then
+        existing_size=$(du -h "$model_tar_file" | cut -f1)
+        log "Model $model already downloaded: ${model_filename}.tar.gz ($existing_size)"
+        success "✓ Skipping: $model (already exists locally)"
         echo ""
-    else
-        warning "Failed to download from GCS, will download models fresh"
+        continue
     fi
-fi
 
-# If models still don't exist, download them
-if [ ! -f "$ollama_models_file" ]; then
-    log "Found ${#OLLAMA_MODELS[@]} Ollama models to download"
-    log "WARNING: This will download 50-80GB of model data"
-    echo ""
+    # Check if model exists in GCS bucket
+    if [ "$GCS_ENABLED" = true ] && check_gcs_file "$model_gcs_filename"; then
+        log "Model $model found in GCS bucket"
+        if download_from_gcs "$model_gcs_filename" "$model_tar_file"; then
+            existing_size=$(du -h "$model_tar_file" | cut -f1)
+            success "✓ Retrieved $model from GCS ($existing_size)"
+            echo ""
+            continue
+        else
+            warning "Failed to download from GCS, will download model fresh"
+        fi
+    fi
 
-    read -p "Download all Ollama models (50-80GB, may take hours)? (y/N): " -n 1 -r
-    echo
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-        warning "Skipping Ollama model download"
-    else
+    # If model doesn't exist locally or in GCS, download it
+    if [ ! -f "$model_tar_file" ]; then
+        log "Downloading Ollama model: $model"
+
+        read -p "Download model $model? (y/N): " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            warning "Skipping model: $model"
+            echo ""
+            continue
+        fi
+
         # Check if Ollama container is running, start if needed
-        if ! sudo docker ps | grep -q ollama; then
+        if ! sudo docker ps | grep -q ollama-temp; then
             log "Starting Ollama container for model downloads..."
             sudo docker run -d --name ollama-temp -v ollama-models:/root/.ollama ollama/ollama:latest
             sleep 5
-        else
-            log "Using existing Ollama container"
         fi
 
-        for model in "${OLLAMA_MODELS[@]}"; do
-            log "Downloading model: $model (this may take a long time)"
-            log "Press Ctrl+C to skip this model and continue with the next one"
-
-            if sudo docker exec ollama-temp ollama pull "$model"; then
-                success "✓ Downloaded: $model"
-            else
-                warning "Failed to download: $model"
-            fi
+        # Download the model
+        log "Pulling model: $model (this may take a long time)"
+        if sudo docker exec ollama-temp ollama pull "$model"; then
+            success "✓ Downloaded: $model"
+        else
+            warning "Failed to download: $model, skipping"
             echo ""
-        done
+            continue
+        fi
 
-        # Export models from Docker volume
-        log "Exporting models from Docker volume..."
+        # Export this specific model to a tar file
+        log "Exporting $model from Docker volume..."
 
-        # Create a temporary container to copy models from volume
+        # Get the model path in the ollama data directory
+        # Models are stored in /root/.ollama/models/
         sudo docker run --rm -v ollama-models:/models -v "$MODELS_DIR":/backup alpine \
-            sh -c "cd /models && tar czf /backup/ollama-models.tar.gz ."
+            sh -c "cd /models && tar czf /backup/${model_filename}.tar.gz ."
 
-        if [ -f "$ollama_models_file" ]; then
-            size=$(du -h "$ollama_models_file" | cut -f1)
-            success "✓ Exported models: ollama-models.tar.gz ($size)"
+        if [ -f "$model_tar_file" ]; then
+            size=$(du -h "$model_tar_file" | cut -f1)
+            success "✓ Exported: ${model_filename}.tar.gz ($size)"
 
             # Upload to GCS bucket and delete local copy after verification
             if [ "$GCS_ENABLED" = true ]; then
-                if upload_to_gcs "$ollama_models_file" "$ollama_gcs_filename"; then
+                if upload_to_gcs "$model_tar_file" "$model_gcs_filename"; then
                     # Verify the upload succeeded
-                    if check_gcs_file "$ollama_gcs_filename"; then
+                    if check_gcs_file "$model_gcs_filename"; then
                         log "Verifying GCS upload..."
-                        success "✓ Verified: ollama-models.tar.gz exists in GCS bucket"
+                        success "✓ Verified: ${model_filename}.tar.gz exists in GCS bucket"
                         log "Removing local copy (now in GCS bucket)..."
-                        rm -f "$ollama_models_file"
+                        rm -f "$model_tar_file"
                         success "✓ Cleaned up local tar file"
                     else
                         warning "Upload verification failed, keeping local copy"
@@ -541,24 +547,40 @@ if [ ! -f "$ollama_models_file" ]; then
                     warning "Failed to upload to GCS, keeping local copy"
                 fi
             fi
+
+            # Clean up the model from the Docker volume to save space
+            log "Cleaning up $model from Docker volume to save space..."
+            sudo docker exec ollama-temp sh -c "rm -rf /root/.ollama/models/*" 2>/dev/null || true
         else
-            error "Failed to export models"
+            error "Failed to export model: $model"
         fi
 
-        # Clean up temporary container
-        if sudo docker ps -a | grep -q ollama-temp; then
-            sudo docker stop ollama-temp 2>/dev/null || true
-            sudo docker rm ollama-temp 2>/dev/null || true
-        fi
-
-        # Clean up temporary volume
-        read -p "Remove temporary Ollama volume? (y/N): " -n 1 -r
-        echo
-        if [[ $REPLY =~ ^[Yy]$ ]]; then
-            sudo docker volume rm ollama-models 2>/dev/null || true
-            log "Cleaned up temporary volume"
-        fi
+        echo ""
     fi
+done
+
+# Clean up temporary container if it exists
+if sudo docker ps -a | grep -q ollama-temp; then
+    log "Cleaning up temporary Ollama container..."
+    sudo docker stop ollama-temp 2>/dev/null || true
+    sudo docker rm ollama-temp 2>/dev/null || true
+fi
+
+# Clean up temporary volume
+if sudo docker volume ls | grep -q ollama-models; then
+    read -p "Remove temporary Ollama volume? (y/N): " -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        sudo docker volume rm ollama-models 2>/dev/null || true
+        log "Cleaned up temporary volume"
+    fi
+fi
+
+if [ "$GCS_ENABLED" = true ]; then
+    success "✓ All Ollama models uploaded to GCS: $GCS_BUCKET/ollama-models/"
+    log "Local files cleaned up to save disk space"
+else
+    success "✓ All Ollama models saved to: $MODELS_DIR"
 fi
 
 # ========================================
