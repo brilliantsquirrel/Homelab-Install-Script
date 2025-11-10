@@ -17,64 +17,62 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-# Logging functions with thread-safe output for parallel operations
+# Logging functions - use stdout for clean sequential output
 log() {
-    echo -e "${GREEN}[INFO]${NC} $1" >&2
+    echo -e "${GREEN}[INFO]${NC} $1"
 }
 
 error() {
-    echo -e "${RED}[ERROR]${NC} $1" >&2
+    echo -e "${RED}[ERROR]${NC} $1"
 }
 
 warning() {
-    echo -e "${YELLOW}[WARNING]${NC} $1" >&2
+    echo -e "${YELLOW}[WARNING]${NC} $1"
 }
 
 success() {
-    echo -e "${GREEN}[SUCCESS]${NC} $1" >&2
+    echo -e "${GREEN}[SUCCESS]${NC} $1"
 }
 
 header() {
-    echo "" >&2
-    echo -e "${BLUE}========================================${NC}" >&2
-    echo -e "${BLUE}$1${NC}" >&2
-    echo -e "${BLUE}========================================${NC}" >&2
-    echo "" >&2
+    echo ""
+    echo -e "${BLUE}========================================${NC}"
+    echo -e "${BLUE}$1${NC}"
+    echo -e "${BLUE}========================================${NC}"
+    echo ""
 }
 
 # Performance configuration
 MAX_PARALLEL_DOWNLOADS=4  # Number of parallel Docker image downloads
 
 # Process a single Docker image (pull, compress, upload)
-# This function runs in background, so output is suppressed and only status is shown
+# Runs in background, output suppressed to avoid jumbled display
 process_docker_image() {
     local image="$1"
     local filename=$(echo "$image" | sed 's/[\/:]/_/g')
     local local_file="$DOCKER_DIR/${filename}.tar.gz"
     local gcs_filename="docker-images/${filename}.tar.gz"
+    local status_file="/tmp/docker_status_$$_${filename}"
 
     # Check if file exists locally
     if [ -f "$local_file" ]; then
-        printf "${GREEN}✓${NC} %-50s %s\n" "$image" "(already exists)" >&2
+        echo "EXISTS:$image" > "$status_file"
         return 0
     fi
 
     # Check if file exists in GCS bucket
     if [ "$GCS_ENABLED" = true ] && check_gcs_file "$gcs_filename" 2>/dev/null; then
-        printf "${GREEN}⬇${NC} %-50s %s\n" "$image" "(downloading from GCS...)" >&2
         if download_from_gcs "$gcs_filename" "$local_file" >/dev/null 2>&1; then
-            # Load the image into Docker
             if gunzip -c "$local_file" | sudo docker load >/dev/null 2>&1; then
-                printf "${GREEN}✓${NC} %-50s %s\n" "$image" "(loaded from GCS)" >&2
+                echo "GCS:$image" > "$status_file"
                 return 0
             fi
         fi
     fi
 
     # File not found locally or in GCS, pull from Docker Hub
-    printf "${BLUE}↓${NC} %-50s %s\n" "$image" "(pulling...)" >&2
     if ! sudo docker pull "$image" >/dev/null 2>&1; then
-        printf "${RED}✗${NC} %-50s %s\n" "$image" "(pull failed)" >&2
+        echo "FAILED:$image" > "$status_file"
         return 1
     fi
 
@@ -86,25 +84,24 @@ process_docker_image() {
     fi
 
     if [ ! -f "$local_file" ]; then
-        printf "${RED}✗${NC} %-50s %s\n" "$image" "(compress failed)" >&2
+        echo "FAILED:$image" > "$status_file"
         return 1
     fi
 
     # Upload to GCS bucket and delete local copy after verification
     if [ "$GCS_ENABLED" = true ]; then
         if gsutil -m -o GSUtil:parallel_composite_upload_threshold=150M cp "$local_file" "$GCS_BUCKET/$gcs_filename" >/dev/null 2>&1; then
-            # Verify the upload succeeded
             if check_gcs_file "$gcs_filename" 2>/dev/null; then
                 rm -f "$local_file"
-                printf "${GREEN}✓${NC} %-50s %s\n" "$image" "(uploaded to GCS)" >&2
+                echo "UPLOADED:$image" > "$status_file"
             else
-                printf "${GREEN}✓${NC} %-50s %s\n" "$image" "(saved locally)" >&2
+                echo "LOCAL:$image" > "$status_file"
             fi
         else
-            printf "${GREEN}✓${NC} %-50s %s\n" "$image" "(saved locally)" >&2
+            echo "LOCAL:$image" > "$status_file"
         fi
     else
-        printf "${GREEN}✓${NC} %-50s %s\n" "$image" "(saved locally)" >&2
+        echo "LOCAL:$image" > "$status_file"
     fi
 
     return 0
@@ -152,15 +149,23 @@ success "✓ Created: $CUBIC_DIR (this will be your Cubic project directory)"
 
 # GCS bucket for storing large artifacts
 # Try to get bucket name from GCloud VM metadata, fallback to environment variable
-if command -v curl &> /dev/null && curl -s -f -H "Metadata-Flavor: Google" \
-    "http://metadata.google.internal/computeMetadata/v1/instance/attributes/bucket-name" &> /dev/null; then
-    # Running on GCloud VM - get bucket name from metadata
-    BUCKET_NAME=$(curl -s -H "Metadata-Flavor: Google" \
+
+# First, try GCloud VM metadata
+BUCKET_FROM_METADATA=""
+if command -v curl &> /dev/null; then
+    BUCKET_FROM_METADATA=$(curl -s -f -H "Metadata-Flavor: Google" \
         "http://metadata.google.internal/computeMetadata/v1/instance/attributes/bucket-name" 2>/dev/null)
-    GCS_BUCKET="gs://${BUCKET_NAME}"
+fi
+
+# Use metadata if available, otherwise fall back to environment variable
+if [ -n "$BUCKET_FROM_METADATA" ]; then
+    GCS_BUCKET="gs://${BUCKET_FROM_METADATA}"
+    log "✓ Detected GCS bucket from VM metadata: $GCS_BUCKET"
+elif [ -n "${GCS_BUCKET:-}" ]; then
+    log "✓ Using GCS bucket from environment variable: $GCS_BUCKET"
 else
-    # Not on GCloud VM or metadata not available - use environment variable
-    GCS_BUCKET="${GCS_BUCKET:-}"
+    GCS_BUCKET=""
+    log "✗ No GCS bucket configured (neither VM metadata nor GCS_BUCKET env var)"
 fi
 
 # Check if gsutil is available
@@ -229,22 +234,35 @@ upload_to_gcs() {
 }
 
 # Check GCS availability at startup
+echo ""
+log "Checking GCS bucket configuration..."
+
 if check_gcs_available; then
     success "✓ GCS bucket accessible: $GCS_BUCKET"
     log "Files will be uploaded to GCS and local copies will be removed to save disk space"
     GCS_ENABLED=true
 else
     if [ -z "$GCS_BUCKET" ]; then
-        warning "GCS bucket not configured - files will only be stored locally"
+        error "✗ GCS bucket not configured - files will only be stored locally"
         log "To enable GCS: set GCS_BUCKET environment variable or run on GCloud VM"
+        log "Detected environment: GCS_BUCKET='$GCS_BUCKET'"
     elif ! command -v gsutil &> /dev/null; then
-        warning "gsutil not found - files will only be stored locally"
+        error "✗ gsutil not found - files will only be stored locally"
         log "To enable GCS: install gcloud CLI (https://cloud.google.com/sdk/docs/install)"
     else
-        warning "GCS bucket $GCS_BUCKET not accessible - files will only be stored locally"
+        error "✗ GCS bucket $GCS_BUCKET not accessible - files will only be stored locally"
         log "Verify bucket exists and you have access: gsutil ls $GCS_BUCKET"
+
+        # Try to get more details about the error
+        log "Testing bucket access..."
+        if gsutil ls "$GCS_BUCKET" 2>&1 | head -5; then
+            warning "Bucket access test completed (see output above)"
+        fi
     fi
     GCS_ENABLED=false
+
+    warning "⚠ IMPORTANT: GCS is NOT enabled - all files will remain on local disk!"
+    warning "⚠ This will use ~70-110GB of disk space on this machine!"
 fi
 echo ""
 
@@ -388,11 +406,15 @@ CUSTOM_IMAGES=(
 )
 
 log "Found ${#DOCKER_IMAGES[@]} Docker images to download"
-log "Processing images with $MAX_PARALLEL_DOWNLOADS parallel downloads..."
+log "Processing images with $MAX_PARALLEL_DOWNLOADS parallel downloads (output suppressed)..."
 echo ""
+
+# Track which images are being processed
+declare -a processing_images=()
 
 # Process images in parallel with job control
 for image in "${DOCKER_IMAGES[@]}"; do
+    processing_images+=("$image")
     # Launch processing in background
     process_docker_image "$image" &
 
@@ -405,6 +427,38 @@ done
 # Wait for all background jobs to complete
 log "Waiting for all downloads to complete..."
 wait
+
+# Display results
+echo ""
+log "Results:"
+for image in "${processing_images[@]}"; do
+    filename=$(echo "$image" | sed 's/[\/:]/_/g')
+    status_file="/tmp/docker_status_$$_${filename}"
+
+    if [ -f "$status_file" ]; then
+        status=$(cat "$status_file")
+        case "${status%%:*}" in
+            EXISTS)
+                echo "  ${GREEN}✓${NC} $image (already exists)"
+                ;;
+            GCS)
+                echo "  ${GREEN}✓${NC} $image (loaded from GCS)"
+                ;;
+            UPLOADED)
+                echo "  ${GREEN}✓${NC} $image (uploaded to GCS)"
+                ;;
+            LOCAL)
+                echo "  ${GREEN}✓${NC} $image (saved locally)"
+                ;;
+            FAILED)
+                echo "  ${RED}✗${NC} $image (failed)"
+                ;;
+        esac
+        rm -f "$status_file"
+    else
+        echo "  ${YELLOW}?${NC} $image (status unknown)"
+    fi
+done
 
 echo ""
 success "✓ All Docker images processed"

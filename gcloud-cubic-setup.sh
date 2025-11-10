@@ -185,11 +185,17 @@ apt-get install -y gcsfuse
 # Configure gsutil for better performance
 log "Configuring gsutil for parallel uploads..."
 mkdir -p /etc
-cat >> /etc/boto.cfg << 'BOTO_EOF'
+
+# Only create boto.cfg if it doesn't exist or doesn't have GSUtil section
+if ! grep -q "\[GSUtil\]" /etc/boto.cfg 2>/dev/null; then
+    cat > /etc/boto.cfg << 'BOTO_EOF'
 [GSUtil]
 parallel_composite_upload_threshold = 150M
 parallel_thread_count = 8
 BOTO_EOF
+else
+    log "boto.cfg already configured, skipping"
+fi
 
 # Install Docker
 log "Installing Docker..."
