@@ -51,27 +51,29 @@ Designed to be used with customized Ubuntu Server installations via Cubic, this 
 
 Want to create a custom Ubuntu ISO with all dependencies pre-installed for offline deployment?
 
-### Local Build Machine
-See [CUBIC.md](CUBIC.md) for creating custom ISOs on your local machine.
-
-### Google Cloud VM (Recommended for Large Builds)
-For a turnkey cloud-based build environment:
+### Google Cloud VM (Recommended)
+For a turnkey cloud-based build environment with script-based ISO building:
 - **No local disk space required** (70-110GB stored in cloud bucket)
-- **Powerful VM** (8 vCPU, 32GB RAM) spun up on-demand
-- **Pay only when building** (~$0.30/hour, stop when not in use)
-- **Access from anywhere** via SSH with X11 forwarding
+- **Ultra-fast local SSDs** (750GB, 10x faster than persistent disks)
+- **Powerful VM** (16 vCPU, 64GB RAM) with elastic scaling
+- **Pay only when building** (~$0.30-0.60/hour, stop when not in use)
+- **Automated workflow** - Scripts handle everything from dependency download to ISO creation
 
-See [GCLOUD-CUBIC.md](GCLOUD-CUBIC.md) for complete setup instructions:
+See [GCLOUD-ISO.md](GCLOUD-ISO.md) for complete setup instructions:
 ```bash
 # One-time setup (10-15 minutes)
-./gcloud-cubic-setup.sh
+./gcloud-iso-setup.sh
 
 # Start VM, build ISO, stop VM
-./gcloud-cubic-vm.sh start
-./gcloud-cubic-vm.sh ssh
-# ... build ISO in Cubic GUI ...
-./gcloud-cubic-vm.sh stop
+./gcloud-iso-vm.sh start
+./gcloud-iso-vm.sh ssh
+# Run on VM:
+cd /mnt/disks/ssd/Homelab-Install-Script
+bash iso-prepare.sh && bash create-custom-iso.sh
+./gcloud-iso-vm.sh stop
 ```
+
+**Important**: After cloning the repo on the VM, copy it to the local SSD (`/mnt/disks/ssd/`) for best performance. The gcsfuse-mounted bucket filesystem doesn't support chmod operations properly, so run scripts with `bash script.sh` or work from the SSD.
 
 ## Quick Start
 
@@ -264,8 +266,7 @@ Individual service URLs:
 
 - [README.md](README.md) - This file
 - [CLAUDE.md](CLAUDE.md) - Architecture, implementation details, and modification guide
-- [CUBIC.md](CUBIC.md) - Creating custom Ubuntu ISOs with Cubic
-- [GCLOUD-CUBIC.md](GCLOUD-CUBIC.md) - Google Cloud VM setup for Cubic ISO creation
+- [GCLOUD-ISO.md](GCLOUD-ISO.md) - Google Cloud VM setup for automated ISO creation
 - [SECURITY.md](SECURITY.md) - Security audit, vulnerabilities, and recommendations
 - [SECRETS.md](SECRETS.md) - Secret management and setup guide
 - [.env.example](.env.example) - Environment variables reference
