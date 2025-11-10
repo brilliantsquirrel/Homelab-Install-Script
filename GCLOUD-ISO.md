@@ -32,8 +32,8 @@ This setup uses:
 - ✅ No X11 forwarding required
 
 **How it works:**
-1. Run `./iso-prepare.sh` to download dependencies (~1-1.5 hours)
-2. Run `./create-custom-iso.sh` to build the ISO (~30-45 minutes)
+1. Run `bash iso-prepare.sh` to download dependencies (~1-1.5 hours)
+2. Run `bash create-custom-iso.sh` to build the ISO (~30-45 minutes)
 3. Script extracts ISO, modifies filesystem, repacks it
 4. Output: `ubuntu-24.04.3-homelab-amd64.iso`
 
@@ -619,7 +619,7 @@ tail -100 ~/iso-artifacts/Homelab-Install-Script/create-custom-iso.log
 
 **Common issues:**
 - Out of space: Increase disk or use local SSD
-- Missing dependencies: Re-run `./iso-prepare.sh`
+- Missing dependencies: Re-run `bash iso-prepare.sh`
 - Corrupted downloads: Delete and re-download
 
 ### Slow Build Performance
