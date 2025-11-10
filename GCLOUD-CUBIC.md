@@ -1,20 +1,51 @@
-# Google Cloud VM Setup for Cubic ISO Creation
+# Google Cloud VM Setup for Custom Ubuntu ISO Creation
 
-This guide explains how to set up a Google Cloud VM for creating Cubic ISOs with large file storage in Cloud Storage buckets.
+This guide explains how to set up a Google Cloud VM for creating custom Ubuntu ISOs with large file storage in Cloud Storage buckets.
 
 ## Overview
 
-Creating custom Ubuntu ISOs with Cubic requires:
+Creating custom Ubuntu ISOs for homelab deployment requires:
 - **70-110GB** of storage for Docker images and Ollama models
-- **GUI environment** for the Cubic wizard
 - **Significant compute** for downloading and processing (optimized for **60% faster execution**)
 - **Flexibility** to power on/off as needed
 
 This setup uses:
-- **GCloud Compute VM**: Ubuntu with desktop environment, Docker, and Cubic
+- **GCloud Compute VM**: Ubuntu with Docker and ISO building tools
 - **Cloud Storage Bucket**: Stores large files (cubic-artifacts), mounted via gcsfuse
+- **Script-based ISO builder**: Fully automated, no GUI required (recommended)
+- **Alternative: Cubic GUI**: Traditional GUI-based approach (requires X11 forwarding)
 - **Cost Optimization**: Stop VM when not in use, only pay for storage
 - **Easy Management**: Simple scripts for start/stop/ssh/status
+
+## ISO Creation Methods
+
+### Method 1: Script-Based (Recommended ⭐)
+
+**Advantages:**
+- ✅ Fully automated - no GUI needed
+- ✅ Works perfectly on headless GCloud VMs
+- ✅ Faster and more reliable
+- ✅ Easy to debug and customize
+- ✅ No X11 forwarding required
+
+**How it works:**
+1. Run `./cubic-prepare.sh` to download dependencies
+2. Run `./create-custom-iso.sh` to build the ISO
+3. Script extracts ISO, modifies filesystem, repacks it
+4. Output: `ubuntu-24.04.3-homelab-amd64.iso`
+
+### Method 2: Cubic GUI (Alternative)
+
+**Advantages:**
+- ✅ Visual interface
+- ✅ More interactive control
+
+**Disadvantages:**
+- ❌ Requires X11 forwarding (slower over network)
+- ❌ Can have ISO mounting issues with FUSE filesystems
+- ❌ More complex troubleshooting
+
+**Use when:** You prefer a GUI and are familiar with Cubic
 
 ## Architecture
 
@@ -115,7 +146,9 @@ This setup includes significant performance optimizations for faster ISO builds:
 - **Permissions**: Compute Admin, Storage Admin (or Owner role)
 - **Billing**: Understand VM costs (~$0.30-0.50/hour for n2-standard-8)
 
-## Quick Start
+## Quick Start (Script-Based Method)
+
+This is the recommended approach - fully automated with no GUI required.
 
 ### Step 1: Create the VM and Bucket
 
@@ -224,41 +257,53 @@ export GCS_BUCKET=gs://$(curl -s "http://metadata.google.internal/computeMetadat
 
 This mounts the GCS bucket at `~/cubic-artifacts/`, giving you access to all files uploaded by `cubic-prepare.sh`.
 
-### Step 6: Launch Cubic
+### Step 6: Create Custom ISO (Script-Based)
 
 ```bash
-# On the VM, launch Cubic GUI
-cubic
+# On the VM, run the automated ISO builder
+cd ~/Homelab-Install-Script
+./create-custom-iso.sh
 ```
 
-**In Cubic GUI:**
-1. **Project Directory**: Select `/home/ubuntu/Homelab-Install-Script/cubic-artifacts` (**local disk**, not the bucket mount!)
-2. **Original ISO**: The Ubuntu ISO in this directory: `ubuntu-24.04.3-live-server-amd64.iso`
-3. **Custom ISO name**: `ubuntu-24.04-homelab-amd64.iso`
-4. Click **Next** to proceed
+**What this script does:**
+1. Extracts the Ubuntu ISO (~5 minutes)
+2. Extracts the squashfs filesystem (~5-10 minutes)
+3. Copies homelab scripts to `/opt/homelab` in the ISO
+4. Copies Docker images from GCS bucket (~10-15 minutes)
+5. Copies Ollama models from GCS bucket (~20-30 minutes)
+6. Creates first-boot setup script (auto-loads Docker images and models)
+7. Repacks squashfs filesystem (~5-10 minutes)
+8. Creates new bootable ISO
 
-Follow the instructions in [CUBIC.md](CUBIC.md) for customizing the ISO.
+**Total time:** 45-70 minutes (fully automated, no interaction required)
 
-**Important Notes**:
-- **ISO location**: `~/Homelab-Install-Script/cubic-artifacts/` (LOCAL disk, not `~/cubic-artifacts/` which is the GCS mount)
-- The ISO must be on local disk for Cubic to extract the Linux filesystem
-- Docker images and Ollama models are stored in the GCS bucket (`~/cubic-artifacts/docker-images/`, `~/cubic-artifacts/ollama-models/`)
-- The cubic-prepare.sh script handles uploading/downloading from GCS automatically
+**Output:** `~/Homelab-Install-Script/cubic-artifacts/ubuntu-24.04.3-homelab-amd64.iso`
+
+**What happens on first boot of the custom ISO:**
+- Docker images are automatically loaded
+- Ollama models are restored to Docker volumes
+- Homelab installation script is ready at `/opt/homelab/post-install.sh`
+- First-boot logs available at `/var/log/homelab-first-boot.log`
+
+**Alternative: Use Cubic GUI** (see [Cubic GUI Method](#cubic-gui-method-alternative) section below)
 
 ### Step 7: Download the ISO
 
-After Cubic generates the ISO:
+After the script completes:
 
 ```bash
 # On your local machine, download the ISO
-gsutil cp gs://YOUR-BUCKET-NAME/ubuntu-24.04-homelab-amd64.iso ./
-```
+gsutil cp gs://YOUR-BUCKET-NAME/ubuntu-24.04.3-homelab-amd64.iso ./
 
-Or use the management script:
-
-```bash
+# Or use the management script
 ./gcloud-cubic-vm.sh download ./my-isos/
 ```
+
+**ISO Details:**
+- **Name:** `ubuntu-24.04.3-homelab-amd64.iso`
+- **Size:** ~4-6GB (depending on included models)
+- **Ready to boot:** Hybrid ISO works on both BIOS and UEFI
+- **Write to USB:** `dd if=ubuntu-24.04.3-homelab-amd64.iso of=/dev/sdX bs=4M status=progress`
 
 ### Step 8: Stop the VM (Save Costs!)
 
@@ -825,15 +870,13 @@ gcloud compute ssh cubic-builder -- tail -f /var/log/cubic-setup.log
 
 # 4. Download dependencies (1-1.5 hours with optimizations)
 # Fully automated - no prompts
-# IMPORTANT: Clone to LOCAL disk (~), NOT the bucket mount (~/cubic-artifacts)
 cd ~
 git clone https://github.com/brilliantsquirrel/Homelab-Install-Script.git
 cd Homelab-Install-Script
 ./cubic-prepare.sh
 
-# 5. Launch Cubic and create ISO (30-60 minutes)
-# Point Cubic to ~/Homelab-Install-Script/cubic-artifacts/ (local disk, has the ISO)
-cubic
+# 5. Create custom ISO with script (45-70 minutes, fully automated)
+./create-custom-iso.sh
 
 # 6. Download ISO to local machine
 exit  # Exit VM
@@ -843,13 +886,14 @@ exit  # Exit VM
 ./gcloud-cubic-vm.sh stop
 ```
 
-**Total time**: 2-3 hours (mostly automated, 60% faster than before)
-**Cost**: ~$0.60-1.50 (one-time)
+**Total time**: 2.5-3 hours (fully automated, no GUI interaction)
+**Cost**: ~$0.75-1.50 (one-time)
 **Performance improvements**:
 - Parallel Docker downloads (4 concurrent)
 - Fast compression with pigz (4-8x faster)
 - Parallel GCS uploads (8 threads)
 - SSD persistent disks
+- No X11 overhead (script-based, no GUI)
 
 ### Updating ISO (Subsequent Builds)
 
@@ -866,8 +910,8 @@ cd ~/Homelab-Install-Script
 git pull
 ./cubic-prepare.sh  # Skips existing files, only downloads new/updated ones
 
-# 4. Rebuild ISO in Cubic
-cubic
+# 4. Rebuild ISO with script
+./create-custom-iso.sh
 
 # 5. Download and stop
 exit
@@ -875,8 +919,8 @@ exit
 ./gcloud-cubic-vm.sh stop
 ```
 
-**Total time**: 30-60 minutes (most dependencies cached in GCS)
-**Cost**: ~$0.15-0.30
+**Total time**: 50-80 minutes (most dependencies cached in GCS)
+**Cost**: ~$0.25-0.40
 
 ### Quick ISO Customization
 
@@ -923,6 +967,72 @@ exit
 3. **Audit bucket access** with Cloud Audit Logs
 4. **Delete old ISOs** to minimize attack surface
 5. **Use short-lived VMs** - create/delete as needed
+
+## Cubic GUI Method (Alternative)
+
+If you prefer a graphical interface or need more manual control over ISO customization, you can use Cubic instead of the automated script.
+
+### Prerequisites for Cubic
+
+The GCloud VM must have desktop environment and X11 forwarding support (already configured by `gcloud-cubic-setup.sh`).
+
+### Using Cubic
+
+```bash
+# 1. SSH with X11 forwarding
+./gcloud-cubic-vm.sh ssh  # Or: gcloud compute ssh cubic-builder -- -X
+
+# 2. Test X11 works
+xclock  # Should display a clock window
+
+# 3. Launch Cubic
+cubic
+```
+
+### In Cubic GUI
+
+1. **Project Directory**: `/home/ubuntu/Homelab-Install-Script/cubic-artifacts`
+   - ⚠️ **IMPORTANT**: Must be on LOCAL disk, NOT the GCS bucket mount (`~/cubic-artifacts`)
+   - Verify with: `df -h ~/Homelab-Install-Script/cubic-artifacts` (should show `/dev/sda1`, NOT `gcsfuse`)
+
+2. **Original ISO**: Select `ubuntu-24.04.3-live-server-amd64.iso` in the project directory
+
+3. **Custom ISO name**: `ubuntu-24.04-homelab-amd64.iso`
+
+4. Click **Next** and follow the Cubic wizard
+
+5. In the terminal tab, manually copy files:
+   ```bash
+   # Copy homelab scripts
+   cp -r /home/ubuntu/Homelab-Install-Script/* /opt/homelab/
+
+   # Copy Docker images (if desired)
+   mkdir -p /opt/homelab-data/docker-images
+   cp /home/ubuntu/cubic-artifacts/docker-images/*.tar.gz /opt/homelab-data/docker-images/
+
+   # Copy Ollama models (if desired)
+   mkdir -p /opt/homelab-data/ollama-models
+   cp -r /home/ubuntu/cubic-artifacts/ollama-models/* /opt/homelab-data/ollama-models/
+   ```
+
+6. Complete the Cubic wizard to generate the ISO
+
+### Common Cubic Issues
+
+**"Original disk image is required" error:**
+- ISO must be on local disk (`~/Homelab-Install-Script/cubic-artifacts/`), not GCS mount
+- See [troubleshooting section](#cubic-error-original-disk-image-is-required) for detailed fix
+
+**X11 display issues:**
+- Ensure you connected with `-X` flag: `gcloud compute ssh cubic-builder -- -X`
+- Test with `xclock` before launching Cubic
+- Consider using VNC for better performance (see Advanced Configuration)
+
+**Why Script Method is Recommended:**
+- No X11/GUI issues
+- Fully automated (no manual file copying)
+- Faster and more reliable
+- Easier to reproduce and debug
 
 ## Deleting Resources
 
