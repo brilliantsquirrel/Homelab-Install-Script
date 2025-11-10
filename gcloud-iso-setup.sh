@@ -883,3 +883,10 @@ if [ "$LOCAL_SSD_COUNT" -gt 0 ]; then
     log "Use /mnt/disks/ssd/iso-build for temporary build files"
 fi
 
+# Monitor initialization progress
+echo ""
+log "Starting log monitoring..."
+log "Press Ctrl+C to exit monitoring (VM will continue initializing)"
+echo ""
+gcloud compute ssh "$VM_NAME" -- tail -f /var/log/iso-setup.log
+
