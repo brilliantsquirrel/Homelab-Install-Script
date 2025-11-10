@@ -664,10 +664,15 @@ for model in "${OLLAMA_MODELS[@]}"; do
         # Export this specific model to a tar file
         log "Exporting $model from Docker volume..."
 
-        # Use regular tar with gzip compression (Alpine doesn't have pigz)
-        # Compression happens inside the container to avoid copying large uncompressed data
-        sudo docker run --rm -v "$volume_name":/models -v "$MODELS_DIR":/backup alpine \
-            sh -c "cd /models && tar czf /backup/${model_filename}.tar.gz ."
+        # Create target directory if it doesn't exist
+        # Note: Must create directory before Docker tries to mount it (gcsfuse compatibility)
+        mkdir -p "$MODELS_DIR" 2>/dev/null || true
+
+        # Pipe tar output to stdout and redirect to file to avoid Docker bind mount issues with gcsfuse
+        # This approach works around Docker's inability to bind mount directories on gcsfuse filesystems
+        log "Creating compressed archive..."
+        sudo docker run --rm -v "$volume_name":/models alpine \
+            sh -c "cd /models && tar czf - ." > "$model_tar_file"
 
         if [ -f "$model_tar_file" ]; then
             size=$(du -h "$model_tar_file" | cut -f1)
