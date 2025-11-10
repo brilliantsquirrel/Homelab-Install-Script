@@ -32,8 +32,8 @@ This setup uses:
 - ✅ No X11 forwarding required
 
 **How it works:**
-1. Run `./iso-prepare.sh` to download dependencies (~1-1.5 hours)
-2. Run `./create-custom-iso.sh` to build the ISO (~30-45 minutes)
+1. Run `bash iso-prepare.sh` to download dependencies (~1-1.5 hours)
+2. Run `bash create-custom-iso.sh` to build the ISO (~30-45 minutes)
 3. Script extracts ISO, modifies filesystem, repacks it
 4. Output: `ubuntu-24.04.3-homelab-amd64.iso`
 
@@ -229,14 +229,22 @@ ls ~/iso-artifacts
 ```bash
 # Clone repository into bucket-mounted directory
 cd ~/iso-artifacts
-git clone https://github.com/brilliantsquirrel/Homelab-Install-Script.git
-cd Homelab-Install-Script
 
-# Make scripts executable
-chmod +x *.sh
+# If directory exists, update it; otherwise clone fresh
+if [ -d "Homelab-Install-Script" ]; then
+    cd Homelab-Install-Script
+    git pull
+else
+    git clone https://github.com/brilliantsquirrel/Homelab-Install-Script.git
+    cd Homelab-Install-Script
+fi
+
+# IMPORTANT: gcsfuse-mounted filesystems don't support chmod properly
+# Run scripts with 'bash' prefix instead of making them executable
+# Or copy to local SSD for best performance (recommended)
 
 # Download all dependencies (~1-1.5 hours with optimizations)
-./iso-prepare.sh
+bash iso-prepare.sh
 ```
 
 **What this downloads:**
@@ -251,7 +259,7 @@ chmod +x *.sh
 
 ```bash
 # Build the ISO (~30-45 minutes)
-./create-custom-iso.sh
+bash create-custom-iso.sh
 ```
 
 **What this does:**
@@ -449,12 +457,18 @@ gcloud compute ssh iso-builder -- tail -f /var/log/iso-setup.log
 ~/mount-bucket.sh
 
 # 6. Prepare dependencies (first time only: ~1.5 hours)
-cd ~/iso-artifacts/Homelab-Install-Script
-chmod +x *.sh
-./iso-prepare.sh
+cd ~/iso-artifacts
+if [ -d "Homelab-Install-Script" ]; then
+    cd Homelab-Install-Script
+    git pull
+else
+    git clone https://github.com/brilliantsquirrel/Homelab-Install-Script.git
+    cd Homelab-Install-Script
+fi
+bash iso-prepare.sh
 
 # 7. Build ISO (~30-45 minutes)
-./create-custom-iso.sh
+bash create-custom-iso.sh
 
 # 8. Download ISO (on local machine)
 ./gcloud-iso-vm.sh download ~/Downloads/
@@ -605,7 +619,7 @@ tail -100 ~/iso-artifacts/Homelab-Install-Script/create-custom-iso.log
 
 **Common issues:**
 - Out of space: Increase disk or use local SSD
-- Missing dependencies: Re-run `./iso-prepare.sh`
+- Missing dependencies: Re-run `bash iso-prepare.sh`
 - Corrupted downloads: Delete and re-download
 
 ### Slow Build Performance
