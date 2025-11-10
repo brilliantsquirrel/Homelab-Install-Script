@@ -175,12 +175,12 @@ chmod +x gcloud-cubic-setup.sh
 - VM name (default: `cubic-builder`)
 - Zone (default: `us-central1-a`)
 - Machine type (default: `n2-standard-8` - 8 vCPU, 32GB RAM)
-- Boot disk size (default: `100GB`)
+- Boot disk size (default: `200GB`)
 - Storage bucket name (required)
 
 **Recommended Configuration:**
 - **Machine type**: `n2-standard-8` (8 vCPU, 32GB RAM) - good balance
-- **Boot disk**: `100GB` - OS, temp files, Cubic working directory
+- **Boot disk**: `200GB` - OS, temp files, Cubic working directory, ISO building (~150GB needed for full ISO with images/models)
 - **Zone**: Choose closest to your location for better latency
 
 **Duration**: 10-15 minutes (VM initialization takes 5-10 minutes)
@@ -425,15 +425,15 @@ gsutil -m rsync -r /local/path/ gs://YOUR-BUCKET-NAME/
 
 **Running Costs** (per hour):
 - `n2-standard-8` (8 vCPU, 32GB RAM): ~$0.30-0.50/hour
-- 100GB boot disk: ~$0.01/hour
+- 200GB boot disk: ~$0.02/hour
 - Network egress: Variable
 
 **Stopped VM Costs**: $0/hour for compute, only storage costs
 
 **Monthly Estimate** (if running 24/7):
 - VM: ~$220-360/month
-- Boot disk: ~$10/month
-- **Total**: ~$230-370/month
+- Boot disk: ~$20/month
+- **Total**: ~$240-380/month
 
 **Recommended Usage**:
 - Run VM only when building ISOs
@@ -445,9 +445,9 @@ gsutil -m rsync -r /local/path/ gs://YOUR-BUCKET-NAME/
 **Cloud Storage Pricing** (Standard storage):
 - First 100GB: ~$2-3/month
 - Cubic artifacts (70-110GB): ~$2-3/month
-- Boot disk (100GB): ~$10/month
+- Boot disk (200GB): ~$20/month
 
-**Total Storage**: ~$12-13/month
+**Total Storage**: ~$22-23/month
 
 ### Cost Optimization Tips
 
@@ -1065,7 +1065,7 @@ gcloud storage rm --recursive gs://YOUR-BUCKET-NAME
 | **Storage Cost** | ~$3/month | $0 (local disk) |
 | **Compute Cost** | ~$0.30/hour | $0 (electricity) |
 | **Flexibility** | Start/stop as needed | Always available |
-| **Disk Space** | 100GB+ easily | Depends on hardware |
+| **Disk Space** | 200GB+ easily | Depends on hardware |
 | **Performance** | 8 vCPU, 32GB RAM | Varies |
 | **Internet Speed** | Very fast (datacenter) | Depends on ISP |
 | **Portability** | Access from anywhere | Tied to location |
