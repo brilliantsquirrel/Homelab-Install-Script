@@ -62,7 +62,7 @@ ISO_OUTPUT="$REPO_DIR/cubic-artifacts/ubuntu-${UBUNTU_VERSION}-homelab-amd64.iso
 WORK_DIR="$REPO_DIR/iso-build"
 ISO_EXTRACT="$WORK_DIR/iso"
 SQUASHFS_EXTRACT="$WORK_DIR/squashfs"
-SQUASHFS_FILE="$ISO_EXTRACT/casper/filesystem.squashfs"
+# SQUASHFS_FILE will be auto-detected after ISO extraction (Server vs Desktop ISO)
 
 # Homelab data sources
 HOMELAB_DIR="$REPO_DIR/cubic-artifacts/homelab"
@@ -119,6 +119,26 @@ xorriso -osirrox on -indev "$ISO_INPUT" -extract / "$ISO_EXTRACT" 2>&1 | grep -v
 # Make extracted files writable
 chmod -R u+w "$ISO_EXTRACT"
 success "ISO extracted to $ISO_EXTRACT"
+
+# Detect ISO type and locate squashfs filesystem
+log "Detecting ISO type..."
+if [ -f "$ISO_EXTRACT/casper/filesystem.squashfs" ]; then
+    # Desktop ISO structure
+    SQUASHFS_FILE="$ISO_EXTRACT/casper/filesystem.squashfs"
+    ISO_TYPE="Desktop"
+    log "Detected: Ubuntu Desktop ISO"
+elif [ -f "$ISO_EXTRACT/casper/ubuntu-server-minimal.ubuntu-server.installer.squashfs" ]; then
+    # Server ISO structure - use the installer environment
+    SQUASHFS_FILE="$ISO_EXTRACT/casper/ubuntu-server-minimal.ubuntu-server.installer.squashfs"
+    ISO_TYPE="Server"
+    log "Detected: Ubuntu Server ISO (installer environment)"
+else
+    error "Could not detect ISO type. Available squashfs files:"
+    find "$ISO_EXTRACT/casper" -name "*.squashfs" 2>/dev/null || echo "None found"
+    exit 1
+fi
+
+success "Using squashfs: $(basename "$SQUASHFS_FILE")"
 
 # Step 2: Extract the squashfs filesystem
 header "Step 2: Extracting squashfs filesystem"
