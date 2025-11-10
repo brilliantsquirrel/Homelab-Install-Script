@@ -149,7 +149,7 @@ if [ ! -f "$SQUASHFS_FILE" ]; then
     exit 1
 fi
 
-unsquashfs -f -d "$SQUASHFS_EXTRACT" "$SQUASHFS_FILE"
+unsquashfs -no-xattrs -f -d "$SQUASHFS_EXTRACT" "$SQUASHFS_FILE"
 success "Squashfs extracted to $SQUASHFS_EXTRACT"
 
 # Step 3: Customize the filesystem
