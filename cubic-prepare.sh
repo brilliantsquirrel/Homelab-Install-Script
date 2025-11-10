@@ -284,61 +284,53 @@ fi
 if [ ! -f "$UBUNTU_ISO_FILE" ]; then
     log "Downloading Ubuntu Server 24.04 LTS ISO (~2.5GB)"
     log "Source: $UBUNTU_ISO_URL"
+    log "Downloading ISO (this may take several minutes)..."
     echo ""
 
-    read -p "Download Ubuntu Server 24.04 LTS ISO (~2.5GB)? (y/N): " -n 1 -r
-    echo
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-        warning "Skipping Ubuntu ISO download"
-        warning "You will need to manually provide the ISO to Cubic"
+    # Download with wget (shows progress bar) or curl as fallback
+    if command -v wget &> /dev/null; then
+        wget -O "$UBUNTU_ISO_FILE" "$UBUNTU_ISO_URL" || {
+            error "Failed to download Ubuntu ISO"
+            rm -f "$UBUNTU_ISO_FILE"
+            exit 1
+        }
+    elif command -v curl &> /dev/null; then
+        curl -L -o "$UBUNTU_ISO_FILE" "$UBUNTU_ISO_URL" || {
+            error "Failed to download Ubuntu ISO"
+            rm -f "$UBUNTU_ISO_FILE"
+            exit 1
+        }
     else
-        log "Downloading ISO (this may take several minutes)..."
+        error "Neither wget nor curl is available"
+        error "Please install wget: sudo apt-get install wget"
+        exit 1
+    fi
 
-        # Download with wget (shows progress bar) or curl as fallback
-        if command -v wget &> /dev/null; then
-            wget -O "$UBUNTU_ISO_FILE" "$UBUNTU_ISO_URL" || {
-                error "Failed to download Ubuntu ISO"
-                rm -f "$UBUNTU_ISO_FILE"
-                exit 1
-            }
-        elif command -v curl &> /dev/null; then
-            curl -L -o "$UBUNTU_ISO_FILE" "$UBUNTU_ISO_URL" || {
-                error "Failed to download Ubuntu ISO"
-                rm -f "$UBUNTU_ISO_FILE"
-                exit 1
-            }
-        else
-            error "Neither wget nor curl is available"
-            error "Please install wget: sudo apt-get install wget"
-            exit 1
-        fi
+    # Verify download completed
+    if [ -f "$UBUNTU_ISO_FILE" ]; then
+        iso_size=$(du -h "$UBUNTU_ISO_FILE" | cut -f1)
+        success "✓ Downloaded: $(basename $UBUNTU_ISO_FILE) ($iso_size)"
+        log "ISO location: $UBUNTU_ISO_FILE"
 
-        # Verify download completed
-        if [ -f "$UBUNTU_ISO_FILE" ]; then
-            iso_size=$(du -h "$UBUNTU_ISO_FILE" | cut -f1)
-            success "✓ Downloaded: $(basename $UBUNTU_ISO_FILE) ($iso_size)"
-            log "ISO location: $UBUNTU_ISO_FILE"
-
-            # Upload to GCS bucket (keep local copy for Cubic)
-            if [ "$GCS_ENABLED" = true ]; then
-                if upload_to_gcs "$UBUNTU_ISO_FILE" "$UBUNTU_ISO_GCS"; then
-                    # Verify the upload succeeded
-                    if check_gcs_file "$UBUNTU_ISO_GCS"; then
-                        log "Verifying GCS upload..."
-                        success "✓ Verified: ISO exists in GCS bucket"
-                        log "Keeping local copy for Cubic to use"
-                        success "✓ ISO available both locally and in GCS"
-                    else
-                        warning "Upload verification failed, but local copy available"
-                    fi
+        # Upload to GCS bucket (keep local copy for Cubic)
+        if [ "$GCS_ENABLED" = true ]; then
+            if upload_to_gcs "$UBUNTU_ISO_FILE" "$UBUNTU_ISO_GCS"; then
+                # Verify the upload succeeded
+                if check_gcs_file "$UBUNTU_ISO_GCS"; then
+                    log "Verifying GCS upload..."
+                    success "✓ Verified: ISO exists in GCS bucket"
+                    log "Keeping local copy for Cubic to use"
+                    success "✓ ISO available both locally and in GCS"
                 else
-                    warning "Failed to upload to GCS, but local copy available"
+                    warning "Upload verification failed, but local copy available"
                 fi
+            else
+                warning "Failed to upload to GCS, but local copy available"
             fi
-        else
-            error "ISO download failed"
-            exit 1
         fi
+    else
+        error "ISO download failed"
+        exit 1
     fi
     echo ""
 fi
@@ -391,109 +383,100 @@ CUSTOM_IMAGES=(
 )
 
 log "Found ${#DOCKER_IMAGES[@]} Docker images to download"
+log "Processing images with $MAX_PARALLEL_DOWNLOADS parallel downloads..."
 echo ""
 
-# Ask user for confirmation
-read -p "Download all Docker images (~20-30GB)? (y/N): " -n 1 -r
-echo
-if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-    warning "Skipping Docker image download"
-else
-    log "Processing images with $MAX_PARALLEL_DOWNLOADS parallel downloads..."
-    echo ""
+# Process images in parallel with job control
+for image in "${DOCKER_IMAGES[@]}"; do
+    # Launch processing in background
+    process_docker_image "$image" &
 
-    # Process images in parallel with job control
-    for image in "${DOCKER_IMAGES[@]}"; do
-        # Launch processing in background
-        process_docker_image "$image" &
-
-        # Limit concurrent jobs
-        while [ $(jobs -r | wc -l) -ge $MAX_PARALLEL_DOWNLOADS ]; do
-            sleep 2
-        done
+    # Limit concurrent jobs
+    while [ $(jobs -r | wc -l) -ge $MAX_PARALLEL_DOWNLOADS ]; do
+        sleep 2
     done
+done
 
-    # Wait for all background jobs to complete
-    log "Waiting for all downloads to complete..."
-    wait
+# Wait for all background jobs to complete
+log "Waiting for all downloads to complete..."
+wait
 
-    echo ""
-    success "✓ All Docker images processed"
+echo ""
+success "✓ All Docker images processed"
 
-    # Build custom nginx image
-    log "Building custom nginx image..."
-    nginx_filename="homelab-install-script-nginx_latest"
-    nginx_local_file="$DOCKER_DIR/${nginx_filename}.tar.gz"
-    nginx_gcs_filename="docker-images/${nginx_filename}.tar.gz"
+# Build custom nginx image
+log "Building custom nginx image..."
+nginx_filename="homelab-install-script-nginx_latest"
+nginx_local_file="$DOCKER_DIR/${nginx_filename}.tar.gz"
+nginx_gcs_filename="docker-images/${nginx_filename}.tar.gz"
 
-    # Check if nginx image exists locally or in GCS
-    nginx_exists=false
-    if [ -f "$nginx_local_file" ]; then
-        log "Custom nginx image already exists locally"
-        nginx_exists=true
-    elif [ "$GCS_ENABLED" = true ] && check_gcs_file "$nginx_gcs_filename"; then
-        log "Custom nginx image found in GCS bucket"
-        if download_from_gcs "$nginx_gcs_filename" "$nginx_local_file"; then
-            if gunzip -c "$nginx_local_file" | sudo docker load; then
-                success "✓ Loaded custom nginx from GCS"
-                nginx_exists=true
-            fi
+# Check if nginx image exists locally or in GCS
+nginx_exists=false
+if [ -f "$nginx_local_file" ]; then
+    log "Custom nginx image already exists locally"
+    nginx_exists=true
+elif [ "$GCS_ENABLED" = true ] && check_gcs_file "$nginx_gcs_filename"; then
+    log "Custom nginx image found in GCS bucket"
+    if download_from_gcs "$nginx_gcs_filename" "$nginx_local_file"; then
+        if gunzip -c "$nginx_local_file" | sudo docker load; then
+            success "✓ Loaded custom nginx from GCS"
+            nginx_exists=true
         fi
     fi
+fi
 
-    if [ "$nginx_exists" = false ]; then
-        if [ -d "nginx" ] && [ -f "nginx/Dockerfile" ]; then
-            if sudo docker build -t homelab-install-script-nginx:latest nginx/; then
-                success "✓ Built custom nginx image"
+if [ "$nginx_exists" = false ]; then
+    if [ -d "nginx" ] && [ -f "nginx/Dockerfile" ]; then
+        if sudo docker build -t homelab-install-script-nginx:latest nginx/; then
+            success "✓ Built custom nginx image"
 
-                log "Saving custom nginx image..."
-                # Use pigz if available, otherwise fall back to gzip
-                if command -v pigz &> /dev/null; then
-                    if sudo docker save homelab-install-script-nginx:latest | pigz -p 8 > "$nginx_local_file"; then
-                        success "✓ Saved: ${nginx_filename}.tar.gz (compressed with pigz)"
-                    else
-                        error "Failed to save nginx image"
-                    fi
+            log "Saving custom nginx image..."
+            # Use pigz if available, otherwise fall back to gzip
+            if command -v pigz &> /dev/null; then
+                if sudo docker save homelab-install-script-nginx:latest | pigz -p 8 > "$nginx_local_file"; then
+                    success "✓ Saved: ${nginx_filename}.tar.gz (compressed with pigz)"
                 else
-                    if sudo docker save homelab-install-script-nginx:latest | gzip > "$nginx_local_file"; then
-                        success "✓ Saved: ${nginx_filename}.tar.gz"
-                    else
-                        error "Failed to save nginx image"
-                    fi
-                fi
-
-                # Upload to GCS bucket and delete local copy after verification
-                if [ "$GCS_ENABLED" = true ] && [ -f "$nginx_local_file" ]; then
-                    log "Uploading to GCS (parallel mode)..."
-                    if gsutil -m -o GSUtil:parallel_composite_upload_threshold=150M cp "$nginx_local_file" "$GCS_BUCKET/$nginx_gcs_filename"; then
-                        # Verify the upload succeeded
-                        if check_gcs_file "$nginx_gcs_filename"; then
-                            log "Verifying GCS upload..."
-                            success "✓ Verified: ${nginx_filename}.tar.gz exists in GCS bucket"
-                            log "Removing local copy (now in GCS bucket)..."
-                            rm -f "$nginx_local_file"
-                            success "✓ Cleaned up local tar file"
-                        else
-                            warning "Upload verification failed, keeping local copy"
-                        fi
-                    else
-                        warning "Failed to upload to GCS, keeping local copy"
-                    fi
+                    error "Failed to save nginx image"
                 fi
             else
-                warning "Failed to build custom nginx image"
+                if sudo docker save homelab-install-script-nginx:latest | gzip > "$nginx_local_file"; then
+                    success "✓ Saved: ${nginx_filename}.tar.gz"
+                else
+                    error "Failed to save nginx image"
+                fi
+            fi
+
+            # Upload to GCS bucket and delete local copy after verification
+            if [ "$GCS_ENABLED" = true ] && [ -f "$nginx_local_file" ]; then
+                log "Uploading to GCS (parallel mode)..."
+                if gsutil -m -o GSUtil:parallel_composite_upload_threshold=150M cp "$nginx_local_file" "$GCS_BUCKET/$nginx_gcs_filename"; then
+                    # Verify the upload succeeded
+                    if check_gcs_file "$nginx_gcs_filename"; then
+                        log "Verifying GCS upload..."
+                        success "✓ Verified: ${nginx_filename}.tar.gz exists in GCS bucket"
+                        log "Removing local copy (now in GCS bucket)..."
+                        rm -f "$nginx_local_file"
+                        success "✓ Cleaned up local tar file"
+                    else
+                        warning "Upload verification failed, keeping local copy"
+                    fi
+                else
+                    warning "Failed to upload to GCS, keeping local copy"
+                fi
             fi
         else
-            warning "nginx directory not found, skipping custom image"
+            warning "Failed to build custom nginx image"
         fi
-    fi
-
-    if [ "$GCS_ENABLED" = true ]; then
-        success "✓ All Docker images uploaded to GCS: $GCS_BUCKET/docker-images/"
-        log "Local files cleaned up to save disk space"
     else
-        success "✓ All Docker images saved to: $DOCKER_DIR"
+        warning "nginx directory not found, skipping custom image"
     fi
+fi
+
+if [ "$GCS_ENABLED" = true ]; then
+    success "✓ All Docker images uploaded to GCS: $GCS_BUCKET/docker-images/"
+    log "Local files cleaned up to save disk space"
+else
+    success "✓ All Docker images saved to: $DOCKER_DIR"
 fi
 
 # ========================================
@@ -542,14 +525,6 @@ for model in "${OLLAMA_MODELS[@]}"; do
     # If model doesn't exist locally or in GCS, download it
     if [ ! -f "$model_tar_file" ]; then
         log "Downloading Ollama model: $model"
-
-        read -p "Download model $model? (y/N): " -n 1 -r
-        echo
-        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-            warning "Skipping model: $model"
-            echo ""
-            continue
-        fi
 
         # Create a unique container and volume name for this model
         container_name="ollama-temp-${model_filename}"
