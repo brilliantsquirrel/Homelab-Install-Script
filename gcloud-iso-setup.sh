@@ -42,14 +42,17 @@ header() {
 PROJECT_ID=""
 VM_NAME="cubic-builder"
 ZONE="us-west1-a"
-MACHINE_TYPE="n2-standard-8"  # 8 vCPU, 32GB RAM
-BOOT_DISK_SIZE="200GB"
+MACHINE_TYPE="n2-standard-16"  # 16 vCPU, 64GB RAM (elastic builds need more power)
+BOOT_DISK_SIZE="500GB"  # Large disk for ISO builds with all artifacts
+LOCAL_SSD_COUNT="1"  # Number of 375GB local SSDs for fast temporary storage
 BUCKET_NAME="cloud-ai-server-iso-artifacts"
 IMAGE_FAMILY="ubuntu-2204-lts"  # Ubuntu 22.04 LTS (stable, well-supported)
 IMAGE_PROJECT="ubuntu-os-cloud"
-# Alternative options:
-# IMAGE_FAMILY="ubuntu-2404-lts-amd64"  # Ubuntu 24.04 (if available)
-# IMAGE_FAMILY="ubuntu-minimal-2204-lts-amd64"  # Minimal install
+# Alternative machine types for different workloads:
+# n2-standard-8    - 8 vCPU, 32GB RAM (lighter workloads)
+# n2-standard-16   - 16 vCPU, 64GB RAM (recommended for ISO builds)
+# n2-standard-32   - 32 vCPU, 128GB RAM (heavy parallel builds)
+# n2-highmem-16    - 16 vCPU, 128GB RAM (memory-intensive operations)
 
 header "Google Cloud VM Setup for Cubic"
 
@@ -86,11 +89,17 @@ MACHINE_TYPE="${input_machine_type:-$MACHINE_TYPE}"
 read -p "Boot disk size [$BOOT_DISK_SIZE]: " input_disk_size
 BOOT_DISK_SIZE="${input_disk_size:-$BOOT_DISK_SIZE}"
 
+read -p "Local SSD count (0-8, each 375GB) [$LOCAL_SSD_COUNT]: " input_ssd_count
+LOCAL_SSD_COUNT="${input_ssd_count:-$LOCAL_SSD_COUNT}"
+
 # Prompt for bucket name
 echo ""
 log "Storage bucket configuration:"
 log "  Large files (70-110GB) will be stored in a cloud storage bucket"
 log "  This bucket will be mounted to the VM using gcsfuse"
+if [ "$LOCAL_SSD_COUNT" -gt 0 ]; then
+    log "  Local SSD(s) will be mounted at /mnt/disks/ssd for fast temporary storage"
+fi
 echo ""
 
 read -p "Storage bucket name [$BUCKET_NAME]: " input_bucket
@@ -107,7 +116,11 @@ echo "  Project:       $PROJECT_ID"
 echo "  VM Name:       $VM_NAME"
 echo "  Zone:          $ZONE"
 echo "  Machine Type:  $MACHINE_TYPE"
-echo "  Boot Disk:     $BOOT_DISK_SIZE"
+echo "  Boot Disk:     $BOOT_DISK_SIZE (pd-ssd)"
+if [ "$LOCAL_SSD_COUNT" -gt 0 ]; then
+    total_ssd_gb=$((LOCAL_SSD_COUNT * 375))
+    echo "  Local SSDs:    $LOCAL_SSD_COUNT x 375GB = ${total_ssd_gb}GB (fast scratch)"
+fi
 echo "  Bucket:        $BUCKET_NAME"
 echo ""
 
@@ -216,6 +229,38 @@ apt-get install -y ubuntu-desktop-minimal
 log "Installing VNC server..."
 apt-get install -y tightvncserver xfce4 xfce4-goodies
 
+# Mount local SSDs if available
+log "Checking for local SSDs..."
+if ls /dev/disk/by-id/google-local-ssd-* &> /dev/null; then
+    log "Local SSDs detected, setting up..."
+    mkdir -p /mnt/disks/ssd
+
+    # Format and mount the first local SSD
+    # Note: If multiple SSDs, they'll be at google-local-ssd-0, google-local-ssd-1, etc.
+    SSD_DEVICE="/dev/disk/by-id/google-local-ssd-0"
+    if [ -b "$SSD_DEVICE" ]; then
+        log "Formatting local SSD..."
+        mkfs.ext4 -F "$SSD_DEVICE"
+
+        log "Mounting local SSD at /mnt/disks/ssd..."
+        mount -o discard,defaults "$SSD_DEVICE" /mnt/disks/ssd
+        chmod a+w /mnt/disks/ssd
+
+        # Add to fstab for auto-mount (but comment out since local SSDs are ephemeral)
+        # echo "$SSD_DEVICE /mnt/disks/ssd ext4 discard,defaults,nofail 0 2" >> /etc/fstab
+
+        log "Local SSD mounted at /mnt/disks/ssd ($(df -h /mnt/disks/ssd | tail -1 | awk '{print $2}') available)"
+
+        # Create build directory on fast SSD
+        mkdir -p /mnt/disks/ssd/iso-build
+        chown ubuntu:ubuntu /mnt/disks/ssd/iso-build
+    else
+        log "Local SSD device not found at $SSD_DEVICE"
+    fi
+else
+    log "No local SSDs detected, using boot disk for all operations"
+fi
+
 # Mark as initialized
 touch /var/lib/cubic-initialized
 
@@ -236,21 +281,35 @@ header "Step 3: Creating VM Instance"
 log "Creating VM: $VM_NAME"
 log "This may take several minutes..."
 
-gcloud compute instances create "$VM_NAME" \
-    --project="$PROJECT_ID" \
-    --zone="$ZONE" \
-    --machine-type="$MACHINE_TYPE" \
+# Build the gcloud command
+GCLOUD_CMD="gcloud compute instances create \"$VM_NAME\" \
+    --project=\"$PROJECT_ID\" \
+    --zone=\"$ZONE\" \
+    --machine-type=\"$MACHINE_TYPE\" \
     --network-interface=network-tier=PREMIUM,stack-type=IPV4_ONLY,subnet=default \
     --maintenance-policy=MIGRATE \
     --provisioning-model=STANDARD \
     --scopes=https://www.googleapis.com/auth/devstorage.read_write,https://www.googleapis.com/auth/logging.write,https://www.googleapis.com/auth/monitoring.write,https://www.googleapis.com/auth/servicecontrol,https://www.googleapis.com/auth/service.management.readonly,https://www.googleapis.com/auth/trace.append \
-    --create-disk=auto-delete=yes,boot=yes,device-name="$VM_NAME",image=projects/$IMAGE_PROJECT/global/images/family/$IMAGE_FAMILY,mode=rw,size=$BOOT_DISK_SIZE,type=pd-ssd \
+    --create-disk=auto-delete=yes,boot=yes,device-name=\"$VM_NAME\",image=projects/$IMAGE_PROJECT/global/images/family/$IMAGE_FAMILY,mode=rw,size=$BOOT_DISK_SIZE,type=pd-ssd"
+
+# Add local SSDs if requested
+if [ "$LOCAL_SSD_COUNT" -gt 0 ]; then
+    log "Adding $LOCAL_SSD_COUNT local SSD(s)..."
+    for i in $(seq 0 $((LOCAL_SSD_COUNT - 1))); do
+        GCLOUD_CMD="$GCLOUD_CMD --local-ssd=interface=SCSI"
+    done
+fi
+
+GCLOUD_CMD="$GCLOUD_CMD \
     --no-shielded-secure-boot \
     --shielded-vtpm \
     --shielded-integrity-monitoring \
     --labels=purpose=cubic-builder,environment=development \
     --metadata-from-file=startup-script=/tmp/cubic-vm-startup.sh \
-    --metadata=bucket-name="$BUCKET_NAME"
+    --metadata=bucket-name=\"$BUCKET_NAME\",local-ssd-count=\"$LOCAL_SSD_COUNT\""
+
+# Execute the command
+eval $GCLOUD_CMD
 
 success "✓ VM created: $VM_NAME"
 
@@ -546,6 +605,78 @@ chmod +x ~/unmount-bucket.sh"
     log "You can now run: ssh to VM and execute ~/mount-bucket.sh"
 }
 
+cmd_resize_disk() {
+    header "Resize Boot Disk"
+    if [ -z "\$1" ]; then
+        error "Usage: \$0 resize-disk <new-size-gb>"
+        error "Example: \$0 resize-disk 1000"
+        exit 1
+    fi
+
+    NEW_SIZE="\$1"
+    DISK_NAME="\$VM_NAME"
+
+    log "Resizing boot disk to \${NEW_SIZE}GB..."
+    log "Note: Disk can only be increased, not decreased"
+    echo ""
+    read -p "Resize disk '\$DISK_NAME' to \${NEW_SIZE}GB? (y/N): " -n 1 -r
+    echo
+    if [[ \$REPLY =~ ^[Yy]$ ]]; then
+        gcloud compute disks resize "\$DISK_NAME" \\
+            --project="\$PROJECT_ID" \\
+            --zone="\$ZONE" \\
+            --size="\${NEW_SIZE}GB"
+        success "✓ Disk resized to \${NEW_SIZE}GB"
+        log "Run this on the VM to expand the filesystem:"
+        echo "  sudo resize2fs /dev/sda1"
+    else
+        log "Cancelled"
+    fi
+}
+
+cmd_change_machine() {
+    header "Change Machine Type"
+    if [ -z "\$1" ]; then
+        error "Usage: \$0 change-machine <machine-type>"
+        error "Examples:"
+        error "  \$0 change-machine n2-standard-8    (8 vCPU, 32GB)"
+        error "  \$0 change-machine n2-standard-16   (16 vCPU, 64GB)"
+        error "  \$0 change-machine n2-standard-32   (32 vCPU, 128GB)"
+        error "  \$0 change-machine n2-highmem-16    (16 vCPU, 128GB)"
+        exit 1
+    fi
+
+    NEW_MACHINE_TYPE="\$1"
+
+    log "Changing machine type to \$NEW_MACHINE_TYPE..."
+    log "Note: VM must be stopped first"
+    echo ""
+
+    # Check if VM is running
+    VM_STATUS=\$(gcloud compute instances describe "\$VM_NAME" \\
+        --project="\$PROJECT_ID" \\
+        --zone="\$ZONE" \\
+        --format="value(status)")
+
+    if [ "\$VM_STATUS" = "RUNNING" ]; then
+        log "VM is running, stopping it first..."
+        gcloud compute instances stop "\$VM_NAME" \\
+            --project="\$PROJECT_ID" \\
+            --zone="\$ZONE"
+        log "Waiting for VM to stop..."
+        sleep 10
+    fi
+
+    log "Changing machine type..."
+    gcloud compute instances set-machine-type "\$VM_NAME" \\
+        --project="\$PROJECT_ID" \\
+        --zone="\$ZONE" \\
+        --machine-type="\$NEW_MACHINE_TYPE"
+
+    success "✓ Machine type changed to \$NEW_MACHINE_TYPE"
+    log "Start the VM with: \$0 start"
+}
+
 cmd_delete() {
     header "Delete VM"
     log "WARNING: This will delete the VM instance"
@@ -572,29 +703,43 @@ cmd_info() {
     echo "Bucket:      gs://\${BUCKET_NAME}"
     echo ""
     log "Useful commands:"
-    echo "  \$0 status        - Show VM status"
-    echo "  \$0 start         - Start the VM"
-    echo "  \$0 stop          - Stop the VM"
-    echo "  \$0 ssh           - SSH into VM"
-    echo "  \$0 setup-scripts - Create mount scripts on VM"
-    echo "  \$0 bucket        - Show bucket contents"
-    echo "  \$0 upload        - Upload files to bucket"
-    echo "  \$0 download      - Download files from bucket"
-    echo "  \$0 delete    - Delete the VM"
+    echo ""
+    echo "VM Management:"
+    echo "  \$0 status            - Show VM status"
+    echo "  \$0 start             - Start the VM"
+    echo "  \$0 stop              - Stop the VM"
+    echo "  \$0 ssh               - SSH into VM"
+    echo "  \$0 delete            - Delete the VM"
+    echo ""
+    echo "Elastic Scaling:"
+    echo "  \$0 resize-disk <gb>       - Increase boot disk size (e.g., 1000)"
+    echo "  \$0 change-machine <type>  - Change CPU/memory (e.g., n2-standard-32)"
+    echo ""
+    echo "Storage:"
+    echo "  \$0 setup-scripts    - Create mount scripts on VM"
+    echo "  \$0 bucket           - Show bucket contents"
+    echo "  \$0 upload <path>    - Upload files to bucket"
+    echo "  \$0 download <path>  - Download files from bucket"
+    echo ""
+    echo "Examples:"
+    echo "  \$0 resize-disk 1000              # Increase disk to 1TB"
+    echo "  \$0 change-machine n2-standard-32 # Scale to 32 vCPU, 128GB RAM"
 }
 
 # Command dispatcher
 case "\${1:-info}" in
-    status)        cmd_status ;;
-    start)         cmd_start ;;
-    stop)          cmd_stop ;;
-    ssh)           cmd_ssh ;;
-    setup-scripts) cmd_setup_scripts ;;
-    upload)        cmd_upload "\$2" ;;
-    download)      cmd_download "\$2" ;;
-    bucket)        cmd_bucket ;;
-    delete)        cmd_delete ;;
-    info)          cmd_info ;;
+    status)         cmd_status ;;
+    start)          cmd_start ;;
+    stop)           cmd_stop ;;
+    ssh)            cmd_ssh ;;
+    setup-scripts)  cmd_setup_scripts ;;
+    upload)         cmd_upload "\$2" ;;
+    download)       cmd_download "\$2" ;;
+    bucket)         cmd_bucket ;;
+    resize-disk)    cmd_resize_disk "\$2" ;;
+    change-machine) cmd_change_machine "\$2" ;;
+    delete)         cmd_delete ;;
+    info)           cmd_info ;;
     *)
         error "Unknown command: \$1"
         cmd_info
@@ -728,14 +873,23 @@ echo "   cubic"
 echo "   # In Cubic GUI, set project directory to: ~/iso-artifacts"
 echo ""
 echo "Management commands:"
-echo "  ./gcloud-cubic-vm.sh status    - Show VM status"
-echo "  ./gcloud-cubic-vm.sh start     - Start the VM"
-echo "  ./gcloud-cubic-vm.sh stop      - Stop the VM (saves costs!)"
-echo "  ./gcloud-cubic-vm.sh ssh       - SSH into VM"
-echo "  ./gcloud-cubic-vm.sh bucket    - Show bucket contents"
-echo "  ./gcloud-cubic-vm.sh info      - Show all commands"
+echo "  ./gcloud-cubic-vm.sh status              - Show VM status"
+echo "  ./gcloud-cubic-vm.sh start               - Start the VM"
+echo "  ./gcloud-cubic-vm.sh stop                - Stop the VM (saves costs!)"
+echo "  ./gcloud-cubic-vm.sh ssh                 - SSH into VM"
+echo "  ./gcloud-cubic-vm.sh bucket              - Show bucket contents"
+echo "  ./gcloud-cubic-vm.sh info                - Show all commands"
+echo ""
+echo "Elastic scaling (increase resources during build):"
+echo "  ./gcloud-cubic-vm.sh resize-disk 1000           - Increase disk to 1TB"
+echo "  ./gcloud-cubic-vm.sh change-machine n2-standard-32  - Scale to 32 vCPU"
 echo ""
 
 warning "IMPORTANT: Remember to stop the VM when not in use to save costs!"
 echo "  ./gcloud-cubic-vm.sh stop"
+echo ""
+if [ "$LOCAL_SSD_COUNT" -gt 0 ]; then
+    success "Local SSD available at /mnt/disks/ssd for fast ISO builds"
+    log "Use /mnt/disks/ssd/iso-build for temporary build files"
+fi
 

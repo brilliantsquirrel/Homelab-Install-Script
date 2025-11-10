@@ -59,7 +59,16 @@ header "Custom Ubuntu ISO Builder - Homelab Edition"
 UBUNTU_VERSION="24.04.3"
 ISO_INPUT="$REPO_DIR/iso-artifacts/ubuntu-${UBUNTU_VERSION}-live-server-amd64.iso"
 ISO_OUTPUT="$REPO_DIR/iso-artifacts/ubuntu-${UBUNTU_VERSION}-homelab-amd64.iso"
-WORK_DIR="$REPO_DIR/iso-build"
+
+# Use local SSD if available for faster builds, otherwise use boot disk
+if [ -d "/mnt/disks/ssd/iso-build" ]; then
+    WORK_DIR="/mnt/disks/ssd/iso-build"
+    log "Using local SSD for build: $WORK_DIR (much faster!)"
+else
+    WORK_DIR="$REPO_DIR/iso-build"
+    log "Using boot disk for build: $WORK_DIR"
+fi
+
 ISO_EXTRACT="$WORK_DIR/iso"
 SQUASHFS_EXTRACT="$WORK_DIR/squashfs"
 # SQUASHFS_FILE will be auto-detected after ISO extraction (Server vs Desktop ISO)
