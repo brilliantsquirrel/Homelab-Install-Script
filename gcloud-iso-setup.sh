@@ -855,6 +855,7 @@ echo "4. Clone this repository (on VM):"
 echo "   cd ~/iso-artifacts"
 echo "   git clone https://github.com/brilliantsquirrel/Homelab-Install-Script.git"
 echo "   cd Homelab-Install-Script"
+echo "   chmod +x *.sh"
 echo ""
 echo "5. Download dependencies (on VM):"
 echo "   ./iso-prepare.sh"
@@ -882,4 +883,11 @@ if [ "$LOCAL_SSD_COUNT" -gt 0 ]; then
     success "Local SSD available at /mnt/disks/ssd for fast ISO builds"
     log "Use /mnt/disks/ssd/iso-build for temporary build files"
 fi
+
+# Monitor initialization progress
+echo ""
+log "Starting log monitoring..."
+log "Press Ctrl+C to exit monitoring (VM will continue initializing)"
+echo ""
+gcloud compute ssh "$VM_NAME" -- tail -f /var/log/iso-setup.log
 

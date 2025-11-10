@@ -232,6 +232,9 @@ cd ~/iso-artifacts
 git clone https://github.com/brilliantsquirrel/Homelab-Install-Script.git
 cd Homelab-Install-Script
 
+# Make scripts executable
+chmod +x *.sh
+
 # Download all dependencies (~1-1.5 hours with optimizations)
 ./iso-prepare.sh
 ```
@@ -447,6 +450,7 @@ gcloud compute ssh iso-builder -- tail -f /var/log/iso-setup.log
 
 # 6. Prepare dependencies (first time only: ~1.5 hours)
 cd ~/iso-artifacts/Homelab-Install-Script
+chmod +x *.sh
 ./iso-prepare.sh
 
 # 7. Build ISO (~30-45 minutes)
