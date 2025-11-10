@@ -42,6 +42,92 @@ header() {
     echo ""
 }
 
+# Performance configuration
+MAX_PARALLEL_DOWNLOADS=4  # Number of parallel Docker image downloads
+
+# Process a single Docker image (pull, compress, upload)
+process_docker_image() {
+    local image="$1"
+    local filename=$(echo "$image" | sed 's/[\/:]/_/g')
+    local local_file="$DOCKER_DIR/${filename}.tar.gz"
+    local gcs_filename="docker-images/${filename}.tar.gz"
+
+    # Check if file exists locally
+    if [ -f "$local_file" ]; then
+        existing_size=$(du -h "$local_file" | cut -f1)
+        log "[$image] Already exists locally: ${filename}.tar.gz ($existing_size)"
+        success "✓ Skipping: $image (already downloaded)"
+        return 0
+    fi
+
+    # Check if file exists in GCS bucket
+    if [ "$GCS_ENABLED" = true ] && check_gcs_file "$gcs_filename"; then
+        log "[$image] Found in GCS bucket: ${filename}.tar.gz"
+        if download_from_gcs "$gcs_filename" "$local_file"; then
+            success "✓ Retrieved from GCS: $image"
+            # Load the image into Docker
+            log "[$image] Loading into Docker..."
+            if gunzip -c "$local_file" | sudo docker load; then
+                success "✓ Loaded: $image"
+            else
+                warning "[$image] Failed to load from GCS archive"
+            fi
+            return 0
+        else
+            warning "[$image] Failed to download from GCS, will pull from Docker Hub"
+        fi
+    fi
+
+    # File not found locally or in GCS, pull from Docker Hub
+    log "[$image] Pulling from Docker Hub..."
+    if ! sudo docker pull "$image"; then
+        error "[$image] Failed to pull"
+        return 1
+    fi
+    success "✓ Pulled: $image"
+
+    # Save image to tar file with parallel compression
+    log "[$image] Compressing with pigz..."
+    if command -v pigz &> /dev/null; then
+        if sudo docker save "$image" | pigz -p 2 > "$local_file"; then
+            success "✓ Compressed: ${filename}.tar.gz"
+        else
+            error "[$image] Failed to compress"
+            return 1
+        fi
+    else
+        # Fallback to regular gzip if pigz not available
+        if sudo docker save "$image" | gzip > "$local_file"; then
+            success "✓ Compressed: ${filename}.tar.gz"
+        else
+            error "[$image] Failed to compress"
+            return 1
+        fi
+    fi
+
+    # Upload to GCS bucket and delete local copy after verification
+    if [ "$GCS_ENABLED" = true ]; then
+        log "[$image] Uploading to GCS (parallel mode)..."
+        if gsutil -m -o GSUtil:parallel_composite_upload_threshold=150M cp "$local_file" "$GCS_BUCKET/$gcs_filename"; then
+            # Verify the upload succeeded
+            if check_gcs_file "$gcs_filename"; then
+                log "[$image] Verifying GCS upload..."
+                success "✓ Verified: ${filename}.tar.gz exists in GCS bucket"
+                log "[$image] Removing local copy (now in GCS bucket)..."
+                rm -f "$local_file"
+                success "✓ Cleaned up local tar file"
+            else
+                warning "[$image] Upload verification failed, keeping local copy"
+            fi
+        else
+            warning "[$image] Failed to upload to GCS, keeping local copy"
+        fi
+    fi
+
+    success "✓ Complete: $image"
+    return 0
+}
+
 # Check if running as root
 if [ "$EUID" -eq 0 ]; then
     error "Please run this script as a regular user with sudo privileges, not as root"
@@ -136,7 +222,8 @@ upload_to_gcs() {
     fi
 
     log "Uploading to GCS bucket: $destination"
-    if gsutil cp "$filepath" "$GCS_BUCKET/$destination"; then
+    # Use parallel composite uploads for files larger than 150MB
+    if gsutil -m -o GSUtil:parallel_composite_upload_threshold=150M cp "$filepath" "$GCS_BUCKET/$destination"; then
         success "✓ Uploaded to GCS: $destination"
         return 0
     else
@@ -313,75 +400,26 @@ echo
 if [[ ! $REPLY =~ ^[Yy]$ ]]; then
     warning "Skipping Docker image download"
 else
+    log "Processing images with $MAX_PARALLEL_DOWNLOADS parallel downloads..."
+    echo ""
+
+    # Process images in parallel with job control
     for image in "${DOCKER_IMAGES[@]}"; do
-        filename=$(echo "$image" | sed 's/[\/:]/_/g')
-        local_file="$DOCKER_DIR/${filename}.tar.gz"
-        gcs_filename="docker-images/${filename}.tar.gz"
+        # Launch processing in background
+        process_docker_image "$image" &
 
-        # Check if file exists locally
-        if [ -f "$local_file" ]; then
-            existing_size=$(du -h "$local_file" | cut -f1)
-            log "Image already exists locally: ${filename}.tar.gz ($existing_size)"
-            success "✓ Skipping: $image (already downloaded)"
-            echo ""
-            continue
-        fi
-
-        # Check if file exists in GCS bucket
-        if [ "$GCS_ENABLED" = true ] && check_gcs_file "$gcs_filename"; then
-            log "Image found in GCS bucket: ${filename}.tar.gz"
-            if download_from_gcs "$gcs_filename" "$local_file"; then
-                success "✓ Retrieved from GCS: $image"
-                # Load the image into Docker
-                log "Loading image into Docker..."
-                if gunzip -c "$local_file" | sudo docker load; then
-                    success "✓ Loaded: $image"
-                else
-                    warning "Failed to load image from GCS archive"
-                fi
-                echo ""
-                continue
-            else
-                warning "Failed to download from GCS, will pull from Docker Hub"
-            fi
-        fi
-
-        # File not found locally or in GCS, pull from Docker Hub
-        log "Pulling: $image"
-        if sudo docker pull "$image"; then
-            success "✓ Pulled: $image"
-
-            # Save image to tar file
-            log "Saving to: ${filename}.tar.gz"
-
-            if sudo docker save "$image" | gzip > "$local_file"; then
-                success "✓ Saved: ${filename}.tar.gz"
-
-                # Upload to GCS bucket and delete local copy after verification
-                if [ "$GCS_ENABLED" = true ]; then
-                    if upload_to_gcs "$local_file" "$gcs_filename"; then
-                        # Verify the upload succeeded
-                        if check_gcs_file "$gcs_filename"; then
-                            log "Verifying GCS upload..."
-                            success "✓ Verified: ${filename}.tar.gz exists in GCS bucket"
-                            log "Removing local copy (now in GCS bucket)..."
-                            rm -f "$local_file"
-                            success "✓ Cleaned up local tar file"
-                        else
-                            warning "Upload verification failed, keeping local copy"
-                        fi
-                    else
-                        warning "Failed to upload to GCS, keeping local copy"
-                    fi
-                fi
-            else
-                error "Failed to save: $image"
-            fi
-        else
-            error "Failed to pull: $image"
-        fi
-        echo ""
+        # Limit concurrent jobs
+        while [ $(jobs -r | wc -l) -ge $MAX_PARALLEL_DOWNLOADS ]; do
+            sleep 2
+        done
     done
+
+    # Wait for all background jobs to complete
+    log "Waiting for all downloads to complete..."
+    wait
+
+    echo ""
+    success "✓ All Docker images processed"
 
     # Build custom nginx image
     log "Building custom nginx image..."
@@ -410,25 +448,37 @@ else
                 success "✓ Built custom nginx image"
 
                 log "Saving custom nginx image..."
-                if sudo docker save homelab-install-script-nginx:latest | gzip > "$nginx_local_file"; then
-                    success "✓ Saved: ${nginx_filename}.tar.gz"
+                # Use pigz if available, otherwise fall back to gzip
+                if command -v pigz &> /dev/null; then
+                    if sudo docker save homelab-install-script-nginx:latest | pigz -p 8 > "$nginx_local_file"; then
+                        success "✓ Saved: ${nginx_filename}.tar.gz (compressed with pigz)"
+                    else
+                        error "Failed to save nginx image"
+                    fi
+                else
+                    if sudo docker save homelab-install-script-nginx:latest | gzip > "$nginx_local_file"; then
+                        success "✓ Saved: ${nginx_filename}.tar.gz"
+                    else
+                        error "Failed to save nginx image"
+                    fi
+                fi
 
-                    # Upload to GCS bucket and delete local copy after verification
-                    if [ "$GCS_ENABLED" = true ]; then
-                        if upload_to_gcs "$nginx_local_file" "$nginx_gcs_filename"; then
-                            # Verify the upload succeeded
-                            if check_gcs_file "$nginx_gcs_filename"; then
-                                log "Verifying GCS upload..."
-                                success "✓ Verified: ${nginx_filename}.tar.gz exists in GCS bucket"
-                                log "Removing local copy (now in GCS bucket)..."
-                                rm -f "$nginx_local_file"
-                                success "✓ Cleaned up local tar file"
-                            else
-                                warning "Upload verification failed, keeping local copy"
-                            fi
+                # Upload to GCS bucket and delete local copy after verification
+                if [ "$GCS_ENABLED" = true ] && [ -f "$nginx_local_file" ]; then
+                    log "Uploading to GCS (parallel mode)..."
+                    if gsutil -m -o GSUtil:parallel_composite_upload_threshold=150M cp "$nginx_local_file" "$GCS_BUCKET/$nginx_gcs_filename"; then
+                        # Verify the upload succeeded
+                        if check_gcs_file "$nginx_gcs_filename"; then
+                            log "Verifying GCS upload..."
+                            success "✓ Verified: ${nginx_filename}.tar.gz exists in GCS bucket"
+                            log "Removing local copy (now in GCS bucket)..."
+                            rm -f "$nginx_local_file"
+                            success "✓ Cleaned up local tar file"
                         else
-                            warning "Failed to upload to GCS, keeping local copy"
+                            warning "Upload verification failed, keeping local copy"
                         fi
+                    else
+                        warning "Failed to upload to GCS, keeping local copy"
                     fi
                 fi
             else
@@ -461,6 +511,7 @@ OLLAMA_MODELS=(
 )
 
 # Process each model individually to save disk space
+# Key optimization: Use a fresh volume for each model, export immediately, then clean up
 for model in "${OLLAMA_MODELS[@]}"; do
     # Create a safe filename from the model name
     model_filename=$(echo "$model" | sed 's/[\/:]/_/g')
@@ -501,19 +552,25 @@ for model in "${OLLAMA_MODELS[@]}"; do
             continue
         fi
 
-        # Check if Ollama container is running, start if needed
-        if ! sudo docker ps | grep -q ollama-temp; then
-            log "Starting Ollama container for model downloads..."
-            sudo docker run -d --name ollama-temp -v ollama-models:/root/.ollama ollama/ollama:latest
-            sleep 5
-        fi
+        # Create a unique container and volume name for this model
+        container_name="ollama-temp-${model_filename}"
+        volume_name="ollama-temp-${model_filename}"
+
+        # Start fresh Ollama container with dedicated volume for this model
+        log "Starting Ollama container for $model..."
+        sudo docker run -d --name "$container_name" -v "$volume_name":/root/.ollama ollama/ollama:latest
+        sleep 5
 
         # Download the model
         log "Pulling model: $model (this may take a long time)"
-        if sudo docker exec ollama-temp ollama pull "$model"; then
+        if sudo docker exec "$container_name" ollama pull "$model"; then
             success "✓ Downloaded: $model"
         else
             warning "Failed to download: $model, skipping"
+            # Clean up failed container and volume
+            sudo docker stop "$container_name" 2>/dev/null || true
+            sudo docker rm "$container_name" 2>/dev/null || true
+            sudo docker volume rm "$volume_name" 2>/dev/null || true
             echo ""
             continue
         fi
@@ -521,10 +578,15 @@ for model in "${OLLAMA_MODELS[@]}"; do
         # Export this specific model to a tar file
         log "Exporting $model from Docker volume..."
 
-        # Get the model path in the ollama data directory
-        # Models are stored in /root/.ollama/models/
-        sudo docker run --rm -v ollama-models:/models -v "$MODELS_DIR":/backup alpine \
-            sh -c "cd /models && tar czf /backup/${model_filename}.tar.gz ."
+        # Use pigz for faster compression if available
+        if command -v pigz &> /dev/null; then
+            log "Using pigz for parallel compression..."
+            sudo docker run --rm -v "$volume_name":/models -v "$MODELS_DIR":/backup alpine \
+                sh -c "cd /models && tar -c . | pigz -p 4 > /backup/${model_filename}.tar.gz"
+        else
+            sudo docker run --rm -v "$volume_name":/models -v "$MODELS_DIR":/backup alpine \
+                sh -c "cd /models && tar czf /backup/${model_filename}.tar.gz ."
+        fi
 
         if [ -f "$model_tar_file" ]; then
             size=$(du -h "$model_tar_file" | cut -f1)
@@ -532,7 +594,8 @@ for model in "${OLLAMA_MODELS[@]}"; do
 
             # Upload to GCS bucket and delete local copy after verification
             if [ "$GCS_ENABLED" = true ]; then
-                if upload_to_gcs "$model_tar_file" "$model_gcs_filename"; then
+                log "Uploading to GCS (parallel mode)..."
+                if gsutil -m -o GSUtil:parallel_composite_upload_threshold=150M cp "$model_tar_file" "$GCS_BUCKET/$model_gcs_filename"; then
                     # Verify the upload succeeded
                     if check_gcs_file "$model_gcs_filename"; then
                         log "Verifying GCS upload..."
@@ -547,34 +610,20 @@ for model in "${OLLAMA_MODELS[@]}"; do
                     warning "Failed to upload to GCS, keeping local copy"
                 fi
             fi
-
-            # Clean up the model from the Docker volume to save space
-            log "Cleaning up $model from Docker volume to save space..."
-            sudo docker exec ollama-temp sh -c "rm -rf /root/.ollama/models/*" 2>/dev/null || true
         else
             error "Failed to export model: $model"
         fi
 
+        # Clean up this model's container and volume immediately to save disk space
+        log "Cleaning up container and volume for $model to save disk space..."
+        sudo docker stop "$container_name" 2>/dev/null || true
+        sudo docker rm "$container_name" 2>/dev/null || true
+        sudo docker volume rm "$volume_name" 2>/dev/null || true
+        success "✓ Cleaned up $model resources"
+
         echo ""
     fi
 done
-
-# Clean up temporary container if it exists
-if sudo docker ps -a | grep -q ollama-temp; then
-    log "Cleaning up temporary Ollama container..."
-    sudo docker stop ollama-temp 2>/dev/null || true
-    sudo docker rm ollama-temp 2>/dev/null || true
-fi
-
-# Clean up temporary volume
-if sudo docker volume ls | grep -q ollama-models; then
-    read -p "Remove temporary Ollama volume? (y/N): " -n 1 -r
-    echo
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-        sudo docker volume rm ollama-models 2>/dev/null || true
-        log "Cleaned up temporary volume"
-    fi
-fi
 
 if [ "$GCS_ENABLED" = true ]; then
     success "✓ All Ollama models uploaded to GCS: $GCS_BUCKET/ollama-models/"

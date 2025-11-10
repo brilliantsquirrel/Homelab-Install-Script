@@ -170,7 +170,9 @@ apt-get install -y \
     lsb-release \
     ca-certificates \
     software-properties-common \
-    fuse
+    fuse \
+    pigz \
+    pv
 
 # Install gcsfuse for mounting cloud storage
 log "Installing gcsfuse..."
@@ -179,6 +181,15 @@ echo "deb https://packages.cloud.google.com/apt $GCSFUSE_REPO main" | tee /etc/a
 curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | apt-key add -
 apt-get update
 apt-get install -y gcsfuse
+
+# Configure gsutil for better performance
+log "Configuring gsutil for parallel uploads..."
+mkdir -p /etc
+cat >> /etc/boto.cfg << 'BOTO_EOF'
+[GSUtil]
+parallel_composite_upload_threshold = 150M
+parallel_thread_count = 8
+BOTO_EOF
 
 # Install Docker
 log "Installing Docker..."
@@ -227,7 +238,7 @@ gcloud compute instances create "$VM_NAME" \
     --maintenance-policy=MIGRATE \
     --provisioning-model=STANDARD \
     --scopes=https://www.googleapis.com/auth/devstorage.read_write,https://www.googleapis.com/auth/logging.write,https://www.googleapis.com/auth/monitoring.write,https://www.googleapis.com/auth/servicecontrol,https://www.googleapis.com/auth/service.management.readonly,https://www.googleapis.com/auth/trace.append \
-    --create-disk=auto-delete=yes,boot=yes,device-name="$VM_NAME",image=projects/$IMAGE_PROJECT/global/images/family/$IMAGE_FAMILY,mode=rw,size=$BOOT_DISK_SIZE,type=pd-balanced \
+    --create-disk=auto-delete=yes,boot=yes,device-name="$VM_NAME",image=projects/$IMAGE_PROJECT/global/images/family/$IMAGE_FAMILY,mode=rw,size=$BOOT_DISK_SIZE,type=pd-ssd \
     --no-shielded-secure-boot \
     --shielded-vtpm \
     --shielded-integrity-monitoring \
