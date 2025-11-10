@@ -149,15 +149,23 @@ success "✓ Created: $CUBIC_DIR (this will be your Cubic project directory)"
 
 # GCS bucket for storing large artifacts
 # Try to get bucket name from GCloud VM metadata, fallback to environment variable
-if command -v curl &> /dev/null && curl -s -f -H "Metadata-Flavor: Google" \
-    "http://metadata.google.internal/computeMetadata/v1/instance/attributes/bucket-name" &> /dev/null; then
-    # Running on GCloud VM - get bucket name from metadata
-    BUCKET_NAME=$(curl -s -H "Metadata-Flavor: Google" \
+
+# First, try GCloud VM metadata
+BUCKET_FROM_METADATA=""
+if command -v curl &> /dev/null; then
+    BUCKET_FROM_METADATA=$(curl -s -f -H "Metadata-Flavor: Google" \
         "http://metadata.google.internal/computeMetadata/v1/instance/attributes/bucket-name" 2>/dev/null)
-    GCS_BUCKET="gs://${BUCKET_NAME}"
+fi
+
+# Use metadata if available, otherwise fall back to environment variable
+if [ -n "$BUCKET_FROM_METADATA" ]; then
+    GCS_BUCKET="gs://${BUCKET_FROM_METADATA}"
+    log "✓ Detected GCS bucket from VM metadata: $GCS_BUCKET"
+elif [ -n "${GCS_BUCKET:-}" ]; then
+    log "✓ Using GCS bucket from environment variable: $GCS_BUCKET"
 else
-    # Not on GCloud VM or metadata not available - use environment variable
-    GCS_BUCKET="${GCS_BUCKET:-}"
+    GCS_BUCKET=""
+    log "✗ No GCS bucket configured (neither VM metadata nor GCS_BUCKET env var)"
 fi
 
 # Check if gsutil is available
@@ -226,22 +234,35 @@ upload_to_gcs() {
 }
 
 # Check GCS availability at startup
+echo ""
+log "Checking GCS bucket configuration..."
+
 if check_gcs_available; then
     success "✓ GCS bucket accessible: $GCS_BUCKET"
     log "Files will be uploaded to GCS and local copies will be removed to save disk space"
     GCS_ENABLED=true
 else
     if [ -z "$GCS_BUCKET" ]; then
-        warning "GCS bucket not configured - files will only be stored locally"
+        error "✗ GCS bucket not configured - files will only be stored locally"
         log "To enable GCS: set GCS_BUCKET environment variable or run on GCloud VM"
+        log "Detected environment: GCS_BUCKET='$GCS_BUCKET'"
     elif ! command -v gsutil &> /dev/null; then
-        warning "gsutil not found - files will only be stored locally"
+        error "✗ gsutil not found - files will only be stored locally"
         log "To enable GCS: install gcloud CLI (https://cloud.google.com/sdk/docs/install)"
     else
-        warning "GCS bucket $GCS_BUCKET not accessible - files will only be stored locally"
+        error "✗ GCS bucket $GCS_BUCKET not accessible - files will only be stored locally"
         log "Verify bucket exists and you have access: gsutil ls $GCS_BUCKET"
+
+        # Try to get more details about the error
+        log "Testing bucket access..."
+        if gsutil ls "$GCS_BUCKET" 2>&1 | head -5; then
+            warning "Bucket access test completed (see output above)"
+        fi
     fi
     GCS_ENABLED=false
+
+    warning "⚠ IMPORTANT: GCS is NOT enabled - all files will remain on local disk!"
+    warning "⚠ This will use ~70-110GB of disk space on this machine!"
 fi
 echo ""
 
