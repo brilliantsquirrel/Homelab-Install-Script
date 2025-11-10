@@ -171,11 +171,47 @@ sudo rsync -a \
 }
 success "Homelab scripts copied to /opt/homelab (excluded large data directories)"
 
-# NOTE: Docker images and Ollama models are NOT included in the ISO due to size
-# (~70-110GB total). These should be loaded after installation using post-install.sh
-# or by running cubic-prepare.sh on the target system.
-log "Skipping Docker images and Ollama models (too large for ISO)"
-warning "Docker images and models not included - will be downloaded during post-install.sh"
+# Copy Docker images if available
+if [ -d "$DOCKER_DIR" ] && [ "$(ls -A "$DOCKER_DIR" 2>/dev/null)" ]; then
+    log "Copying Docker images (~20-30GB, may take 10-15 minutes)..."
+    sudo mkdir -p "$SQUASHFS_EXTRACT/opt/homelab-data/docker-images"
+
+    # Copy from GCS bucket mount or local directory
+    if mountpoint -q "$REPO_DIR/cubic-artifacts" 2>/dev/null; then
+        # Files are in GCS bucket, copy them
+        log "Copying Docker images from GCS bucket..."
+        sudo rsync -ah --info=progress2 "$DOCKER_DIR/" "$SQUASHFS_EXTRACT/opt/homelab-data/docker-images/" || {
+            warning "Failed to copy Docker images, continuing..."
+        }
+    else
+        sudo cp -r "$DOCKER_DIR"/* "$SQUASHFS_EXTRACT/opt/homelab-data/docker-images/" 2>/dev/null || {
+            warning "Docker images not found, skipping"
+        }
+    fi
+    success "Docker images copied"
+else
+    warning "Docker images directory not found or empty, skipping"
+fi
+
+# Copy Ollama models if available
+if [ -d "$MODELS_DIR" ] && [ "$(ls -A "$MODELS_DIR" 2>/dev/null)" ]; then
+    log "Copying Ollama models (~50-80GB, may take 20-30 minutes)..."
+    sudo mkdir -p "$SQUASHFS_EXTRACT/opt/homelab-data/ollama-models"
+
+    if mountpoint -q "$REPO_DIR/cubic-artifacts" 2>/dev/null; then
+        log "Copying Ollama models from GCS bucket..."
+        sudo rsync -ah --info=progress2 "$MODELS_DIR/" "$SQUASHFS_EXTRACT/opt/homelab-data/ollama-models/" || {
+            warning "Failed to copy Ollama models, continuing..."
+        }
+    else
+        sudo cp -r "$MODELS_DIR"/* "$SQUASHFS_EXTRACT/opt/homelab-data/ollama-models/" 2>/dev/null || {
+            warning "Ollama models not found, skipping"
+        }
+    fi
+    success "Ollama models copied"
+else
+    warning "Ollama models directory not found or empty, skipping"
+fi
 
 # Create first-boot setup script
 log "Creating first-boot setup script..."
@@ -191,23 +227,36 @@ LOG_FILE="/var/log/homelab-first-boot.log"
     echo "Started: $(date)"
     echo "======================================"
 
+    # Import Docker images if they exist
+    if [ -d /opt/homelab-data/docker-images ]; then
+        echo "Loading Docker images from ISO..."
+        for tarfile in /opt/homelab-data/docker-images/*.tar.gz; do
+            if [ -f "$tarfile" ]; then
+                echo "Loading $(basename "$tarfile")..."
+                docker load -i "$tarfile" || echo "Failed to load $tarfile"
+            fi
+        done
+        echo "Docker images loaded"
+    fi
+
+    # Import Ollama models if they exist
+    if [ -d /opt/homelab-data/ollama-models ]; then
+        echo "Restoring Ollama models from ISO..."
+        mkdir -p /var/lib/docker/volumes/ollama_models/_data
+        cp -r /opt/homelab-data/ollama-models/* /var/lib/docker/volumes/ollama_models/_data/ || true
+        echo "Ollama models restored"
+    fi
+
     # Make post-install script executable
     if [ -f /opt/homelab/post-install.sh ]; then
         chmod +x /opt/homelab/post-install.sh
         echo "Homelab installation scripts are ready at /opt/homelab/"
         echo ""
-        echo "NOTE: Docker images and Ollama models are NOT pre-loaded in this ISO."
-        echo "They will be downloaded automatically when you run post-install.sh."
+        echo "Docker images and Ollama models have been pre-loaded from the ISO!"
         echo ""
         echo "To complete homelab setup, run:"
         echo "  cd /opt/homelab"
         echo "  ./post-install.sh"
-        echo ""
-        echo "This will:"
-        echo "  - Install Docker and all dependencies"
-        echo "  - Pull Docker images from Docker Hub"
-        echo "  - Download Ollama models"
-        echo "  - Configure all services"
     fi
 
     # Clean up - remove this script from future boots
@@ -345,26 +394,27 @@ echo ""
 echo "What's included in this ISO:"
 echo "  - Ubuntu Server 24.04.3 LTS"
 echo "  - Homelab installation scripts in /opt/homelab/"
-echo "  - First-boot setup service (prepares scripts)"
+echo "  - All Docker images (~20-30GB) in /opt/homelab-data/docker-images/"
+echo "  - All Ollama models (~50-80GB) in /opt/homelab-data/ollama-models/"
+echo "  - First-boot setup service (auto-loads images/models)"
 echo ""
-echo "NOTE: Docker images and Ollama models are NOT included due to size."
-echo "      They will be downloaded when you run post-install.sh"
+echo "NOTE: This is a LARGE ISO (${ISO_SIZE_GB}GB) due to included Docker images and models."
+echo "      Requires a large USB drive or direct boot from ISO."
 echo ""
 echo "Next Steps:"
-echo "  1. Test the ISO in a VM or write to USB:"
+echo "  1. Write to large USB drive (128GB+ recommended):"
 echo "     dd if=$ISO_OUTPUT of=/dev/sdX bs=4M status=progress"
 echo ""
 echo "  2. Boot from the ISO and install Ubuntu normally"
 echo ""
-echo "  3. After installation, run the homelab setup:"
+echo "  3. After first boot, the system will automatically:"
+echo "     - Load all Docker images from /opt/homelab-data/"
+echo "     - Restore Ollama models"
+echo "     - Make scripts executable"
+echo ""
+echo "  4. Complete the setup by running:"
 echo "     cd /opt/homelab"
 echo "     ./post-install.sh"
-echo ""
-echo "  4. post-install.sh will automatically:"
-echo "     - Install Docker and dependencies"
-echo "     - Pull all Docker images from Docker Hub"
-echo "     - Download Ollama models"
-echo "     - Configure all services"
 echo ""
 echo "  5. Check first-boot logs at:"
 echo "     /var/log/homelab-first-boot.log"
