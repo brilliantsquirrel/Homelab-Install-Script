@@ -229,7 +229,7 @@ LOG_FILE="/var/log/homelab-first-boot.log"
 
     # Import Docker images if they exist
     if [ -d /opt/homelab-data/docker-images ]; then
-        echo "Loading Docker images..."
+        echo "Loading Docker images from ISO..."
         for tarfile in /opt/homelab-data/docker-images/*.tar.gz; do
             if [ -f "$tarfile" ]; then
                 echo "Loading $(basename "$tarfile")..."
@@ -241,7 +241,7 @@ LOG_FILE="/var/log/homelab-first-boot.log"
 
     # Import Ollama models if they exist
     if [ -d /opt/homelab-data/ollama-models ]; then
-        echo "Restoring Ollama models..."
+        echo "Restoring Ollama models from ISO..."
         mkdir -p /var/lib/docker/volumes/ollama_models/_data
         cp -r /opt/homelab-data/ollama-models/* /var/lib/docker/volumes/ollama_models/_data/ || true
         echo "Ollama models restored"
@@ -250,7 +250,9 @@ LOG_FILE="/var/log/homelab-first-boot.log"
     # Make post-install script executable
     if [ -f /opt/homelab/post-install.sh ]; then
         chmod +x /opt/homelab/post-install.sh
-        echo "Homelab installation script is ready at /opt/homelab/post-install.sh"
+        echo "Homelab installation scripts are ready at /opt/homelab/"
+        echo ""
+        echo "Docker images and Ollama models have been pre-loaded from the ISO!"
         echo ""
         echo "To complete homelab setup, run:"
         echo "  cd /opt/homelab"
@@ -389,16 +391,26 @@ echo "  Input ISO:  $ISO_INPUT"
 echo "  Output ISO: $ISO_OUTPUT"
 echo "  ISO Size:   ${ISO_SIZE_MB}MB (~${ISO_SIZE_GB}GB)"
 echo ""
+echo "What's included in this ISO:"
+echo "  - Ubuntu Server 24.04.3 LTS"
+echo "  - Homelab installation scripts in /opt/homelab/"
+echo "  - All Docker images (~20-30GB) in /opt/homelab-data/docker-images/"
+echo "  - All Ollama models (~50-80GB) in /opt/homelab-data/ollama-models/"
+echo "  - First-boot setup service (auto-loads images/models)"
+echo ""
+echo "NOTE: This is a LARGE ISO (${ISO_SIZE_GB}GB) due to included Docker images and models."
+echo "      Requires a large USB drive or direct boot from ISO."
+echo ""
 echo "Next Steps:"
-echo "  1. Test the ISO in a VM or write to USB:"
+echo "  1. Write to large USB drive (128GB+ recommended):"
 echo "     dd if=$ISO_OUTPUT of=/dev/sdX bs=4M status=progress"
 echo ""
 echo "  2. Boot from the ISO and install Ubuntu normally"
 echo ""
-echo "  3. After first boot, the system will:"
-echo "     - Automatically load Docker images"
+echo "  3. After first boot, the system will automatically:"
+echo "     - Load all Docker images from /opt/homelab-data/"
 echo "     - Restore Ollama models"
-echo "     - Prepare the homelab installation"
+echo "     - Make scripts executable"
 echo ""
 echo "  4. Complete the setup by running:"
 echo "     cd /opt/homelab"
