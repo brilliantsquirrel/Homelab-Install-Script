@@ -44,7 +44,7 @@ VM_NAME="iso-builder"
 ZONE="us-west1-a"
 MACHINE_TYPE="n2-standard-16"  # 16 vCPU, 64GB RAM (elastic builds need more power)
 BOOT_DISK_SIZE="500GB"  # Large disk for ISO builds with all artifacts
-LOCAL_SSD_COUNT="1"  # Number of 375GB local SSDs for fast temporary storage
+LOCAL_SSD_COUNT="2"  # Number of 375GB local SSDs for fast temporary storage (n2 supports: 0, 2, 4, 8, 16, 24)
 BUCKET_NAME="cloud-ai-server-iso-artifacts"
 IMAGE_FAMILY="ubuntu-2204-lts"  # Ubuntu 22.04 LTS (stable, well-supported)
 IMAGE_PROJECT="ubuntu-os-cloud"
@@ -53,6 +53,7 @@ IMAGE_PROJECT="ubuntu-os-cloud"
 # n2-standard-16   - 16 vCPU, 64GB RAM (recommended for ISO builds)
 # n2-standard-32   - 32 vCPU, 128GB RAM (heavy parallel builds)
 # n2-highmem-16    - 16 vCPU, 128GB RAM (memory-intensive operations)
+# Note: N2 machine types support 0, 2, 4, 8, 16, or 24 local SSDs (not 1)
 
 header "Google Cloud VM Setup for ISO Builder"
 
@@ -89,7 +90,7 @@ MACHINE_TYPE="${input_machine_type:-$MACHINE_TYPE}"
 read -p "Boot disk size [$BOOT_DISK_SIZE]: " input_disk_size
 BOOT_DISK_SIZE="${input_disk_size:-$BOOT_DISK_SIZE}"
 
-read -p "Local SSD count (0-8, each 375GB) [$LOCAL_SSD_COUNT]: " input_ssd_count
+read -p "Local SSD count (0, 2, 4, 8, 16, 24 - each 375GB) [$LOCAL_SSD_COUNT]: " input_ssd_count
 LOCAL_SSD_COUNT="${input_ssd_count:-$LOCAL_SSD_COUNT}"
 
 # Prompt for bucket name
@@ -746,8 +747,8 @@ success "✓ Created VM management script: ./gcloud-iso-vm.sh"
 # Wait for VM to be ready
 header "Step 5: Waiting for VM Initialization"
 
-log "VM is initializing... This takes 5-10 minutes"
-log "The startup script is installing Docker, Cubic, and desktop environment"
+log "VM is initializing... This takes 3-5 minutes"
+log "The startup script is installing Docker and ISO building tools"
 echo ""
 
 log "Waiting for SSH to be ready..."
@@ -835,13 +836,13 @@ echo "  Zone:    $ZONE"
 echo "  Bucket:  gs://${BUCKET_NAME}"
 echo ""
 
-log "VM is still initializing in the background (5-10 minutes)"
+log "VM is still initializing in the background (3-5 minutes)"
 log "You can monitor progress with: gcloud compute ssh $VM_NAME -- tail -f /var/log/iso-setup.log"
 echo ""
 
 log "Next steps:"
 echo ""
-echo "1. Wait for initialization to complete (5-10 minutes)"
+echo "1. Wait for initialization to complete (3-5 minutes)"
 echo "   Monitor: gcloud compute ssh $VM_NAME -- tail -f /var/log/iso-setup.log"
 echo ""
 echo "2. Connect to the VM:"
