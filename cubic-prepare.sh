@@ -319,21 +319,20 @@ if [ ! -f "$UBUNTU_ISO_FILE" ]; then
             success "✓ Downloaded: $(basename $UBUNTU_ISO_FILE) ($iso_size)"
             log "ISO location: $UBUNTU_ISO_FILE"
 
-            # Upload to GCS bucket and delete local copy after verification
+            # Upload to GCS bucket (keep local copy for Cubic)
             if [ "$GCS_ENABLED" = true ]; then
                 if upload_to_gcs "$UBUNTU_ISO_FILE" "$UBUNTU_ISO_GCS"; then
                     # Verify the upload succeeded
                     if check_gcs_file "$UBUNTU_ISO_GCS"; then
                         log "Verifying GCS upload..."
                         success "✓ Verified: ISO exists in GCS bucket"
-                        log "Removing local copy (now in GCS bucket)..."
-                        rm -f "$UBUNTU_ISO_FILE"
-                        success "✓ Cleaned up local ISO file"
+                        log "Keeping local copy for Cubic to use"
+                        success "✓ ISO available both locally and in GCS"
                     else
-                        warning "Upload verification failed, keeping local copy"
+                        warning "Upload verification failed, but local copy available"
                     fi
                 else
-                    warning "Failed to upload to GCS, keeping local copy"
+                    warning "Failed to upload to GCS, but local copy available"
                 fi
             fi
         else
