@@ -1,7 +1,7 @@
 #!/bin/bash
 #
 # create-custom-iso.sh - Script-based Ubuntu ISO Customization
-# Replaces Cubic with a fully automated, headless approach
+# Fully automated, headless ISO building approach
 #
 # This script:
 # 1. Extracts the Ubuntu Server ISO
@@ -97,7 +97,7 @@ fi
 # Check if input ISO exists
 if [ ! -f "$ISO_INPUT" ]; then
     error "Input ISO not found: $ISO_INPUT"
-    error "Please run ./cubic-prepare.sh first to download the ISO"
+    error "Please run ./iso-prepare.sh first to download the ISO"
     exit 1
 fi
 

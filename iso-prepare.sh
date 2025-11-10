@@ -1,12 +1,13 @@
 #!/bin/bash
 
-# Cubic ISO Preparation Script
+# ISO Preparation Script
 # Downloads all large dependencies and creates an ISO build artifacts directory
-# Usage: Run this script, then launch Cubic pointing to iso-artifacts/ as project directory
+# Usage: Run this script, then run create-custom-iso.sh to build the ISO
 #
-# This script creates iso-artifacts/ which serves as BOTH:
+# This script creates iso-artifacts/ which contains:
 # - The download location for Docker images and models
-# - The ISO build directory (point Cubic here!)
+# - The homelab scripts and configuration files
+# - The Ubuntu Server ISO
 
 set -e
 
@@ -161,10 +162,10 @@ fi
 # Get the repository root directory
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-header "Cubic ISO Preparation - Homelab Dependencies"
+header "ISO Preparation - Homelab Dependencies"
 
 log "This script will:"
-log "  1. Create iso-artifacts/ as your ISO build directory"
+log "  1. Create iso-artifacts/ directory for ISO building"
 log "  2. Copy all homelab scripts into iso-artifacts/homelab/"
 log "  3. Download Ubuntu Server 24.04 LTS ISO (~2.5GB)"
 log "  4. Download Docker images (~20-30GB)"
@@ -380,14 +381,14 @@ if [ ! -f "$UBUNTU_ISO_FILE" ]; then
         success "✓ Downloaded: $(basename $UBUNTU_ISO_FILE) ($iso_size)"
         log "ISO location: $UBUNTU_ISO_FILE"
 
-        # Upload to GCS bucket (keep local copy for Cubic)
+        # Upload to GCS bucket (keep local copy for ISO building)
         if [ "$GCS_ENABLED" = true ]; then
             if upload_to_gcs "$UBUNTU_ISO_FILE" "$UBUNTU_ISO_GCS"; then
                 # Verify the upload succeeded
                 if check_gcs_file "$UBUNTU_ISO_GCS"; then
                     log "Verifying GCS upload..."
                     success "✓ Verified: ISO exists in GCS bucket"
-                    log "Keeping local copy for Cubic to use"
+                    log "Keeping local copy for ISO building"
                     success "✓ ISO available both locally and in GCS"
                 else
                     warning "Upload verification failed, but local copy available"
@@ -826,17 +827,17 @@ EOF
 chmod +x "$SCRIPTS_DIR/install-offline.sh"
 success "✓ Created: install-offline.sh"
 
-# Create README for Cubic integration
+# Create README for ISO building
 cat > "$ISO_DIR/README.md" << 'EOF'
-# Homelab Cubic Project Directory
+# Homelab ISO Build Artifacts Directory
 
-**IMPORTANT**: This directory IS your ISO build directory!
-When launching Cubic, select THIS directory as your project directory.
+**IMPORTANT**: This directory contains all files needed for ISO building!
+Run create-custom-iso.sh from the repository root to build the custom ISO.
 
 ## Directory Structure
 
 ```
-iso-artifacts/              # <- Point Cubic here!
+iso-artifacts/
 ├── ubuntu-24.04.3-live-server-amd64.iso  # Ubuntu Server ISO
 ├── homelab/                  # All homelab installation scripts
 │   ├── post-install.sh
@@ -853,67 +854,33 @@ iso-artifacts/              # <- Point Cubic here!
 └── README.md                 # This file
 ```
 
-## How to Use with Cubic
+## How to Build Custom ISO
 
-### Step 1: Launch Cubic
+### Step 1: Prepare Dependencies
 
-```bash
-# Launch Cubic and point it to THIS directory
-cubic
-
-# In Cubic GUI:
-# - Project Directory: /path/to/Homelab-Install-Script/iso-artifacts
-# - Original ISO: Select ubuntu-24.04.3-live-server-amd64.iso (in this directory)
-# - Click Next
-```
-
-### Step 2: In Cubic Chroot Terminal
-
-When Cubic opens the chroot terminal, all files are already accessible!
+Run this script to download all dependencies:
 
 ```bash
-# You are now root@cubic inside the ISO chroot environment
-# All your files are accessible at /root/
-
-# Verify files exist
-ls ~/homelab/
-ls ~/docker-images/
-ls ~/ollama-models/
-
-# Copy to ISO locations
-mkdir -p /opt/homelab /opt/homelab-offline
-
-# Copy homelab scripts
-cp -r ~/homelab/* /opt/homelab/
-
-# Copy offline artifacts
-cp -r ~/docker-images ~/ollama-models ~/scripts /opt/homelab-offline/
-
-# Set permissions
-chmod +x /opt/homelab/*.sh
-chmod +x /opt/homelab-offline/scripts/*.sh
+./iso-prepare.sh
 ```
 
-### Step 3: Create Desktop Shortcut (Optional)
+This downloads Ubuntu ISO, Docker images, and Ollama models into iso-artifacts/.
+
+### Step 2: Build the Custom ISO
+
+Run the ISO builder script:
 
 ```bash
-# In Cubic chroot environment
-mkdir -p /etc/skel/Desktop
-
-cat > /etc/skel/Desktop/install-homelab.desktop << 'DESKTOP'
-[Desktop Entry]
-Version=1.0
-Type=Application
-Name=Install Homelab (Offline)
-Comment=Install homelab with pre-downloaded dependencies
-Exec=gnome-terminal -- bash -c "cd /opt/homelab && sudo /opt/homelab-offline/scripts/install-offline.sh; read -p 'Press Enter to close...'"
-Icon=system-run
-Terminal=true
-Categories=System;
-DESKTOP
-
-chmod +x /etc/skel/Desktop/install-homelab.desktop
+./create-custom-iso.sh
 ```
+
+This will:
+1. Extract the Ubuntu Server ISO
+2. Modify the squashfs filesystem
+3. Copy all homelab files and dependencies
+4. Repack into a new bootable ISO
+
+The output will be: `iso-artifacts/ubuntu-24.04.3-homelab-amd64.iso`
 
 ## Manual Installation from ISO
 
@@ -951,12 +918,13 @@ Ensure your system has sufficient space for these artifacts.
 
 ## Updating Dependencies
 
-To update the offline artifacts, run `cubic-prepare.sh` again on a system
-with internet access, then replace the contents of `iso-artifacts/`.
+To update the offline artifacts, run `iso-prepare.sh` again on a system
+with internet access. The script will automatically detect and update
+outdated Docker images in the GCS bucket.
 
 ## Verification
 
-After running `cubic-prepare.sh`, verify:
+After running `iso-prepare.sh`, verify:
 
 ```bash
 # Check Docker images
@@ -1003,26 +971,17 @@ if command -v du &> /dev/null; then
 fi
 
 echo ""
-success "✓ Ready for Cubic ISO integration"
+success "✓ Ready for ISO building"
 echo ""
 log "Next steps:"
 echo ""
-echo "  1. Launch Cubic:"
-echo "     $ cubic"
+echo "  1. Build the custom ISO:"
+echo "     $ ./create-custom-iso.sh"
 echo ""
-echo "  2. In Cubic GUI, select PROJECT DIRECTORY:"
-echo "     $ISO_DIR"
+echo "  2. The output ISO will be created at:"
+echo "     $ISO_DIR/ubuntu-24.04.3-homelab-amd64.iso"
 echo ""
-if [ -f "$UBUNTU_ISO_FILE" ]; then
-    echo "  3. Select Ubuntu Server 24.04 LTS ISO:"
-    echo "     $UBUNTU_ISO_FILE"
-else
-    echo "  3. Select Ubuntu Server 24.04 LTS ISO (you'll need to download it)"
-fi
+echo "  3. Write to USB or burn to DVD:"
+echo "     $ sudo dd if=$ISO_DIR/ubuntu-24.04.3-homelab-amd64.iso of=/dev/sdX bs=4M status=progress"
 echo ""
-echo "  4. In Cubic chroot terminal, run:"
-echo "     # mkdir -p /opt/homelab /opt/homelab-offline"
-echo "     # cp -r ~/homelab/* /opt/homelab/"
-echo "     # cp -r ~/docker-images ~/ollama-models ~/scripts /opt/homelab-offline/"
-echo ""
-log "See CUBIC.md for detailed step-by-step guide"
+log "See README.md in iso-artifacts/ for detailed information"

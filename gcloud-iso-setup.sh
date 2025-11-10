@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# Google Cloud VM Setup for Cubic ISO Creation
-# This script creates a GCloud VM optimized for Cubic with cloud storage bucket integration
+# Google Cloud VM Setup for ISO Creation
+# This script creates a GCloud VM optimized for script-based ISO building with cloud storage bucket integration
 # Large files (70-110GB) are stored in a cloud storage bucket, not on VM disk
 
 set -e
@@ -40,7 +40,7 @@ header() {
 
 # Configuration
 PROJECT_ID=""
-VM_NAME="cubic-builder"
+VM_NAME="iso-builder"
 ZONE="us-west1-a"
 MACHINE_TYPE="n2-standard-16"  # 16 vCPU, 64GB RAM (elastic builds need more power)
 BOOT_DISK_SIZE="500GB"  # Large disk for ISO builds with all artifacts
@@ -54,7 +54,7 @@ IMAGE_PROJECT="ubuntu-os-cloud"
 # n2-standard-32   - 32 vCPU, 128GB RAM (heavy parallel builds)
 # n2-highmem-16    - 16 vCPU, 128GB RAM (memory-intensive operations)
 
-header "Google Cloud VM Setup for Cubic"
+header "Google Cloud VM Setup for ISO Builder"
 
 # Check if gcloud is installed
 if ! command -v gcloud &> /dev/null; then
@@ -145,26 +145,26 @@ fi
 # Create startup script for VM
 header "Step 2: Creating VM Startup Script"
 
-cat > /tmp/cubic-vm-startup.sh << 'STARTUP_SCRIPT'
+cat > /tmp/iso-vm-startup.sh << 'STARTUP_SCRIPT'
 #!/bin/bash
 
-# VM Startup Script - Installs Cubic dependencies on first boot
+# VM Startup Script - Installs ISO building dependencies on first boot
 
 set -e
 
-LOG_FILE="/var/log/cubic-setup.log"
+LOG_FILE="/var/log/iso-setup.log"
 
 log() {
     echo "[$(date +'%Y-%m-%d %H:%M:%S')] $1" | tee -a "$LOG_FILE"
 }
 
 # Check if already initialized
-if [ -f /var/lib/cubic-initialized ]; then
+if [ -f /var/lib/iso-initialized ]; then
     log "VM already initialized, skipping setup"
     exit 0
 fi
 
-log "Starting Cubic VM initialization..."
+log "Starting ISO builder VM initialization..."
 
 # Update system
 log "Updating system packages..."
@@ -215,19 +215,9 @@ log "Installing Docker..."
 curl -fsSL https://get.docker.com | sh
 usermod -aG docker ubuntu
 
-# Install Cubic
-log "Installing Cubic..."
-apt-add-repository -y ppa:cubic-wizard/release
-apt-get update
-apt-get install -y --no-install-recommends cubic
-
-# Install desktop environment (for Cubic GUI)
-log "Installing desktop environment..."
-apt-get install -y ubuntu-desktop-minimal
-
-# Install VNC server for remote access
-log "Installing VNC server..."
-apt-get install -y tightvncserver xfce4 xfce4-goodies
+# Install ISO building tools
+log "Installing ISO building tools..."
+apt-get install -y xorriso squashfs-tools
 
 # Mount local SSDs if available
 log "Checking for local SSDs..."
@@ -262,14 +252,14 @@ else
 fi
 
 # Mark as initialized
-touch /var/lib/cubic-initialized
+touch /var/lib/iso-initialized
 
 log "VM initialization complete!"
 log "Next steps:"
-log "  1. Connect via SSH with X11 forwarding: gcloud compute ssh $VM_NAME -- -X"
+log "  1. Connect via SSH: gcloud compute ssh $VM_NAME"
 log "  2. Mount the storage bucket: ~/mount-bucket.sh"
-log "  3. Run cubic-prepare.sh to download dependencies"
-log "  4. Launch Cubic: cubic"
+log "  3. Clone homelab repo and run iso-prepare.sh to download dependencies"
+log "  4. Run create-custom-iso.sh to build the ISO"
 
 STARTUP_SCRIPT
 
@@ -304,8 +294,8 @@ GCLOUD_CMD="$GCLOUD_CMD \
     --no-shielded-secure-boot \
     --shielded-vtpm \
     --shielded-integrity-monitoring \
-    --labels=purpose=cubic-builder,environment=development \
-    --metadata-from-file=startup-script=/tmp/cubic-vm-startup.sh \
+    --labels=purpose=iso-builder,environment=development \
+    --metadata-from-file=startup-script=/tmp/iso-vm-startup.sh \
     --metadata=bucket-name=\"$BUCKET_NAME\",local-ssd-count=\"$LOCAL_SSD_COUNT\""
 
 # Execute the command
@@ -406,11 +396,11 @@ UNMOUNT_SCRIPT
 chmod +x /tmp/unmount-bucket.sh
 
 # Create local VM management script
-cat > "gcloud-cubic-vm.sh" << VMSCRIPT
+cat > "gcloud-iso-vm.sh" << VMSCRIPT
 #!/bin/bash
 
-# GCloud Cubic VM Management Script
-# Manages the Cubic builder VM (start, stop, ssh, status)
+# GCloud ISO VM Management Script
+# Manages the ISO builder VM (start, stop, ssh, status)
 
 set -e
 
@@ -749,9 +739,9 @@ esac
 
 VMSCRIPT
 
-chmod +x gcloud-cubic-vm.sh
+chmod +x gcloud-iso-vm.sh
 
-success "✓ Created VM management script: ./gcloud-cubic-vm.sh"
+success "✓ Created VM management script: ./gcloud-iso-vm.sh"
 
 # Wait for VM to be ready
 header "Step 5: Waiting for VM Initialization"
@@ -846,16 +836,16 @@ echo "  Bucket:  gs://${BUCKET_NAME}"
 echo ""
 
 log "VM is still initializing in the background (5-10 minutes)"
-log "You can monitor progress with: gcloud compute ssh $VM_NAME -- tail -f /var/log/cubic-setup.log"
+log "You can monitor progress with: gcloud compute ssh $VM_NAME -- tail -f /var/log/iso-setup.log"
 echo ""
 
 log "Next steps:"
 echo ""
 echo "1. Wait for initialization to complete (5-10 minutes)"
-echo "   Monitor: gcloud compute ssh $VM_NAME -- tail -f /var/log/cubic-setup.log"
+echo "   Monitor: gcloud compute ssh $VM_NAME -- tail -f /var/log/iso-setup.log"
 echo ""
 echo "2. Connect to the VM:"
-echo "   ./gcloud-cubic-vm.sh ssh"
+echo "   ./gcloud-iso-vm.sh ssh"
 echo ""
 echo "3. Mount the storage bucket (on VM):"
 echo "   ~/mount-bucket.sh"
@@ -866,27 +856,26 @@ echo "   git clone https://github.com/brilliantsquirrel/Homelab-Install-Script.g
 echo "   cd Homelab-Install-Script"
 echo ""
 echo "5. Download dependencies (on VM):"
-echo "   ./cubic-prepare.sh"
+echo "   ./iso-prepare.sh"
 echo ""
-echo "6. Launch Cubic (on VM):"
-echo "   cubic"
-echo "   # In Cubic GUI, set project directory to: ~/iso-artifacts"
+echo "6. Build the custom ISO (on VM):"
+echo "   ./create-custom-iso.sh"
 echo ""
 echo "Management commands:"
-echo "  ./gcloud-cubic-vm.sh status              - Show VM status"
-echo "  ./gcloud-cubic-vm.sh start               - Start the VM"
-echo "  ./gcloud-cubic-vm.sh stop                - Stop the VM (saves costs!)"
-echo "  ./gcloud-cubic-vm.sh ssh                 - SSH into VM"
-echo "  ./gcloud-cubic-vm.sh bucket              - Show bucket contents"
-echo "  ./gcloud-cubic-vm.sh info                - Show all commands"
+echo "  ./gcloud-iso-vm.sh status              - Show VM status"
+echo "  ./gcloud-iso-vm.sh start               - Start the VM"
+echo "  ./gcloud-iso-vm.sh stop                - Stop the VM (saves costs!)"
+echo "  ./gcloud-iso-vm.sh ssh                 - SSH into VM"
+echo "  ./gcloud-iso-vm.sh bucket              - Show bucket contents"
+echo "  ./gcloud-iso-vm.sh info                - Show all commands"
 echo ""
 echo "Elastic scaling (increase resources during build):"
-echo "  ./gcloud-cubic-vm.sh resize-disk 1000           - Increase disk to 1TB"
-echo "  ./gcloud-cubic-vm.sh change-machine n2-standard-32  - Scale to 32 vCPU"
+echo "  ./gcloud-iso-vm.sh resize-disk 1000           - Increase disk to 1TB"
+echo "  ./gcloud-iso-vm.sh change-machine n2-standard-32  - Scale to 32 vCPU"
 echo ""
 
 warning "IMPORTANT: Remember to stop the VM when not in use to save costs!"
-echo "  ./gcloud-cubic-vm.sh stop"
+echo "  ./gcloud-iso-vm.sh stop"
 echo ""
 if [ "$LOCAL_SSD_COUNT" -gt 0 ]; then
     success "Local SSD available at /mnt/disks/ssd for fast ISO builds"
