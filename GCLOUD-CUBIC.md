@@ -232,17 +232,18 @@ cubic
 ```
 
 **In Cubic GUI:**
-1. **Project Directory**: Select `/home/ubuntu/cubic-artifacts` (the mounted bucket)
-2. **Original ISO**: Use the Ubuntu ISO in `/home/ubuntu/cubic-artifacts/` (kept locally for Cubic compatibility)
+1. **Project Directory**: Select `/home/ubuntu/Homelab-Install-Script/cubic-artifacts` (**local disk**, not the bucket mount!)
+2. **Original ISO**: The Ubuntu ISO in this directory: `ubuntu-24.04.3-live-server-amd64.iso`
 3. **Custom ISO name**: `ubuntu-24.04-homelab-amd64.iso`
 4. Click **Next** to proceed
 
 Follow the instructions in [CUBIC.md](CUBIC.md) for customizing the ISO.
 
-**Note**:
-- The Ubuntu ISO is kept on local disk (required by Cubic GUI to extract Linux filesystem)
-- All Docker images and Ollama models are available in the mounted bucket's subdirectories (`docker-images/`, `ollama-models/`)
-- cubic-prepare.sh uploads the ISO to GCS for backup but keeps the local copy
+**Important Notes**:
+- **ISO location**: `~/Homelab-Install-Script/cubic-artifacts/` (LOCAL disk, not `~/cubic-artifacts/` which is the GCS mount)
+- The ISO must be on local disk for Cubic to extract the Linux filesystem
+- Docker images and Ollama models are stored in the GCS bucket (`~/cubic-artifacts/docker-images/`, `~/cubic-artifacts/ollama-models/`)
+- The cubic-prepare.sh script handles uploading/downloading from GCS automatically
 
 ### Step 7: Download the ISO
 
@@ -482,6 +483,45 @@ gcloud projects add-iam-policy-binding YOUR-PROJECT-ID \
   --member=serviceAccount:PROJECT-NUMBER-compute@developer.gserviceaccount.com \
   --role=roles/storage.admin
 ```
+
+### Cubic Error: "Original disk image is required"
+
+**Problem**: Cubic GUI shows error: "The original disk image is required to copy important files and extract the Linux file system, but it is not available."
+
+**Root Cause**: The ISO is in the GCS bucket mount (`~/cubic-artifacts/`), not on local disk. Cubic requires the ISO on a real filesystem, not a FUSE mount.
+
+**Solution:**
+```bash
+# 1. Verify where your repo is located
+pwd
+# Should be: /home/ubuntu/Homelab-Install-Script
+# NOT: /home/ubuntu/cubic-artifacts/Homelab-Install-Script
+
+# 2. If repo is in wrong location, move it to local disk
+cd ~
+# If the repo is in the bucket mount:
+if [ -d ~/cubic-artifacts/Homelab-Install-Script ]; then
+    mv ~/cubic-artifacts/Homelab-Install-Script ~/
+fi
+
+# 3. Re-run cubic-prepare.sh from the correct location
+cd ~/Homelab-Install-Script
+./cubic-prepare.sh
+
+# 4. Verify ISO is on local disk
+ls -lh ~/Homelab-Install-Script/cubic-artifacts/*.iso
+# Should show: ubuntu-24.04.3-live-server-amd64.iso
+
+# 5. Check it's NOT in a FUSE mount
+df -h ~/Homelab-Install-Script/cubic-artifacts/*.iso
+# Filesystem should be /dev/sda1 or similar (NOT gcsfuse)
+
+# 6. Launch Cubic and point to LOCAL directory
+cubic
+# In GUI: Project Directory = /home/ubuntu/Homelab-Install-Script/cubic-artifacts
+```
+
+**Prevention**: Always clone the repo to `~` (home), not `~/cubic-artifacts` (bucket mount).
 
 ### Cubic GUI Won't Display
 
@@ -785,12 +825,14 @@ gcloud compute ssh cubic-builder -- tail -f /var/log/cubic-setup.log
 
 # 4. Download dependencies (1-1.5 hours with optimizations)
 # Fully automated - no prompts
-cd ~/cubic-artifacts
+# IMPORTANT: Clone to LOCAL disk (~), NOT the bucket mount (~/cubic-artifacts)
+cd ~
 git clone https://github.com/brilliantsquirrel/Homelab-Install-Script.git
 cd Homelab-Install-Script
 ./cubic-prepare.sh
 
 # 5. Launch Cubic and create ISO (30-60 minutes)
+# Point Cubic to ~/Homelab-Install-Script/cubic-artifacts/ (local disk, has the ISO)
 cubic
 
 # 6. Download ISO to local machine
@@ -820,7 +862,7 @@ exit  # Exit VM
 ~/mount-bucket.sh
 
 # 3. Update dependencies (downloads from GCS, very fast)
-cd ~/cubic-artifacts/Homelab-Install-Script
+cd ~/Homelab-Install-Script
 git pull
 ./cubic-prepare.sh  # Skips existing files, only downloads new/updated ones
 
