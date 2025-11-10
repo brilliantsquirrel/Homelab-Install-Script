@@ -60,20 +60,61 @@ process_docker_image() {
         return 0
     fi
 
+    local needs_update=false
+    local gcs_exists=false
+
     # Check if file exists in GCS bucket
     if [ "$GCS_ENABLED" = true ] && check_gcs_file "$gcs_filename" 2>/dev/null; then
-        if download_from_gcs "$gcs_filename" "$local_file" >/dev/null 2>&1; then
-            if gunzip -c "$local_file" | sudo docker load >/dev/null 2>&1; then
-                echo "GCS:$image" > "$status_file"
-                return 0
-            fi
-        fi
-    fi
+        gcs_exists=true
 
-    # File not found locally or in GCS, pull from Docker Hub
-    if ! sudo docker pull "$image" >/dev/null 2>&1; then
-        echo "FAILED:$image" > "$status_file"
-        return 1
+        # Pull latest version from Docker Hub to check for updates
+        if sudo docker pull "$image" >/dev/null 2>&1; then
+            local latest_digest=$(sudo docker inspect --format='{{.Id}}' "$image" 2>/dev/null)
+
+            # Download and load the GCS version to compare
+            local temp_file="/tmp/${filename}_gcs.tar.gz"
+            if download_from_gcs "$gcs_filename" "$temp_file" >/dev/null 2>&1; then
+                # Load the GCS image with a temporary tag to compare
+                if gunzip -c "$temp_file" | sudo docker load >/dev/null 2>&1; then
+                    # Get the digest of the loaded image
+                    local gcs_digest=$(sudo docker inspect --format='{{.Id}}' "$image" 2>/dev/null)
+
+                    # Compare digests
+                    if [ "$latest_digest" != "$gcs_digest" ]; then
+                        needs_update=true
+                        sudo rm -f "$temp_file"
+                    else
+                        # Same version, use the GCS file
+                        mv "$temp_file" "$local_file"
+                        echo "GCS:$image" > "$status_file"
+                        return 0
+                    fi
+                else
+                    # Failed to load GCS file, need to update
+                    needs_update=true
+                    sudo rm -f "$temp_file"
+                fi
+            else
+                # Failed to download GCS file, need to update
+                needs_update=true
+            fi
+        else
+            # Failed to pull latest, try using GCS version
+            if download_from_gcs "$gcs_filename" "$local_file" >/dev/null 2>&1; then
+                if gunzip -c "$local_file" | sudo docker load >/dev/null 2>&1; then
+                    echo "GCS:$image" > "$status_file"
+                    return 0
+                fi
+            fi
+            echo "FAILED:$image" > "$status_file"
+            return 1
+        fi
+    else
+        # No GCS file exists, pull from Docker Hub
+        if ! sudo docker pull "$image" >/dev/null 2>&1; then
+            echo "FAILED:$image" > "$status_file"
+            return 1
+        fi
     fi
 
     # Save image to tar file with parallel compression
@@ -88,12 +129,16 @@ process_docker_image() {
         return 1
     fi
 
-    # Upload to GCS bucket and delete local copy after verification
+    # Upload to GCS bucket (replacing old version if exists)
     if [ "$GCS_ENABLED" = true ]; then
         if gsutil -m -o GSUtil:parallel_composite_upload_threshold=150M cp "$local_file" "$GCS_BUCKET/$gcs_filename" >/dev/null 2>&1; then
             if check_gcs_file "$gcs_filename" 2>/dev/null; then
                 rm -f "$local_file"
-                echo "UPLOADED:$image" > "$status_file"
+                if [ "$needs_update" = true ]; then
+                    echo "UPDATED:$image" > "$status_file"
+                else
+                    echo "UPLOADED:$image" > "$status_file"
+                fi
             else
                 echo "LOCAL:$image" > "$status_file"
             fi
@@ -446,6 +491,9 @@ for image in "${processing_images[@]}"; do
                 ;;
             UPLOADED)
                 echo "  ${GREEN}✓${NC} $image (uploaded to GCS)"
+                ;;
+            UPDATED)
+                echo "  ${GREEN}✓${NC} $image (updated from outdated version)"
                 ;;
             LOCAL)
                 echo "  ${GREEN}✓${NC} $image (saved locally)"
