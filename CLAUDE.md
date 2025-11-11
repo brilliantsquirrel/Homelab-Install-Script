@@ -831,6 +831,15 @@ All Ollama model metadata is defined in `backend/config/config.js`:
 
 ### Recent Changes and Bug Fixes
 
+**2025-11-11: VM Manager API Fix**
+- **Issue:** Runtime error "this.instancesClient.wait is not a function" when creating VMs
+- **Root cause:** InstancesClient doesn't have a wait() method in @google-cloud/compute library
+- **Fix:** Import and use ZoneOperationsClient for polling operation status
+  - Added `ZoneOperationsClient` import from `@google-cloud/compute`
+  - Initialize `operationsClient` in constructor
+  - Changed `waitForOperation()` to use `operationsClient.get()` instead of non-existent `instancesClient.wait()`
+- **Files modified:** `webapp/backend/lib/vm-manager.js`
+
 **2025-11-11: ISO Name Validation Fix**
 - **Issue:** Default ISO name `ubuntu-24.04.3-homelab-custom` was rejected by validation
 - **Root cause:** Regex `/^[a-zA-Z0-9-_]+$/` in `build-orchestrator.js:272` didn't allow periods
@@ -843,6 +852,8 @@ All Ollama model metadata is defined in `backend/config/config.js`:
 - **Issue:** 53GB upload during Cloud Build (cubic-artifacts directory)
 - **Fix:** Created `.gcloudignore` to exclude large directories
 - **Result:** Reduced upload size from 53.1 GiB to 764.8 KiB
+- **Issue:** deploy.sh used Buildpacks instead of Dockerfile
+- **Fix:** Updated deploy.sh to use two-step process: `gcloud builds submit` then `gcloud run deploy --image`
 
 ### Integration with Homelab Scripts
 

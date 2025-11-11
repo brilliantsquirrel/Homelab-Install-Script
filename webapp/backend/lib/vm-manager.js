@@ -1,12 +1,13 @@
 // Google Compute Engine VM Manager
 
-const { InstancesClient } = require('@google-cloud/compute').v1;
+const { InstancesClient, ZoneOperationsClient } = require('@google-cloud/compute').v1;
 const config = require('../config/config');
 const logger = require('./logger');
 
 class VMManager {
     constructor() {
         this.instancesClient = new InstancesClient();
+        this.operationsClient = new ZoneOperationsClient();
         this.projectId = config.gcp.projectId;
         this.zone = config.gcp.zone;
     }
@@ -300,7 +301,7 @@ ${config.vm.autoCleanup ? 'log "Auto-cleanup enabled, shutting down VM..."\nsudo
         const startTime = Date.now();
 
         while (Date.now() - startTime < timeout) {
-            const [operation] = await this.instancesClient.wait({
+            const [operation] = await this.operationsClient.get({
                 project: this.projectId,
                 zone: this.zone,
                 operation: operationName,
