@@ -221,14 +221,30 @@ success "✓ IAM permissions configured"
 header "Step 6: Deploying to Cloud Run"
 
 log "This will take 5-10 minutes..."
-log "Building Docker image and deploying..."
 
 # Generate random API secret
 API_SECRET=$(openssl rand -hex 32 2>/dev/null || cat /dev/urandom | LC_ALL=C tr -dc 'a-zA-Z0-9' | fold -w 32 | head -n 1)
 
-# Deploy from source
+# Step 6a: Build Docker image using Cloud Build
+log "Building Docker image..."
+IMAGE_URL="gcr.io/$PROJECT_ID/iso-builder"
+
+# Change to parent directory to include Dockerfile at repo root
+cd ..
+
+gcloud builds submit \
+    --tag $IMAGE_URL \
+    --timeout=20m \
+    --quiet
+
+cd webapp
+
+success "✓ Docker image built: $IMAGE_URL"
+
+# Step 6b: Deploy to Cloud Run
+log "Deploying to Cloud Run..."
 gcloud run deploy iso-builder \
-    --source . \
+    --image $IMAGE_URL \
     --platform managed \
     --region $REGION \
     --allow-unauthenticated \
