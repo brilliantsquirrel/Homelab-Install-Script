@@ -406,9 +406,22 @@ if command -v isohybrid &> /dev/null; then
     }
 fi
 
+# Wait for file to be fully written (especially important on gcsfuse mounts)
+if mountpoint -q "$(dirname "$ISO_OUTPUT")" 2>/dev/null || df -T "$(dirname "$ISO_OUTPUT")" 2>/dev/null | grep -q "fuse"; then
+    log "Detected FUSE filesystem, waiting for file sync..."
+    sleep 3
+    sync
+fi
+
 # Calculate ISO size
-ISO_SIZE_MB=$(du -m "$ISO_OUTPUT" | cut -f1)
-ISO_SIZE_GB=$(echo "scale=2; $ISO_SIZE_MB / 1024" | bc)
+if [ -f "$ISO_OUTPUT" ]; then
+    ISO_SIZE_MB=$(du -m "$ISO_OUTPUT" | cut -f1)
+    ISO_SIZE_GB=$(echo "scale=2; $ISO_SIZE_MB / 1024" | bc)
+else
+    warning "ISO file not immediately visible (may be syncing to gcsfuse)"
+    ISO_SIZE_MB="unknown"
+    ISO_SIZE_GB="unknown"
+fi
 
 # Cleanup
 header "Cleanup"
