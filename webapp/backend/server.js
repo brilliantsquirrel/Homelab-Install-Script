@@ -59,6 +59,8 @@ const limiter = rateLimit({
     max: config.rateLimit.max,
     standardHeaders: true,
     legacyHeaders: false,
+    // Trust proxy for Cloud Run/App Engine - disable validation warning
+    validate: { trustProxy: false },
     handler: (req, res) => {
         logger.warn('Rate limit exceeded', {
             ip: req.ip,
@@ -81,6 +83,8 @@ const staticLimiter = rateLimit({
     max: 100, // Higher limit for static files (legitimate users load multiple assets)
     standardHeaders: true,
     legacyHeaders: false,
+    // Trust proxy for Cloud Run/App Engine - disable validation warning
+    validate: { trustProxy: false },
     handler: (req, res) => {
         logger.warn('Static file rate limit exceeded', {
             ip: req.ip,
