@@ -33,6 +33,37 @@ router.post('/', async (req, res) => {
             return res.status(400).json({ error: 'email must be a string' });
         }
 
+        // Security: Validate email if provided
+        if (req.body.email !== undefined && req.body.email.trim() !== '') {
+            const email = req.body.email.trim();
+
+            // Security: Length validation (RFC 5321: max 254 chars)
+            if (email.length > 254) {
+                return res.status(400).json({ error: 'email too long. Maximum 254 characters allowed' });
+            }
+
+            // Security: Check for header injection patterns (newlines, carriage returns)
+            if (/[\r\n]/.test(email)) {
+                return res.status(400).json({ error: 'email contains prohibited characters' });
+            }
+
+            // Security: Check for dangerous characters
+            if (/[;|&$`\\]/.test(email)) {
+                return res.status(400).json({ error: 'email contains prohibited characters' });
+            }
+
+            // Security: Validate email format (RFC 5322 compliant)
+            if (!/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(email)) {
+                return res.status(400).json({ error: 'invalid email format' });
+            }
+
+            // Security: Validate local part and domain lengths (RFC 5321)
+            const [localPart, domainPart] = email.split('@');
+            if (localPart.length > 64 || domainPart.length > 253) {
+                return res.status(400).json({ error: 'email local part (max 64 chars) or domain (max 253 chars) too long' });
+            }
+        }
+
         // Validate array elements are strings
         const services = req.body.services || [];
         const models = req.body.models || [];

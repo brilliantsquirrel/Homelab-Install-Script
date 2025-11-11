@@ -19,7 +19,9 @@ class VMManager {
      * @returns {string} VM name
      */
     async createBuildVM(buildId, buildConfig) {
-        const vmName = `${config.vm.namePrefix}-${buildId.substring(0, 8)}`;
+        // Security: Bounds checking for buildId substring
+        const buildIdShort = buildId.length >= 8 ? buildId.substring(0, 8) : buildId;
+        const vmName = `${config.vm.namePrefix}-${buildIdShort}`;
         const vmLogger = logger.withContext({ buildId, component: 'VMManager', vmName });
 
         vmLogger.info('Starting VM creation', {
@@ -101,7 +103,7 @@ class VMManager {
                 },
                 labels: {
                     'purpose': 'iso-builder',
-                    'build-id': buildId.substring(0, 8),
+                    'build-id': buildIdShort,
                     'environment': config.env,
                 },
                 shieldedInstanceConfig: {
@@ -171,6 +173,9 @@ class VMManager {
         // Build config is passed as JSON in instance metadata (line 98)
         // We'll parse it in the script instead of interpolating values directly
         // This prevents command injection from malicious service/model names or ISO names
+
+        // Security: Bounds checking for buildId substring
+        const buildIdShort = buildId.length >= 8 ? buildId.substring(0, 8) : buildId;
 
         return `#!/bin/bash
 # Startup script for ISO build VM
@@ -263,7 +268,7 @@ log "Uploading ISO to downloads bucket..."
 ISO_FILE="iso-artifacts/ubuntu-24.04.3-homelab-amd64.iso"
 if [ -f "$ISO_FILE" ]; then
     # Construct output name safely (ISO_NAME already validated by jq)
-    ISO_OUTPUT_NAME="${ISO_NAME}-${buildId.substring(0, 8)}.iso"
+    ISO_OUTPUT_NAME="${ISO_NAME}-${buildIdShort}.iso"
     gsutil -m cp "$ISO_FILE" "gs://$DOWNLOADS_BUCKET/$ISO_OUTPUT_NAME"
     log "ISO uploaded successfully: $ISO_OUTPUT_NAME"
 

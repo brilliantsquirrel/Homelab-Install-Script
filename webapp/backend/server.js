@@ -74,6 +74,26 @@ const limiter = rateLimit({
 
 app.use('/api/', limiter);
 
+// Security: Rate limiting for static files (more lenient than API)
+// Allows normal browsing while preventing abuse
+const staticLimiter = rateLimit({
+    windowMs: config.rateLimit.windowMs, // Same window as API (15 minutes)
+    max: 100, // Higher limit for static files (legitimate users load multiple assets)
+    standardHeaders: true,
+    legacyHeaders: false,
+    handler: (req, res) => {
+        logger.warn('Static file rate limit exceeded', {
+            ip: req.ip,
+            path: req.path,
+            requestId: req.requestId
+        });
+        res.status(429).json({
+            error: 'Too many requests from this IP, please try again later.',
+            retryAfter: Math.ceil(config.rateLimit.windowMs / 1000), // seconds
+        });
+    },
+});
+
 // CSRF Protection for state-changing operations
 // Security: Require custom header for POST/PUT/DELETE to prevent CSRF attacks
 // Browsers cannot set custom headers from simple forms/links, only via JavaScript
@@ -115,7 +135,8 @@ app.get('/health', (req, res) => {
 app.use('/api/build', buildRoutes);
 app.use('/api', servicesRoutes);
 
-// Serve static frontend files
+// Serve static frontend files (with rate limiting)
+app.use(staticLimiter);
 app.use(express.static(path.join(__dirname, '../frontend')));
 
 // Catch-all route for SPA (redirect to index.html)
@@ -129,13 +150,29 @@ app.get('*', (req, res) => {
 
 // Error handling middleware
 app.use((err, req, res, next) => {
+    // Security: Always log full error details internally (including stack trace)
     logger.error('Unhandled error:', err);
 
     const statusCode = err.statusCode || 500;
-    const message = err.message || 'Internal server error';
+
+    // Security: In production, sanitize error messages to prevent information disclosure
+    let message;
+    if (config.env === 'production') {
+        // For 5xx errors, use generic message to avoid leaking internal details
+        if (statusCode >= 500) {
+            message = 'Internal server error';
+        } else {
+            // For 4xx errors, show the actual message (usually safe validation errors)
+            message = err.message || 'Bad request';
+        }
+    } else {
+        // In development, show full error details
+        message = err.message || 'Internal server error';
+    }
 
     res.status(statusCode).json({
         error: message,
+        // Security: Only include stack traces in development mode
         ...(config.env === 'development' && { stack: err.stack }),
     });
 });

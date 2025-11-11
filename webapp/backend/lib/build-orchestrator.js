@@ -168,7 +168,9 @@ class BuildOrchestrator {
             // Check if VM has shut down (indicates completion)
             if (vmStatus.status === 'TERMINATED' || vmStatus.status === 'STOPPED') {
                 // Build completed, check for ISO
-                const isoFilename = `${build.config.iso_name || 'ubuntu-24.04.3-homelab-custom'}-${buildId.substring(0, 8)}.iso`;
+                // Security: Bounds checking for buildId substring
+                const buildIdShort = buildId.length >= 8 ? buildId.substring(0, 8) : buildId;
+                const isoFilename = `${build.config.iso_name || 'ubuntu-24.04.3-homelab-custom'}-${buildIdShort}.iso`;
                 const exists = await gcsManager.isoExists(isoFilename);
 
                 if (exists) {

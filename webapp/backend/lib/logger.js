@@ -8,9 +8,9 @@ const { v4: uuidv4 } = require('uuid');
 const customFormat = winston.format.printf(({ timestamp, level, message, requestId, buildId, component, ...meta }) => {
     let msg = `${timestamp} [${level}]`;
 
-    // Add context identifiers
-    if (requestId) msg += ` [req:${requestId.substring(0, 8)}]`;
-    if (buildId) msg += ` [build:${buildId.substring(0, 8)}]`;
+    // Add context identifiers (with bounds checking)
+    if (requestId) msg += ` [req:${requestId.length >= 8 ? requestId.substring(0, 8) : requestId}]`;
+    if (buildId) msg += ` [build:${buildId.length >= 8 ? buildId.substring(0, 8) : buildId}]`;
     if (component) msg += ` [${component}]`;
 
     msg += `: ${message}`;
