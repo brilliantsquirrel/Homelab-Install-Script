@@ -86,9 +86,10 @@ declare -a OLLAMA_MODELS=(
 # ========================================
 
 # Pin specific image versions for reproducibility
+# Note: Ollama 0.12.9 required for qwen3-vl:8b support (Nov 2025)
 declare -A CONTAINER_IMAGES=(
     [portainer]="portainer/portainer-ce:2.20.0"
-    [ollama]="ollama/ollama:0.6.0"
+    [ollama]="ollama/ollama:0.12.9"
     [openwebui]="ghcr.io/open-webui/open-webui:v0.3.0"
     [langchain]="langchain/langchain:0.1.0"
     [langgraph]="langchain/langgraph-api:0.1.0"

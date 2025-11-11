@@ -79,7 +79,8 @@ services:
       - homelab_network
 
   ollama:
-    image: ollama/ollama:latest
+    # Using 0.12.9 for qwen3-vl:8b support (Nov 2025 release)
+    image: ollama/ollama:0.12.9
     container_name: ollama
     restart: unless-stopped
     volumes:
