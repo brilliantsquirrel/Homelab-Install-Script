@@ -54,84 +54,98 @@ if (config.env === 'development') {
 }
 
 // Rate limiting
-const limiter = rateLimit({
-    windowMs: config.rateLimit.windowMs,
-    max: config.rateLimit.max,
-    standardHeaders: true,
-    legacyHeaders: false,
-    // Trust proxy for Cloud Run/App Engine - disable validation warning
-    validate: { trustProxy: false },
-    // Skip rate limiting for health checks and in development if bypass header is present
-    skip: (req) => {
-        // Always skip health checks
-        if (req.path === '/health') {
-            return true;
-        }
+if (config.rateLimit.enabled) {
+    logger.info('Rate limiting enabled', {
+        max: config.rateLimit.max,
+        windowMinutes: config.rateLimit.windowMs / 60000
+    });
 
-        // In development, allow bypassing rate limit with special header
-        if (config.env === 'development' && req.headers['x-bypass-rate-limit'] === 'true') {
-            logger.debug('Rate limit bypassed in development', { ip: req.ip, path: req.path });
-            return true;
-        }
-
-        return false;
-    },
-    // Key generator to ensure proper IP tracking
-    keyGenerator: (req) => {
-        // Use X-Forwarded-For header if trust proxy is enabled, otherwise use req.ip
-        const ip = req.ip || req.connection.remoteAddress;
-        logger.debug('Rate limit key generated', {
-            ip,
-            path: req.path,
-            headers: {
-                'x-forwarded-for': req.headers['x-forwarded-for'],
-                'x-real-ip': req.headers['x-real-ip']
+    const limiter = rateLimit({
+        windowMs: config.rateLimit.windowMs,
+        max: config.rateLimit.max,
+        standardHeaders: true,
+        legacyHeaders: false,
+        // Trust proxy for Cloud Run/App Engine - disable validation warning
+        validate: { trustProxy: false },
+        // Skip rate limiting for health checks and in development if bypass header is present
+        skip: (req) => {
+            // Always skip health checks
+            if (req.path === '/health') {
+                return true;
             }
-        });
-        return ip;
-    },
-    handler: (req, res) => {
-        const retryAfter = Math.ceil(config.rateLimit.windowMs / 1000);
-        logger.warn('Rate limit exceeded', {
-            ip: req.ip,
-            path: req.path,
-            requestId: req.requestId,
-            maxRequests: config.rateLimit.max,
-            windowMinutes: config.rateLimit.windowMs / 60000,
-            retryAfterSeconds: retryAfter
-        });
-        res.status(429).json({
-            error: 'Too many requests from this IP, please try again later.',
-            retryAfter, // seconds
-            maxRequests: config.rateLimit.max,
-            windowMinutes: Math.ceil(config.rateLimit.windowMs / 60000)
-        });
-    },
-});
 
-app.use('/api/', limiter);
+            // In development, allow bypassing rate limit with special header
+            if (config.env === 'development' && req.headers['x-bypass-rate-limit'] === 'true') {
+                logger.debug('Rate limit bypassed in development', { ip: req.ip, path: req.path });
+                return true;
+            }
+
+            return false;
+        },
+        // Key generator to ensure proper IP tracking
+        keyGenerator: (req) => {
+            // Use X-Forwarded-For header if trust proxy is enabled, otherwise use req.ip
+            const ip = req.ip || req.connection.remoteAddress;
+            logger.debug('Rate limit key generated', {
+                ip,
+                path: req.path,
+                headers: {
+                    'x-forwarded-for': req.headers['x-forwarded-for'],
+                    'x-real-ip': req.headers['x-real-ip']
+                }
+            });
+            return ip;
+        },
+        handler: (req, res) => {
+            const retryAfter = Math.ceil(config.rateLimit.windowMs / 1000);
+            logger.warn('Rate limit exceeded', {
+                ip: req.ip,
+                path: req.path,
+                requestId: req.requestId,
+                maxRequests: config.rateLimit.max,
+                windowMinutes: config.rateLimit.windowMs / 60000,
+                retryAfterSeconds: retryAfter
+            });
+            res.status(429).json({
+                error: 'Too many requests from this IP, please try again later.',
+                retryAfter, // seconds
+                maxRequests: config.rateLimit.max,
+                windowMinutes: Math.ceil(config.rateLimit.windowMs / 60000)
+            });
+        },
+    });
+
+    app.use('/api/', limiter);
+} else {
+    logger.warn('Rate limiting is DISABLED - not recommended for production');
+}
 
 // Security: Rate limiting for static files (more lenient than API)
 // Allows normal browsing while preventing abuse
-const staticLimiter = rateLimit({
-    windowMs: config.rateLimit.windowMs, // Same window as API (15 minutes)
-    max: 100, // Higher limit for static files (legitimate users load multiple assets)
-    standardHeaders: true,
-    legacyHeaders: false,
-    // Trust proxy for Cloud Run/App Engine - disable validation warning
-    validate: { trustProxy: false },
-    handler: (req, res) => {
-        logger.warn('Static file rate limit exceeded', {
-            ip: req.ip,
-            path: req.path,
-            requestId: req.requestId
-        });
-        res.status(429).json({
-            error: 'Too many requests from this IP, please try again later.',
-            retryAfter: Math.ceil(config.rateLimit.windowMs / 1000), // seconds
-        });
-    },
-});
+if (config.rateLimit.enabled) {
+    const staticLimiter = rateLimit({
+        windowMs: config.rateLimit.windowMs, // Same window as API (15 minutes)
+        max: config.rateLimit.max * 2, // Double the API limit for static files
+        standardHeaders: true,
+        legacyHeaders: false,
+        // Trust proxy for Cloud Run/App Engine - disable validation warning
+        validate: { trustProxy: false },
+        handler: (req, res) => {
+            logger.warn('Static file rate limit exceeded', {
+                ip: req.ip,
+                path: req.path,
+                requestId: req.requestId
+            });
+            res.status(429).json({
+                error: 'Too many requests from this IP, please try again later.',
+                retryAfter: Math.ceil(config.rateLimit.windowMs / 1000), // seconds
+            });
+        },
+    });
+
+    // Apply static limiter before serving files
+    app.use(staticLimiter);
+}
 
 // CSRF Protection for state-changing operations
 // Security: Require custom header for POST/PUT/DELETE to prevent CSRF attacks
@@ -174,8 +188,7 @@ app.get('/health', (req, res) => {
 app.use('/api/build', buildRoutes);
 app.use('/api', servicesRoutes);
 
-// Serve static frontend files (with rate limiting)
-app.use(staticLimiter);
+// Serve static frontend files (rate limiting applied earlier if enabled)
 app.use(express.static(path.join(__dirname, '../frontend')));
 
 // Catch-all route for SPA (redirect to index.html)

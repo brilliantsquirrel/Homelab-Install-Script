@@ -45,16 +45,18 @@ module.exports = {
 
     // Rate limiting
     rateLimit: {
+        enabled: process.env.RATE_LIMIT_ENABLED !== 'false', // Can disable with RATE_LIMIT_ENABLED=false
         windowMs: 15 * 60 * 1000, // 15 minutes
         max: (() => {
             // Use environment variable if set
             if (process.env.RATE_LIMIT_MAX) {
                 return parseInt(process.env.RATE_LIMIT_MAX);
             }
-            // Otherwise, use sensible defaults based on environment
-            return process.env.NODE_ENV === 'production' ? 30 : 100;
+            // Otherwise, use very permissive defaults to avoid blocking users
+            // These can be tightened once the app is stable
+            return process.env.NODE_ENV === 'production' ? 500 : 1000;
         })(),
-        buildsPerUserPerDay: parseInt(process.env.BUILDS_PER_USER_PER_DAY) || 3,
+        buildsPerUserPerDay: parseInt(process.env.BUILDS_PER_USER_PER_DAY) || 10,
     },
 
     // Security

@@ -11,13 +11,18 @@ Run this command from your local machine where gcloud is installed:
 cd /home/user/Homelab-Install-Script/webapp
 ./fix-rate-limit-now.sh
 
-# Option 2: Manual (replace us-west1 with your region)
+# Option 2: Manual - Disable rate limiting (recommended for testing)
 gcloud run services update iso-builder \
   --region us-west1 \
-  --set-env-vars RATE_LIMIT_MAX=100
+  --set-env-vars RATE_LIMIT_ENABLED=false
+
+# Option 3: Manual - Set very high limit
+gcloud run services update iso-builder \
+  --region us-west1 \
+  --set-env-vars RATE_LIMIT_MAX=1000
 ```
 
-This immediately increases your rate limit from 10 to 100 requests per 15 minutes.
+This either disables rate limiting entirely or sets it to a very permissive value.
 
 ---
 
