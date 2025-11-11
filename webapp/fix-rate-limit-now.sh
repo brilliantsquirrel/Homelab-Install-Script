@@ -64,7 +64,37 @@ gcloud run services describe iso-builder \
 
 echo ""
 echo "=================================================="
-echo "Applying fix: Increasing rate limit to 100 req/15min"
+echo "Choose a fix option:"
+echo "=================================================="
+echo "1. Disable rate limiting entirely (recommended for testing)"
+echo "2. Set very high limit (1000 req/15min)"
+echo "3. Set moderate limit (500 req/15min)"
+echo ""
+read -p "Enter choice (1-3) [default: 1]: " choice
+choice=${choice:-1}
+
+case $choice in
+    1)
+        ENV_VARS="RATE_LIMIT_ENABLED=false"
+        echo "Disabling rate limiting..."
+        ;;
+    2)
+        ENV_VARS="RATE_LIMIT_MAX=1000"
+        echo "Setting limit to 1000 requests per 15 minutes..."
+        ;;
+    3)
+        ENV_VARS="RATE_LIMIT_MAX=500"
+        echo "Setting limit to 500 requests per 15 minutes..."
+        ;;
+    *)
+        echo "Invalid choice, defaulting to option 1 (disable)"
+        ENV_VARS="RATE_LIMIT_ENABLED=false"
+        ;;
+esac
+
+echo ""
+echo "=================================================="
+echo "Applying fix..."
 echo "=================================================="
 echo ""
 
@@ -72,7 +102,7 @@ echo ""
 gcloud run services update iso-builder \
     --region "$REGION" \
     --project "$PROJECT_ID" \
-    --set-env-vars RATE_LIMIT_MAX=100 \
+    --set-env-vars "$ENV_VARS" \
     --quiet
 
 echo ""
@@ -124,8 +154,22 @@ echo "=================================================="
 echo "✓ Fix applied successfully!"
 echo "=================================================="
 echo ""
-echo "The rate limit has been increased from 10 to 100 requests per 15 minutes."
+
+case $choice in
+    1)
+        echo "Rate limiting has been DISABLED."
+        ;;
+    2)
+        echo "Rate limit set to 1000 requests per 15 minutes."
+        ;;
+    3)
+        echo "Rate limit set to 500 requests per 15 minutes."
+        ;;
+esac
+
 echo "You can now access the webapp without rate limit errors."
 echo ""
 echo "Service URL: $SERVICE_URL"
+echo ""
+echo "Note: Changes take effect immediately but may need 1-2 minutes to propagate."
 echo ""
