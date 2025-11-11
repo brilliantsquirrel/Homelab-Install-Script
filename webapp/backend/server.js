@@ -61,15 +61,50 @@ const limiter = rateLimit({
     legacyHeaders: false,
     // Trust proxy for Cloud Run/App Engine - disable validation warning
     validate: { trustProxy: false },
+    // Skip rate limiting for health checks and in development if bypass header is present
+    skip: (req) => {
+        // Always skip health checks
+        if (req.path === '/health') {
+            return true;
+        }
+
+        // In development, allow bypassing rate limit with special header
+        if (config.env === 'development' && req.headers['x-bypass-rate-limit'] === 'true') {
+            logger.debug('Rate limit bypassed in development', { ip: req.ip, path: req.path });
+            return true;
+        }
+
+        return false;
+    },
+    // Key generator to ensure proper IP tracking
+    keyGenerator: (req) => {
+        // Use X-Forwarded-For header if trust proxy is enabled, otherwise use req.ip
+        const ip = req.ip || req.connection.remoteAddress;
+        logger.debug('Rate limit key generated', {
+            ip,
+            path: req.path,
+            headers: {
+                'x-forwarded-for': req.headers['x-forwarded-for'],
+                'x-real-ip': req.headers['x-real-ip']
+            }
+        });
+        return ip;
+    },
     handler: (req, res) => {
+        const retryAfter = Math.ceil(config.rateLimit.windowMs / 1000);
         logger.warn('Rate limit exceeded', {
             ip: req.ip,
             path: req.path,
-            requestId: req.requestId
+            requestId: req.requestId,
+            maxRequests: config.rateLimit.max,
+            windowMinutes: config.rateLimit.windowMs / 60000,
+            retryAfterSeconds: retryAfter
         });
         res.status(429).json({
             error: 'Too many requests from this IP, please try again later.',
-            retryAfter: Math.ceil(config.rateLimit.windowMs / 1000), // seconds
+            retryAfter, // seconds
+            maxRequests: config.rateLimit.max,
+            windowMinutes: Math.ceil(config.rateLimit.windowMs / 60000)
         });
     },
 });
