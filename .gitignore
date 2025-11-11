@@ -107,3 +107,6 @@ nginx/certs/
 # ISO build artifacts (large downloads)
 iso-artifacts/
 iso-build/
+
+# Archived/historical files
+archive/

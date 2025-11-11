@@ -12,6 +12,7 @@ Comprehensive homelab automation script for setting up an Ubuntu Server with Doc
 - `docker compose.yml` - Docker Compose configuration for all services
 - `spec.txt` - Original requirements specification
 - `CLAUDE.md` - This file
+- `webapp/` - ISO Builder web application (see [ISO Builder Webapp](#iso-builder-webapp) section below)
 
 ## Running the Script
 
@@ -649,3 +650,281 @@ docker run --rm -v pihole_etc:/source -v $(pwd):/backup alpine tar czf /backup/p
 2. Check nvidia-docker2: `docker run --rm --gpus all nvidia/cuda:12.0-base nvidia-smi`
 3. Verify docker compose.yml GPU config is uncommented
 4. Restart Docker daemon: `sudo systemctl restart docker`
+
+---
+
+## ISO Builder Webapp
+
+**Location:** `webapp/`
+
+A complete web-based application for building custom Ubuntu Server ISOs with selectable homelab services and pre-downloaded AI models. Users can choose which Docker services and Ollama models to include via a web interface, initiate the build on Google Cloud Platform, and download the resulting ISO file.
+
+### Overview
+
+The ISO Builder Webapp transforms the manual ISO building process (iso-prepare.sh and create-custom-iso.sh) into a hosted web service. Instead of running scripts locally, users access a web interface to:
+
+1. Select Docker services (Ollama, Nextcloud, Plex, Pi-Hole, etc.)
+2. Choose Ollama AI models to pre-download
+3. Configure build settings (GPU support, email, ISO name)
+4. Monitor real-time build progress
+5. Download the completed custom ISO
+
+The webapp orchestrates Google Cloud Compute Engine VMs to perform the actual ISO builds, with results stored in Google Cloud Storage.
+
+### Architecture
+
+**Frontend (Single-Page Application):**
+- **Location:** `webapp/frontend/`
+- **Technology:** HTML5, CSS3, Vanilla JavaScript
+- **Features:**
+  - 5-step wizard interface (service selection → model selection → configuration → build progress → download)
+  - Automatic dependency resolution (e.g., selecting Nextcloud auto-selects PostgreSQL)
+  - Real-time build progress tracking with detailed logs
+  - Mobile-responsive design with modern card-based UI
+  - Size and time estimation based on selections
+
+**Backend (Node.js/Express API):**
+- **Location:** `webapp/backend/`
+- **Technology:** Node.js 18, Express 4.x, Google Cloud SDKs
+- **Components:**
+  - `server.js` - Main Express server with security middleware (CORS, Helmet, rate limiting)
+  - `config/config.js` - Centralized service and model metadata, VM configuration
+  - `lib/gcs-manager.js` - Google Cloud Storage operations (signed URLs, artifact caching)
+  - `lib/vm-manager.js` - GCP Compute Engine VM lifecycle management
+  - `lib/build-orchestrator.js` - Build queue, status tracking, progress estimation
+  - `routes/services.js` - Service/model metadata API endpoints
+  - `routes/build.js` - Build management API (start, status, download, cancel)
+
+**Build Scripts:**
+- **Location:** `webapp/scripts/`
+- `iso-prepare-dynamic.sh` - Modified version that reads `SELECTED_SERVICES` and `SELECTED_MODELS` environment variables
+  - Generates custom docker-compose.yml with only selected services
+  - Downloads only required Docker images and Ollama models
+  - Supports GCS artifact caching for faster subsequent builds
+  - Handles GPU configuration automatically
+
+**Deployment Files:**
+- **Location:** `webapp/` and `webapp/deployment/`
+- `Dockerfile` - Production-ready container image for Cloud Run
+- `.gcloudignore` - Excludes large directories (cubic-artifacts, iso-artifacts) from upload
+- `deploy.sh` - Automated deployment script (interactive, handles everything from scratch)
+- `cleanup.sh` - Complete resource removal script
+- `deployment/app.yaml` - App Engine configuration (alternative deployment)
+- `deployment/cloudbuild.yaml` - CI/CD pipeline for Cloud Build
+
+### Deployment
+
+The webapp is designed for zero-resource deployment on Google Cloud Platform. Use the automated deployment script for the easiest setup:
+
+```bash
+cd webapp
+./deploy.sh
+```
+
+The deployment script handles:
+1. Google Cloud authentication check
+2. Project creation or selection
+3. Region selection
+4. API enablement (Compute, Storage, Cloud Build, Cloud Run, etc.)
+5. GCS bucket creation (artifacts and downloads)
+6. IAM permission configuration
+7. Cloud Run deployment
+8. Health check and verification
+9. Opening webapp in browser
+
+**Expected costs per ISO build:** ~$7-8 (VM: $0.80-1.60, Local SSD: $0.24, Egress: $6.00)
+
+**Alternative deployment options:**
+- **Manual Cloud Run deployment:** See `webapp/QUICKSTART.md`
+- **App Engine deployment:** See `webapp/deployment/DEPLOYMENT.md`
+- **GKE deployment:** See `webapp/deployment/DEPLOYMENT.md`
+- **CI/CD with Cloud Build:** Use `webapp/deployment/cloudbuild.yaml`
+
+### API Endpoints
+
+**Service Metadata:**
+- `GET /api/services` - Available Docker services with dependencies, sizes, categories
+- `GET /api/models` - Available Ollama models with sizes
+- `GET /api/config` - Public configuration (rate limits, timeouts, etc.)
+
+**Build Management:**
+- `POST /api/build` - Start new ISO build (requires: services, models, gpu_enabled, email, iso_name)
+- `GET /api/build/:buildId/status` - Get build progress and logs
+- `GET /api/build/:buildId/download` - Get signed download URL for completed ISO
+- `DELETE /api/build/:buildId` - Cancel running build
+
+**Health Check:**
+- `GET /health` - Service health status
+
+### Build Process
+
+1. **Queued** (0%) - Build request received and validated
+2. **Creating VM** (10%) - GCP Compute Engine VM being provisioned (n2-standard-16 with 2x local SSD)
+3. **Downloading Dependencies** (20-40%) - VM downloads Docker images and Ollama models (uses GCS cache)
+4. **Building ISO** (40-80%) - Custom Ubuntu ISO creation with selected services
+5. **Uploading ISO** (80-95%) - ISO uploaded to GCS downloads bucket
+6. **Complete** (100%) - ISO ready for download via signed URL (1 hour expiration)
+7. **Cleanup** - VM automatically terminated, temporary files removed
+
+**Build time:** 30-90 minutes depending on selections and cache hits
+
+### Security Features
+
+- **Rate limiting:** 10 requests per 15 minutes per IP
+- **Input validation:** All user inputs validated (services, models, ISO name)
+- **VM isolation:** Each build runs in isolated VM with minimal IAM permissions
+- **Signed URLs:** Downloads use signed URLs with 1-hour expiration
+- **Automatic cleanup:** ISOs deleted after 7 days (GCS lifecycle policy)
+- **CORS restrictions:** API access limited to allowed origins
+- **Security headers:** Helmet.js provides comprehensive HTTP security headers
+- **Build limits:** Maximum 3 concurrent builds, 3 per user per day
+
+### Configuration
+
+**Environment Variables (backend/.env):**
+```bash
+# GCP Configuration
+GCP_PROJECT_ID=your-project-id
+GCP_ZONE=us-west1-a
+GCP_REGION=us-west1
+
+# GCS Buckets
+GCS_ARTIFACTS_BUCKET=project-id-artifacts
+GCS_DOWNLOADS_BUCKET=project-id-downloads
+
+# VM Configuration
+VM_MACHINE_TYPE=n2-standard-16
+VM_BOOT_DISK_SIZE=500
+VM_LOCAL_SSD_COUNT=2
+
+# Build Configuration
+MAX_CONCURRENT_BUILDS=3
+BUILD_TIMEOUT_HOURS=4
+VM_AUTO_CLEANUP=true
+
+# Security
+API_SECRET_KEY=random-secret-key
+LOG_LEVEL=info
+```
+
+**Service Configuration:**
+All service metadata is defined in `backend/config/config.js`:
+- Service names, display names, descriptions
+- Categories (AI, Homelab, Infrastructure)
+- Docker image mappings
+- Dependencies (e.g., Nextcloud requires PostgreSQL and Redis)
+- Size estimates
+
+**Model Configuration:**
+All Ollama model metadata is defined in `backend/config/config.js`:
+- Model names, display names, descriptions
+- Size in GB
+- Compatible with Ollama 0.12.9+
+
+### Documentation
+
+- **README.md** - Complete project overview, architecture, API docs, deployment options
+- **GETTING-STARTED.md** - User-friendly navigation hub for all documentation
+- **QUICKSTART.md** - Step-by-step zero-to-production deployment guide (30+ pages)
+- **IMPLEMENTATION_SUMMARY.md** - Technical implementation details, file descriptions
+- **deployment/DEPLOYMENT.md** - Production deployment guide (Cloud Run, App Engine, GKE)
+
+### Recent Changes and Bug Fixes
+
+**2025-11-11: ISO Name Validation Fix**
+- **Issue:** Default ISO name `ubuntu-24.04.3-homelab-custom` was rejected by validation
+- **Root cause:** Regex `/^[a-zA-Z0-9-_]+$/` in `build-orchestrator.js:272` didn't allow periods
+- **Fix:** Changed regex to `/^[a-zA-Z0-9._-]+$/` to allow periods, hyphens, underscores
+- **Files modified:** `webapp/backend/lib/build-orchestrator.js`
+
+**2025-11-11: Deployment Fixes**
+- **Issue:** npm ci failed during Docker build (no package-lock.json)
+- **Fix:** Changed Dockerfile to use `npm install --only=production` instead of `npm ci`
+- **Issue:** 53GB upload during Cloud Build (cubic-artifacts directory)
+- **Fix:** Created `.gcloudignore` to exclude large directories
+- **Result:** Reduced upload size from 53.1 GiB to 764.8 KiB
+
+### Integration with Homelab Scripts
+
+The ISO Builder Webapp builds custom ISOs that, when installed, will run the main `post-install.sh` script with pre-downloaded dependencies. The relationship:
+
+1. **Webapp builds ISO** → Custom Ubuntu Server ISO with selected services
+2. **ISO includes:**
+   - Pre-downloaded Docker images (saved as .tar archives)
+   - Pre-downloaded Ollama models
+   - Custom docker-compose.yml with only selected services
+   - All homelab scripts (post-install.sh, etc.)
+3. **User installs ISO** → Ubuntu Server installed with homelab files in `/opt/homelab`
+4. **post-install.sh runs** → Loads pre-downloaded images, starts selected services
+
+**Benefit:** First boot is much faster because Docker images and AI models don't need to be downloaded from the internet.
+
+### Troubleshooting
+
+**Webapp deployment fails:**
+```bash
+# Check Cloud Build logs
+gcloud builds list --limit 5
+gcloud builds log BUILD_ID
+
+# Check service status
+gcloud run services describe iso-builder --region REGION
+
+# View service logs
+gcloud run services logs tail iso-builder --region REGION
+```
+
+**Build fails or gets stuck:**
+```bash
+# Check VM status
+gcloud compute instances list --filter="labels.purpose=iso-builder"
+
+# View VM serial port output
+gcloud compute instances get-serial-port-output VM_NAME --zone ZONE
+
+# Manually delete stuck VM
+gcloud compute instances delete VM_NAME --zone ZONE
+```
+
+**ISO download not working:**
+```bash
+# Check if ISO exists in bucket
+gsutil ls gs://PROJECT_ID-downloads/
+
+# Verify bucket permissions
+gsutil iam get gs://PROJECT_ID-downloads
+
+# Check signed URL expiration (default: 1 hour)
+```
+
+**Cost monitoring:**
+```bash
+# View current costs
+gcloud billing accounts list
+open "https://console.cloud.google.com/billing"
+
+# Set up budget alerts
+gcloud billing budgets create \
+  --billing-account=BILLING_ACCOUNT_ID \
+  --display-name="ISO Builder Budget" \
+  --budget-amount=100USD \
+  --threshold-rule=percent=50 \
+  --threshold-rule=percent=90
+```
+
+### Cleanup
+
+To completely remove all webapp resources:
+```bash
+cd webapp
+./cleanup.sh
+```
+
+This removes:
+- Cloud Run service
+- All ISO builder VMs
+- GCS buckets (artifacts and downloads)
+- Container images
+- Deployment info file
+
+The GCP project itself is not deleted (manual step if desired).

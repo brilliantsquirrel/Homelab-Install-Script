@@ -268,9 +268,9 @@ class BuildOrchestrator {
             });
         }
 
-        // Validate ISO name (alphanumeric, hyphens, underscores only)
-        if (iso_name && !/^[a-zA-Z0-9-_]+$/.test(iso_name)) {
-            throw new Error('Invalid ISO name. Use only alphanumeric characters, hyphens, and underscores.');
+        // Validate ISO name (alphanumeric, periods, hyphens, underscores only)
+        if (iso_name && !/^[a-zA-Z0-9._-]+$/.test(iso_name)) {
+            throw new Error('Invalid ISO name. Use only alphanumeric characters, periods, hyphens, and underscores.');
         }
     }
 
