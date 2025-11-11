@@ -46,7 +46,14 @@ module.exports = {
     // Rate limiting
     rateLimit: {
         windowMs: 15 * 60 * 1000, // 15 minutes
-        max: parseInt(process.env.RATE_LIMIT_MAX) || 10,
+        max: (() => {
+            // Use environment variable if set
+            if (process.env.RATE_LIMIT_MAX) {
+                return parseInt(process.env.RATE_LIMIT_MAX);
+            }
+            // Otherwise, use sensible defaults based on environment
+            return process.env.NODE_ENV === 'production' ? 30 : 100;
+        })(),
         buildsPerUserPerDay: parseInt(process.env.BUILDS_PER_USER_PER_DAY) || 3,
     },
 
