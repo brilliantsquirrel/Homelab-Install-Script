@@ -54,9 +54,19 @@ if (config.env === 'development') {
 const limiter = rateLimit({
     windowMs: config.rateLimit.windowMs,
     max: config.rateLimit.max,
-    message: 'Too many requests from this IP, please try again later.',
     standardHeaders: true,
     legacyHeaders: false,
+    handler: (req, res) => {
+        logger.warn('Rate limit exceeded', {
+            ip: req.ip,
+            path: req.path,
+            requestId: req.requestId
+        });
+        res.status(429).json({
+            error: 'Too many requests from this IP, please try again later.',
+            retryAfter: Math.ceil(config.rateLimit.windowMs / 1000), // seconds
+        });
+    },
 });
 
 app.use('/api/', limiter);
