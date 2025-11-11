@@ -538,8 +538,8 @@ elif [ "$GCS_ENABLED" = true ] && check_gcs_file "$nginx_gcs_filename"; then
 fi
 
 if [ "$nginx_exists" = false ]; then
-    if [ -d "nginx" ] && [ -f "nginx/Dockerfile" ]; then
-        if sudo docker build -t homelab-install-script-nginx:latest nginx/; then
+    if [ -d "$REPO_DIR/nginx" ] && [ -f "$REPO_DIR/nginx/Dockerfile" ]; then
+        if sudo docker build -t homelab-install-script-nginx:latest "$REPO_DIR/nginx/"; then
             success "✓ Built custom nginx image"
 
             log "Saving custom nginx image..."
