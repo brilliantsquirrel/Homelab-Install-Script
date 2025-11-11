@@ -431,8 +431,9 @@ success "✓ Docker is available"
 header "Step 1: Downloading Docker Images"
 
 # List of Docker images from docker-compose.yml
+# Note: Using Ollama 0.12.9 for qwen3-vl:8b support (released Nov 2025)
 DOCKER_IMAGES=(
-    "ollama/ollama:latest"
+    "ollama/ollama:0.12.9"
     "ghcr.io/open-webui/open-webui:main"
     "langchain/langserve:latest"
     "langchain/langgraph-api:3.11"
@@ -538,8 +539,8 @@ elif [ "$GCS_ENABLED" = true ] && check_gcs_file "$nginx_gcs_filename"; then
 fi
 
 if [ "$nginx_exists" = false ]; then
-    if [ -d "nginx" ] && [ -f "nginx/Dockerfile" ]; then
-        if sudo docker build -t homelab-install-script-nginx:latest nginx/; then
+    if [ -d "$REPO_DIR/nginx" ] && [ -f "$REPO_DIR/nginx/Dockerfile" ]; then
+        if sudo docker build -t homelab-install-script-nginx:latest "$REPO_DIR/nginx/"; then
             success "✓ Built custom nginx image"
 
             log "Saving custom nginx image..."
@@ -644,7 +645,8 @@ for model in "${OLLAMA_MODELS[@]}"; do
 
         # Start fresh Ollama container with dedicated volume for this model
         log "Starting Ollama container for $model..."
-        sudo docker run -d --name "$container_name" -v "$volume_name":/root/.ollama ollama/ollama:latest
+        # Using Ollama 0.12.9 for qwen3-vl:8b support
+        sudo docker run -d --name "$container_name" -v "$volume_name":/root/.ollama ollama/ollama:0.12.9
         sleep 5
 
         # Download the model
