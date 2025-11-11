@@ -70,6 +70,13 @@ module.exports = {
         })(),
         corsOrigins: (() => {
             const origins = process.env.CORS_ORIGINS ? process.env.CORS_ORIGINS.split(',') : null;
+
+            // For Cloud Run/App Engine, if CORS_ORIGINS is not set, allow all origins
+            // This is safe because the frontend is served from the same origin as the API
+            if (!origins && process.env.K_SERVICE) {
+                return ['*']; // Cloud Run - frontend served from same origin
+            }
+
             if (!origins || origins.includes('*')) {
                 if (process.env.NODE_ENV === 'production') {
                     throw new Error(
