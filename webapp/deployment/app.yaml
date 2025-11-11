@@ -1,0 +1,35 @@
+# Google App Engine Deployment Configuration
+# Deploy with: gcloud app deploy
+
+runtime: nodejs18
+
+instance_class: F2
+
+automatic_scaling:
+  min_instances: 1
+  max_instances: 10
+  target_cpu_utilization: 0.65
+  target_throughput_utilization: 0.65
+
+env_variables:
+  NODE_ENV: "production"
+  GCP_PROJECT_ID: "YOUR_PROJECT_ID"
+  GCS_ARTIFACTS_BUCKET: "homelab-iso-artifacts"
+  GCS_DOWNLOADS_BUCKET: "homelab-iso-downloads"
+  VM_MACHINE_TYPE: "n2-standard-16"
+  VM_BOOT_DISK_SIZE: "500"
+  VM_LOCAL_SSD_COUNT: "2"
+  MAX_CONCURRENT_BUILDS: "3"
+  LOG_LEVEL: "info"
+
+handlers:
+  - url: /.*
+    script: auto
+    secure: always
+
+# Increase timeout for long-running API calls
+readiness_check:
+  timeout_sec: 10
+
+liveness_check:
+  timeout_sec: 10

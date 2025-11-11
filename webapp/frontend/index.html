@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Homelab ISO Builder</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🏠 Homelab ISO Builder</h1>
+            <p class="tagline">Build your custom Ubuntu Server ISO with pre-configured homelab services</p>
+        </header>
+
+        <div id="app">
+            <!-- Step 1: Service Selection -->
+            <section id="step-services" class="step active">
+                <h2>Step 1: Select Services</h2>
+                <p class="step-description">Choose which services to include in your homelab ISO</p>
+
+                <div class="service-categories">
+                    <div class="category" id="ai-services">
+                        <h3>🤖 AI & Machine Learning</h3>
+                        <div class="service-list">
+                            <label class="service-item">
+                                <input type="checkbox" name="service" value="ollama" data-category="ai" data-deps="">
+                                <div class="service-card">
+                                    <div class="service-name">Ollama</div>
+                                    <div class="service-description">Local LLM runtime with GPU support</div>
+                                    <div class="service-size">~2GB</div>
+                                </div>
+                            </label>
+                            <label class="service-item">
+                                <input type="checkbox" name="service" value="openwebui" data-category="ai" data-deps="ollama">
+                                <div class="service-card">
+                                    <div class="service-name">OpenWebUI</div>
+                                    <div class="service-description">Web interface for Ollama</div>
+                                    <div class="service-size">~500MB</div>
+                                </div>
+                            </label>
+                            <label class="service-item">
+                                <input type="checkbox" name="service" value="langflow" data-category="ai" data-deps="ollama">
+                                <div class="service-card">
+                                    <div class="service-name">LangFlow</div>
+                                    <div class="service-description">Visual AI workflow builder</div>
+                                    <div class="service-size">~1.5GB</div>
+                                </div>
+                            </label>
+                            <label class="service-item">
+                                <input type="checkbox" name="service" value="langgraph" data-category="ai" data-deps="ollama,langgraph-redis,langgraph-db">
+                                <div class="service-card">
+                                    <div class="service-name">LangGraph</div>
+                                    <div class="service-description">Stateful agent workflow engine</div>
+                                    <div class="service-size">~800MB</div>
+                                </div>
+                            </label>
+                            <label class="service-item">
+                                <input type="checkbox" name="service" value="qdrant" data-category="ai" data-deps="">
+                                <div class="service-card">
+                                    <div class="service-name">Qdrant</div>
+                                    <div class="service-description">Vector database for embeddings</div>
+                                    <div class="service-size">~300MB</div>
+                                </div>
+                            </label>
+                            <label class="service-item">
+                                <input type="checkbox" name="service" value="n8n" data-category="ai" data-deps="ollama">
+                                <div class="service-card">
+                                    <div class="service-name">n8n</div>
+                                    <div class="service-description">Workflow automation platform</div>
+                                    <div class="service-size">~600MB</div>
+                                </div>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="category" id="homelab-services">
+                        <h3>🏡 Homelab Services</h3>
+                        <div class="service-list">
+                            <label class="service-item">
+                                <input type="checkbox" name="service" value="nextcloud" data-category="homelab" data-deps="nextcloud-db,nextcloud-redis">
+                                <div class="service-card">
+                                    <div class="service-name">Nextcloud</div>
+                                    <div class="service-description">File storage & collaboration</div>
+                                    <div class="service-size">~1.2GB</div>
+                                </div>
+                            </label>
+                            <label class="service-item">
+                                <input type="checkbox" name="service" value="plex" data-category="homelab" data-deps="">
+                                <div class="service-card">
+                                    <div class="service-name">Plex</div>
+                                    <div class="service-description">Media server with transcoding</div>
+                                    <div class="service-size">~800MB</div>
+                                </div>
+                            </label>
+                            <label class="service-item">
+                                <input type="checkbox" name="service" value="pihole" data-category="homelab" data-deps="">
+                                <div class="service-card">
+                                    <div class="service-name">Pi-hole</div>
+                                    <div class="service-description">Network-wide ad blocking</div>
+                                    <div class="service-size">~200MB</div>
+                                </div>
+                            </label>
+                            <label class="service-item">
+                                <input type="checkbox" name="service" value="homarr" data-category="homelab" data-deps="">
+                                <div class="service-card">
+                                    <div class="service-name">Homarr</div>
+                                    <div class="service-description">Homelab dashboard</div>
+                                    <div class="service-size">~150MB</div>
+                                </div>
+                            </label>
+                            <label class="service-item">
+                                <input type="checkbox" name="service" value="hoarder" data-category="homelab" data-deps="">
+                                <div class="service-card">
+                                    <div class="service-name">Hoarder</div>
+                                    <div class="service-description">Bookmark manager</div>
+                                    <div class="service-size">~100MB</div>
+                                </div>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="category" id="infrastructure-services">
+                        <h3>🔧 Infrastructure</h3>
+                        <div class="service-list">
+                            <label class="service-item">
+                                <input type="checkbox" name="service" value="portainer" data-category="infrastructure" data-deps="docker-socket-proxy" checked>
+                                <div class="service-card">
+                                    <div class="service-name">Portainer</div>
+                                    <div class="service-description">Container management UI</div>
+                                    <div class="service-size">~300MB</div>
+                                </div>
+                            </label>
+                            <label class="service-item">
+                                <input type="checkbox" name="service" value="nginx" data-category="infrastructure" data-deps="" checked disabled>
+                                <div class="service-card">
+                                    <div class="service-name">Nginx (Required)</div>
+                                    <div class="service-description">Reverse proxy with SSL</div>
+                                    <div class="service-size">~50MB</div>
+                                </div>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="step-actions">
+                    <button class="btn btn-primary" onclick="app.nextStep()">Next: Select AI Models →</button>
+                </div>
+            </section>
+
+            <!-- Step 2: AI Model Selection -->
+            <section id="step-models" class="step">
+                <h2>Step 2: Select AI Models</h2>
+                <p class="step-description">Choose Ollama models to pre-download (requires Ollama service)</p>
+
+                <div id="models-disabled-notice" class="notice notice-warning" style="display:none;">
+                    <strong>Note:</strong> AI model selection requires the Ollama service. Please go back and select Ollama in Step 1.
+                </div>
+
+                <div class="model-list">
+                    <label class="model-item">
+                        <input type="checkbox" name="model" value="qwen3:8b" data-size="4.7GB">
+                        <div class="model-card">
+                            <div class="model-name">Qwen3 8B</div>
+                            <div class="model-description">Fast general-purpose model (8B parameters)</div>
+                            <div class="model-size">~4.7GB</div>
+                        </div>
+                    </label>
+                    <label class="model-item">
+                        <input type="checkbox" name="model" value="qwen3-coder:30b" data-size="17GB">
+                        <div class="model-card">
+                            <div class="model-name">Qwen3 Coder 30B</div>
+                            <div class="model-description">Code-specialized model (30B parameters)</div>
+                            <div class="model-size">~17GB</div>
+                        </div>
+                    </label>
+                    <label class="model-item">
+                        <input type="checkbox" name="model" value="qwen3-vl:8b" data-size="5.5GB">
+                        <div class="model-card">
+                            <div class="model-name">Qwen3 VL 8B</div>
+                            <div class="model-description">Vision-language multimodal model</div>
+                            <div class="model-size">~5.5GB</div>
+                        </div>
+                    </label>
+                    <label class="model-item">
+                        <input type="checkbox" name="model" value="gpt-oss:20b" data-size="12GB">
+                        <div class="model-card">
+                            <div class="model-name">GPT-OSS 20B</div>
+                            <div class="model-description">Open-source GPT-style model (20B parameters)</div>
+                            <div class="model-size">~12GB</div>
+                        </div>
+                    </label>
+                </div>
+
+                <div class="step-actions">
+                    <button class="btn btn-secondary" onclick="app.prevStep()">← Back</button>
+                    <button class="btn btn-primary" onclick="app.nextStep()">Next: Configuration →</button>
+                </div>
+            </section>
+
+            <!-- Step 3: Configuration -->
+            <section id="step-config" class="step">
+                <h2>Step 3: Build Configuration</h2>
+                <p class="step-description">Configure your ISO build options</p>
+
+                <div class="config-form">
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" id="gpu-enabled" name="gpu_enabled">
+                            Enable GPU Support (NVIDIA CUDA)
+                        </label>
+                        <p class="help-text">Enables GPU acceleration for Ollama and Plex transcoding</p>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="email">Email (optional)</label>
+                        <input type="email" id="email" name="email" placeholder="your@email.com">
+                        <p class="help-text">Receive a notification when your ISO is ready</p>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="iso-name">ISO Name</label>
+                        <input type="text" id="iso-name" name="iso_name" value="ubuntu-24.04.3-homelab-custom" placeholder="ubuntu-24.04.3-homelab-custom">
+                        <p class="help-text">Custom name for your ISO file</p>
+                    </div>
+                </div>
+
+                <div class="build-summary">
+                    <h3>Build Summary</h3>
+                    <div class="summary-content">
+                        <div class="summary-item">
+                            <strong>Services:</strong>
+                            <span id="summary-services">0 selected</span>
+                        </div>
+                        <div class="summary-item">
+                            <strong>AI Models:</strong>
+                            <span id="summary-models">0 selected</span>
+                        </div>
+                        <div class="summary-item">
+                            <strong>Estimated ISO Size:</strong>
+                            <span id="summary-size">~3.5GB</span>
+                        </div>
+                        <div class="summary-item">
+                            <strong>Estimated Build Time:</strong>
+                            <span id="summary-time">~45 minutes</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="step-actions">
+                    <button class="btn btn-secondary" onclick="app.prevStep()">← Back</button>
+                    <button class="btn btn-success" onclick="app.startBuild()">🚀 Start Build</button>
+                </div>
+            </section>
+
+            <!-- Step 4: Build Progress -->
+            <section id="step-progress" class="step">
+                <h2>Building Your Custom ISO</h2>
+                <p class="step-description">This may take 45-90 minutes depending on selected components</p>
+
+                <div class="progress-container">
+                    <div class="progress-bar">
+                        <div id="progress-fill" class="progress-fill" style="width: 0%"></div>
+                    </div>
+                    <div class="progress-text">
+                        <span id="progress-percentage">0%</span>
+                        <span id="progress-stage">Initializing...</span>
+                    </div>
+                </div>
+
+                <div class="build-info">
+                    <div class="info-item">
+                        <strong>Build ID:</strong>
+                        <span id="build-id">-</span>
+                    </div>
+                    <div class="info-item">
+                        <strong>VM Instance:</strong>
+                        <span id="vm-name">-</span>
+                    </div>
+                    <div class="info-item">
+                        <strong>Estimated Completion:</strong>
+                        <span id="estimated-completion">-</span>
+                    </div>
+                </div>
+
+                <div class="build-logs">
+                    <h3>Build Logs</h3>
+                    <div id="log-container" class="log-container">
+                        <div class="log-entry">Waiting for build to start...</div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Step 5: Complete -->
+            <section id="step-complete" class="step">
+                <div class="completion-message">
+                    <div class="completion-icon">✅</div>
+                    <h2>Your ISO is Ready!</h2>
+                    <p>Your custom homelab ISO has been built successfully.</p>
+                </div>
+
+                <div class="download-section">
+                    <div class="download-info">
+                        <div class="info-row">
+                            <strong>Build ID:</strong>
+                            <span id="complete-build-id">-</span>
+                        </div>
+                        <div class="info-row">
+                            <strong>ISO Size:</strong>
+                            <span id="complete-size">-</span>
+                        </div>
+                        <div class="info-row">
+                            <strong>Build Time:</strong>
+                            <span id="complete-time">-</span>
+                        </div>
+                        <div class="info-row">
+                            <strong>Download Link Valid:</strong>
+                            <span>7 days</span>
+                        </div>
+                    </div>
+
+                    <button class="btn btn-download" onclick="app.downloadISO()">
+                        📥 Download ISO
+                    </button>
+
+                    <p class="download-note">
+                        Download link is valid for 7 days. The ISO will be automatically deleted after this period.
+                    </p>
+                </div>
+
+                <div class="next-steps">
+                    <h3>Next Steps</h3>
+                    <ol>
+                        <li>Write the ISO to a USB drive using dd or Rufus</li>
+                        <li>Boot your server from the USB drive</li>
+                        <li>Install Ubuntu normally</li>
+                        <li>After first boot, run: <code>cd /opt/homelab && ./post-install.sh</code></li>
+                        <li>All services and models are pre-loaded and ready!</li>
+                    </ol>
+                </div>
+
+                <div class="step-actions">
+                    <button class="btn btn-secondary" onclick="app.reset()">← Build Another ISO</button>
+                </div>
+            </section>
+
+            <!-- Error Display -->
+            <section id="step-error" class="step">
+                <div class="error-message">
+                    <div class="error-icon">❌</div>
+                    <h2>Build Failed</h2>
+                    <p id="error-text">An error occurred during the ISO build process.</p>
+                </div>
+
+                <div class="error-details">
+                    <h3>Error Details</h3>
+                    <pre id="error-details"></pre>
+                </div>
+
+                <div class="step-actions">
+                    <button class="btn btn-secondary" onclick="app.reset()">← Try Again</button>
+                </div>
+            </section>
+        </div>
+
+        <footer>
+            <p>
+                <a href="https://github.com/brilliantsquirrel/Homelab-Install-Script" target="_blank">GitHub</a> |
+                <a href="/api/docs" target="_blank">API Documentation</a> |
+                <a href="https://docs.claude.com" target="_blank">Help</a>
+            </p>
+            <p class="footer-note">
+                Built with ❤️ for the homelab community
+            </p>
+        </footer>
+    </div>
+
+    <script src="js/api.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
