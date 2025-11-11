@@ -831,6 +831,15 @@ All Ollama model metadata is defined in `backend/config/config.js`:
 
 ### Recent Changes and Bug Fixes
 
+**2025-11-11: JSON Parsing Error Fix**
+- **Issue:** Frontend error "Unexpected token 'T', "Too many r"... is not valid JSON" when rate limited
+- **Root cause:** Rate limiter returned plain text, but frontend always tried to parse as JSON
+- **Fix:**
+  - Frontend: Check Content-Type header, handle both JSON and text responses
+  - Backend: Rate limiter now returns JSON with `{error: "...", retryAfter: seconds}`
+  - Added logging for rate limit violations with request context
+- **Files modified:** `webapp/frontend/js/api.js`, `webapp/backend/server.js`
+
 **2025-11-11: Enhanced Logging System**
 - **Feature:** Comprehensive logging with context tracking and performance metrics
 - **Enhancements:**
