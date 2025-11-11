@@ -113,7 +113,8 @@ if [ -d "$WORK_DIR" ]; then
     sudo umount "$SQUASHFS_EXTRACT/proc" 2>/dev/null || true
     sudo umount "$SQUASHFS_EXTRACT/sys" 2>/dev/null || true
     sudo umount "$SQUASHFS_EXTRACT" 2>/dev/null || true
-    rm -rf "$WORK_DIR"
+    # Use sudo because previous build may have created root-owned files
+    sudo rm -rf "$WORK_DIR"
 fi
 
 mkdir -p "$WORK_DIR"
