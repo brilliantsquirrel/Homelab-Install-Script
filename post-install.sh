@@ -145,9 +145,14 @@ setup_environment() {
     log "Generated 13 secure API keys and passwords"
     echo ""
 
-    # Copy template
+    # Set restrictive umask before creating file (prevents race condition)
+    # This ensures .env is created with 600 permissions from the start
+    local old_umask=$(umask)
+    umask 077
+
+    # Copy template (will inherit restrictive permissions from umask)
     cp .env.example .env
-    debug "Copied .env from .env.example"
+    debug "Copied .env from .env.example with secure permissions (600)"
 
     # Replace values in .env
     sed -i "s|^OLLAMA_API_KEY=.*|OLLAMA_API_KEY=$OLLAMA_API_KEY|" .env
@@ -166,7 +171,10 @@ setup_environment() {
 
     debug "Replaced all API keys and passwords in .env"
 
-    # Set restrictive permissions
+    # Restore original umask
+    umask "$old_umask"
+
+    # Verify permissions (defense in depth)
     chmod 600 .env
     log ".env file created with auto-generated keys (permissions: 600)"
 

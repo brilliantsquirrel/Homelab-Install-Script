@@ -269,8 +269,26 @@ class BuildOrchestrator {
         }
 
         // Validate ISO name (alphanumeric, periods, hyphens, underscores only)
-        if (iso_name && !/^[a-zA-Z0-9._-]+$/.test(iso_name)) {
-            throw new Error('Invalid ISO name. Use only alphanumeric characters, periods, hyphens, and underscores.');
+        if (iso_name) {
+            // Check character whitelist
+            if (!/^[a-zA-Z0-9._-]+$/.test(iso_name)) {
+                throw new Error('Invalid ISO name. Use only alphanumeric characters, periods, hyphens, and underscores.');
+            }
+
+            // Check for path traversal patterns
+            if (iso_name.includes('..') || iso_name.includes('/') || iso_name.includes('\\')) {
+                throw new Error('Invalid ISO name. Path traversal patterns not allowed.');
+            }
+
+            // Check length (max 255 characters for filesystem compatibility)
+            if (iso_name.length > 255) {
+                throw new Error('Invalid ISO name. Maximum length is 255 characters.');
+            }
+
+            // Check for leading/trailing periods or hyphens (filesystem edge cases)
+            if (/^[.-]|[.-]$/.test(iso_name)) {
+                throw new Error('Invalid ISO name. Cannot start or end with period or hyphen.');
+            }
         }
     }
 

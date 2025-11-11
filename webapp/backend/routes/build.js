@@ -12,15 +12,54 @@ const gcsManager = require('../lib/gcs-manager');
  */
 router.post('/', async (req, res) => {
     try {
+        // Validate input types before processing
+        if (req.body.services !== undefined && !Array.isArray(req.body.services)) {
+            return res.status(400).json({ error: 'services must be an array' });
+        }
+
+        if (req.body.models !== undefined && !Array.isArray(req.body.models)) {
+            return res.status(400).json({ error: 'models must be an array' });
+        }
+
+        if (req.body.gpu_enabled !== undefined && typeof req.body.gpu_enabled !== 'boolean') {
+            return res.status(400).json({ error: 'gpu_enabled must be a boolean' });
+        }
+
+        if (req.body.iso_name !== undefined && typeof req.body.iso_name !== 'string') {
+            return res.status(400).json({ error: 'iso_name must be a string' });
+        }
+
+        if (req.body.email !== undefined && typeof req.body.email !== 'string') {
+            return res.status(400).json({ error: 'email must be a string' });
+        }
+
+        // Validate array elements are strings
+        const services = req.body.services || [];
+        const models = req.body.models || [];
+
+        if (services.some(s => typeof s !== 'string' || s.trim() === '')) {
+            return res.status(400).json({ error: 'All services must be non-empty strings' });
+        }
+
+        if (models.some(m => typeof m !== 'string' || m.trim() === '')) {
+            return res.status(400).json({ error: 'All models must be non-empty strings' });
+        }
+
+        // Sanitize strings (trim whitespace)
         const buildConfig = {
-            services: req.body.services || [],
-            models: req.body.models || [],
+            services: services.map(s => s.trim()),
+            models: models.map(m => m.trim()),
             gpu_enabled: req.body.gpu_enabled || false,
-            email: req.body.email,
-            iso_name: req.body.iso_name || 'ubuntu-24.04.3-homelab-custom',
+            email: req.body.email ? req.body.email.trim() : undefined,
+            iso_name: req.body.iso_name ? req.body.iso_name.trim() : 'ubuntu-24.04.3-homelab-custom',
         };
 
-        logger.info('New build request:', buildConfig);
+        // Sanitized config for logging (safe to log now)
+        const sanitizedConfig = {
+            ...buildConfig,
+            email: buildConfig.email ? '***@***' : undefined,
+        };
+        logger.info('New build request:', sanitizedConfig);
 
         const result = await buildOrchestrator.startBuild(buildConfig);
 
