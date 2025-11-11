@@ -50,6 +50,15 @@ MAX_PARALLEL_DOWNLOADS=4  # Number of parallel Docker image downloads
 # Runs in background, output suppressed to avoid jumbled display
 process_docker_image() {
     local image="$1"
+
+    # Security: Validate Docker image name format to prevent command injection
+    # Valid format: [registry/]repository[:tag] or [registry/]repository[@digest]
+    # Examples: nginx:latest, ghcr.io/user/repo:v1.0, ubuntu@sha256:abc123
+    if ! [[ "$image" =~ ^[a-zA-Z0-9._/-]+([:.@][a-zA-Z0-9._-]+)?$ ]]; then
+        error "Invalid Docker image name format: $image"
+        return 1
+    fi
+
     local filename=$(echo "$image" | sed 's/[\/:]/_/g')
     local local_file="$DOCKER_DIR/${filename}.tar.gz"
     local gcs_filename="docker-images/${filename}.tar.gz"

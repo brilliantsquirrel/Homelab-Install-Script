@@ -74,6 +74,33 @@ const limiter = rateLimit({
 
 app.use('/api/', limiter);
 
+// CSRF Protection for state-changing operations
+// Security: Require custom header for POST/PUT/DELETE to prevent CSRF attacks
+// Browsers cannot set custom headers from simple forms/links, only via JavaScript
+const csrfProtection = (req, res, next) => {
+    const stateChangingMethods = ['POST', 'PUT', 'DELETE', 'PATCH'];
+
+    if (stateChangingMethods.includes(req.method)) {
+        const csrfHeader = req.get('X-Requested-With');
+
+        if (!csrfHeader || csrfHeader !== 'XMLHttpRequest') {
+            logger.warn('CSRF protection triggered - missing or invalid X-Requested-With header', {
+                ip: req.ip,
+                method: req.method,
+                path: req.path,
+                requestId: req.requestId
+            });
+            return res.status(403).json({
+                error: 'Forbidden: Missing required header for state-changing operations',
+            });
+        }
+    }
+
+    next();
+};
+
+app.use('/api/', csrfProtection);
+
 // Health check endpoint
 app.get('/health', (req, res) => {
     res.json({

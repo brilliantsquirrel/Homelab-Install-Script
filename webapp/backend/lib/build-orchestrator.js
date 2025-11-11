@@ -12,6 +12,10 @@ class BuildOrchestrator {
         this.builds = new Map();
         this.activeBuildCount = 0;
 
+        // Security: Maximum number of builds to keep in memory
+        // Prevents unbounded memory growth from accumulating build history
+        this.MAX_BUILDS_IN_MEMORY = 1000;
+
         // Start periodic cleanup
         this.startPeriodicCleanup();
     }
@@ -25,8 +29,16 @@ class BuildOrchestrator {
         // Validate configuration
         this.validateBuildConfig(buildConfig);
 
-        // Check concurrent build limit
-        if (this.activeBuildCount >= config.vm.maxConcurrentBuilds) {
+        // Security: Atomic check-and-increment to prevent race condition
+        // Count active builds (not queued/complete/failed)
+        let activeCount = 0;
+        for (const build of this.builds.values()) {
+            if (build.status !== 'complete' && build.status !== 'failed') {
+                activeCount++;
+            }
+        }
+
+        if (activeCount >= config.vm.maxConcurrentBuilds) {
             throw new Error(`Maximum concurrent builds (${config.vm.maxConcurrentBuilds}) reached. Please try again later.`);
         }
 
@@ -50,6 +62,11 @@ class BuildOrchestrator {
 
         this.builds.set(buildId, build);
         this.activeBuildCount++;
+
+        // Security: Enforce memory bounds - remove oldest completed/failed builds if limit exceeded
+        if (this.builds.size > this.MAX_BUILDS_IN_MEMORY) {
+            this.enforceMemoryBounds();
+        }
 
         logger.info(`Build ${buildId} queued`, { config: buildConfig });
 
@@ -341,6 +358,29 @@ class BuildOrchestrator {
      */
     estimateTimestampMinutes(buildConfig) {
         return this.estimateBuildMinutes(buildConfig);
+    }
+
+    /**
+     * Enforce memory bounds by removing oldest completed/failed builds
+     * Security: Prevents unbounded memory growth
+     */
+    enforceMemoryBounds() {
+        // Get completed and failed builds sorted by creation time (oldest first)
+        const finishedBuilds = Array.from(this.builds.entries())
+            .filter(([_, build]) => build.status === 'complete' || build.status === 'failed')
+            .sort((a, b) => new Date(a[1].created) - new Date(b[1].created));
+
+        // Remove oldest builds until we're under the limit
+        const buildsToRemove = this.builds.size - this.MAX_BUILDS_IN_MEMORY + 10; // Remove 10 extra for buffer
+        if (buildsToRemove > 0) {
+            logger.warn(`Memory bounds exceeded (${this.builds.size} builds), removing ${buildsToRemove} oldest builds`);
+
+            for (let i = 0; i < Math.min(buildsToRemove, finishedBuilds.length); i++) {
+                const [buildId] = finishedBuilds[i];
+                this.builds.delete(buildId);
+                logger.info(`Removed old build from memory: ${buildId}`);
+            }
+        }
     }
 
     /**

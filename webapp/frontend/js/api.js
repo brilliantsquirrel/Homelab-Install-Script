@@ -14,6 +14,8 @@ class APIClient {
         const defaultOptions = {
             headers: {
                 'Content-Type': 'application/json',
+                // CSRF Protection: Required for state-changing operations
+                'X-Requested-With': 'XMLHttpRequest',
             },
         };
 
