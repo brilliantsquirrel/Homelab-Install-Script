@@ -1,12 +1,13 @@
 // Google Compute Engine VM Manager
 
-const { InstancesClient } = require('@google-cloud/compute').v1;
+const { InstancesClient, ZoneOperationsClient } = require('@google-cloud/compute').v1;
 const config = require('../config/config');
 const logger = require('./logger');
 
 class VMManager {
     constructor() {
         this.instancesClient = new InstancesClient();
+        this.operationsClient = new ZoneOperationsClient();
         this.projectId = config.gcp.projectId;
         this.zone = config.gcp.zone;
     }
@@ -19,14 +20,26 @@ class VMManager {
      */
     async createBuildVM(buildId, buildConfig) {
         const vmName = `${config.vm.namePrefix}-${buildId.substring(0, 8)}`;
+        const vmLogger = logger.withContext({ buildId, component: 'VMManager', vmName });
 
-        logger.info(`Creating VM for build ${buildId}: ${vmName}`);
+        vmLogger.info('Starting VM creation', {
+            vmName,
+            machineType: config.vm.machineType,
+            zone: this.zone,
+            services: buildConfig.services,
+            models: buildConfig.models
+        });
+
+        const startTime = Date.now();
 
         try {
             // Create startup script
+            vmLogger.debug('Generating startup script');
             const startupScript = this.generateStartupScript(buildId, buildConfig);
+            vmLogger.debug('Startup script generated', { scriptLength: startupScript.length });
 
             // VM configuration
+            vmLogger.debug('Configuring VM instance');
             const instance = {
                 name: vmName,
                 machineType: `zones/${this.zone}/machineTypes/${config.vm.machineType}`,
@@ -100,6 +113,7 @@ class VMManager {
 
             // Add local SSDs if configured
             if (config.vm.localSsdCount > 0) {
+                vmLogger.debug(`Adding ${config.vm.localSsdCount} local SSD(s)`);
                 for (let i = 0; i < config.vm.localSsdCount; i++) {
                     instance.disks.push({
                         type: 'SCRATCH',
@@ -113,21 +127,38 @@ class VMManager {
             }
 
             // Create the VM
+            vmLogger.info('Submitting VM creation request to GCP');
             const [operation] = await this.instancesClient.insert({
                 project: this.projectId,
                 zone: this.zone,
                 instanceResource: instance,
             });
 
-            logger.info(`VM creation initiated for ${vmName}, operation: ${operation.name}`);
+            vmLogger.info('VM creation operation initiated', {
+                operationId: operation.name,
+                operationType: operation.operationType
+            });
 
             // Wait for operation to complete
-            await this.waitForOperation(operation.name);
+            vmLogger.info('Waiting for VM creation to complete');
+            await this.waitForOperation(operation.name, buildId);
 
-            logger.info(`VM ${vmName} created successfully`);
+            const duration = Date.now() - startTime;
+            vmLogger.info('VM created successfully', {
+                duration: `${duration}ms`,
+                vmName
+            });
+
+            logger.logPerformance('VM creation', duration, { buildId, vmName });
+
             return vmName;
         } catch (error) {
-            logger.error(`Error creating VM ${vmName}:`, error);
+            const duration = Date.now() - startTime;
+            vmLogger.errorWithContext('Failed to create VM', error, {
+                duration: `${duration}ms`,
+                vmName,
+                buildId
+            });
             throw error;
         }
     }
@@ -271,24 +302,31 @@ ${config.vm.autoCleanup ? 'log "Auto-cleanup enabled, shutting down VM..."\nsudo
     /**
      * Delete VM
      * @param {string} vmName - VM name
+     * @param {string} buildId - Optional build ID for logging context
      */
-    async deleteVM(vmName) {
+    async deleteVM(vmName, buildId = 'unknown') {
+        const vmLogger = logger.withContext({ buildId, component: 'VMManager', vmName });
+
         try {
-            logger.info(`Deleting VM: ${vmName}`);
+            vmLogger.info('Deleting VM');
             const [operation] = await this.instancesClient.delete({
                 project: this.projectId,
                 zone: this.zone,
                 instance: vmName,
             });
 
-            await this.waitForOperation(operation.name);
-            logger.info(`VM ${vmName} deleted successfully`);
+            vmLogger.info('VM deletion operation initiated', {
+                operationId: operation.name
+            });
+
+            await this.waitForOperation(operation.name, buildId);
+            vmLogger.info('VM deleted successfully');
         } catch (error) {
             if (error.code === 404) {
-                logger.info(`VM ${vmName} already deleted`);
+                vmLogger.info('VM already deleted');
                 return;
             }
-            logger.error(`Error deleting VM ${vmName}:`, error);
+            vmLogger.errorWithContext('Error deleting VM', error, { vmName });
             throw error;
         }
     }
@@ -296,27 +334,79 @@ ${config.vm.autoCleanup ? 'log "Auto-cleanup enabled, shutting down VM..."\nsudo
     /**
      * Wait for operation to complete
      */
-    async waitForOperation(operationName, timeout = 300000) {
+    async waitForOperation(operationName, buildId, timeout = 300000) {
+        const opLogger = logger.withContext({
+            buildId,
+            component: 'VMManager',
+            operation: operationName
+        });
+
         const startTime = Date.now();
+        let checkCount = 0;
+
+        opLogger.info('Starting operation polling', {
+            operationName,
+            timeout: `${timeout}ms`
+        });
 
         while (Date.now() - startTime < timeout) {
-            const [operation] = await this.instancesClient.wait({
-                project: this.projectId,
-                zone: this.zone,
-                operation: operationName,
-            });
+            checkCount++;
 
-            if (operation.status === 'DONE') {
-                if (operation.error) {
-                    throw new Error(JSON.stringify(operation.error));
+            try {
+                const [operation] = await this.operationsClient.get({
+                    project: this.projectId,
+                    zone: this.zone,
+                    operation: operationName,
+                });
+
+                const progress = operation.progress || 0;
+                const elapsed = Date.now() - startTime;
+
+                opLogger.debug('Operation status check', {
+                    checkCount,
+                    status: operation.status,
+                    progress: `${progress}%`,
+                    elapsed: `${elapsed}ms`
+                });
+
+                if (operation.status === 'DONE') {
+                    if (operation.error) {
+                        opLogger.error('Operation completed with error', {
+                            error: JSON.stringify(operation.error),
+                            elapsed: `${elapsed}ms`
+                        });
+                        throw new Error(JSON.stringify(operation.error));
+                    }
+
+                    opLogger.info('Operation completed successfully', {
+                        elapsed: `${elapsed}ms`,
+                        checksPerformed: checkCount
+                    });
+
+                    return operation;
                 }
-                return operation;
-            }
 
-            await new Promise(resolve => setTimeout(resolve, 2000));
+                await new Promise(resolve => setTimeout(resolve, 2000));
+            } catch (error) {
+                if (error.code === 5 || error.code === 404) {
+                    // Operation not found yet, retry
+                    opLogger.debug('Operation not found yet, retrying');
+                    await new Promise(resolve => setTimeout(resolve, 2000));
+                    continue;
+                }
+                throw error;
+            }
         }
 
-        throw new Error(`Operation ${operationName} timed out`);
+        const elapsed = Date.now() - startTime;
+        opLogger.error('Operation timed out', {
+            operationName,
+            timeout: `${timeout}ms`,
+            elapsed: `${elapsed}ms`,
+            checksPerformed: checkCount
+        });
+
+        throw new Error(`Operation ${operationName} timed out after ${elapsed}ms`);
     }
 
     /**
