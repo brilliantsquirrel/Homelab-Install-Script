@@ -344,15 +344,26 @@ log "Compressing with xz (high compression for smaller ISO)..."
 sudo rm -f "$SQUASHFS_FILE"
 
 # Create new squashfs with high compression
-sudo mksquashfs "$SQUASHFS_EXTRACT" "$SQUASHFS_FILE" \
+# Show all output (don't filter) to catch any errors
+log "Running mksquashfs (this is verbose but shows progress)..."
+if sudo mksquashfs "$SQUASHFS_EXTRACT" "$SQUASHFS_FILE" \
     -comp xz \
     -Xbcj x86 \
     -b 1M \
     -Xdict-size 1M \
     -no-duplicates \
-    -no-recovery 2>&1 | grep -E "^(Creating|Parallel|Exportable|Data|Metadata|Compression)" || true
-
-success "Squashfs filesystem repacked"
+    -no-recovery; then
+    success "Squashfs filesystem repacked"
+else
+    error "mksquashfs command failed!"
+    error "This usually means:"
+    error "  - Not enough disk space in $WORK_DIR"
+    error "  - File system permission issues"
+    error "  - Corrupted source filesystem"
+    log "Checking disk space..."
+    df -h "$WORK_DIR"
+    exit 1
+fi
 
 # Update filesystem size
 log "Updating filesystem size..."
