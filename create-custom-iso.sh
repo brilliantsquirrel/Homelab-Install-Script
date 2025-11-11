@@ -132,6 +132,32 @@ success "ISO extracted to $ISO_EXTRACT"
 
 # Detect ISO type and locate squashfs filesystem
 log "Detecting ISO type..."
+
+# Check if casper directory exists first
+if [ ! -d "$ISO_EXTRACT/casper" ]; then
+    error "No 'casper' directory found in ISO!"
+    error "ISO structure may be incompatible or extraction failed."
+    log "Checking extracted directories..."
+    ls -la "$ISO_EXTRACT" || true
+    exit 1
+fi
+
+# Try to find any squashfs files
+log "Searching for squashfs files..."
+FOUND_SQUASHFS=$(find "$ISO_EXTRACT/casper" -name "*.squashfs" 2>/dev/null || true)
+
+if [ -z "$FOUND_SQUASHFS" ]; then
+    error "No squashfs files found in $ISO_EXTRACT/casper/"
+    error "This ISO may not be compatible with this script."
+    log "Casper directory contents:"
+    ls -lh "$ISO_EXTRACT/casper/" 2>/dev/null || echo "Directory is empty or inaccessible"
+    exit 1
+fi
+
+log "Found squashfs files:"
+echo "$FOUND_SQUASHFS"
+
+# Detect ISO type based on available squashfs files
 if [ -f "$ISO_EXTRACT/casper/filesystem.squashfs" ]; then
     # Desktop ISO structure
     SQUASHFS_FILE="$ISO_EXTRACT/casper/filesystem.squashfs"
@@ -143,9 +169,11 @@ elif [ -f "$ISO_EXTRACT/casper/ubuntu-server-minimal.ubuntu-server.installer.squ
     ISO_TYPE="Server"
     log "Detected: Ubuntu Server ISO (installer environment)"
 else
-    error "Could not detect ISO type. Available squashfs files:"
-    find "$ISO_EXTRACT/casper" -name "*.squashfs" 2>/dev/null || echo "None found"
-    exit 1
+    # Try to use the first squashfs file found
+    FIRST_SQUASHFS=$(echo "$FOUND_SQUASHFS" | head -n 1)
+    warning "Unknown ISO structure, attempting to use: $(basename "$FIRST_SQUASHFS")"
+    SQUASHFS_FILE="$FIRST_SQUASHFS"
+    ISO_TYPE="Unknown"
 fi
 
 success "Using squashfs: $(basename "$SQUASHFS_FILE")"
