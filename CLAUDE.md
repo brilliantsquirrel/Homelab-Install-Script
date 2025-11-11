@@ -831,6 +831,22 @@ All Ollama model metadata is defined in `backend/config/config.js`:
 
 ### Recent Changes and Bug Fixes
 
+**2025-11-11: Enhanced Logging System**
+- **Feature:** Comprehensive logging with context tracking and performance metrics
+- **Enhancements:**
+  - Request ID tracking across all components (format: `[req:12345678]`)
+  - Build ID context in all build-related operations (format: `[build:12345678]`)
+  - Component-based logging (format: `[VMManager]`, `[BuildOrchestrator]`)
+  - Performance metrics for VM operations and API requests
+  - Slow request detection (>1000ms) with warnings
+  - Structured error logging with stack traces and context
+  - Log rotation (10MB max, multiple files)
+  - Request/response logging middleware
+  - Detailed VM operation polling with progress updates
+- **Files added:** `webapp/backend/middleware/request-logger.js`
+- **Files modified:** `webapp/backend/lib/logger.js`, `webapp/backend/lib/vm-manager.js`, `webapp/backend/server.js`
+- **Log format example:** `2025-11-11 14:23:45.123 [info] [req:a1b2c3d4] [build:e5f6g7h8] [VMManager]: VM created successfully {"duration":"45230ms","vmName":"iso-builder-e5f6g7h8"}`
+
 **2025-11-11: VM Manager API Fix**
 - **Issue:** Runtime error "this.instancesClient.wait is not a function" when creating VMs
 - **Root cause:** InstancesClient doesn't have a wait() method in @google-cloud/compute library
@@ -871,6 +887,35 @@ The ISO Builder Webapp builds custom ISOs that, when installed, will run the mai
 **Benefit:** First boot is much faster because Docker images and AI models don't need to be downloaded from the internet.
 
 ### Troubleshooting
+
+**Viewing Logs:**
+```bash
+# View real-time logs from Cloud Run
+gcloud run services logs tail iso-builder --region us-west1 --project cloud-ai-server
+
+# View logs for specific request (using request ID from error)
+gcloud run services logs read iso-builder --region us-west1 --project cloud-ai-server --filter="req:a1b2c3d4"
+
+# View logs for specific build
+gcloud run services logs read iso-builder --region us-west1 --project cloud-ai-server --filter="build:e5f6g7h8"
+
+# View only errors
+gcloud run services logs read iso-builder --region us-west1 --project cloud-ai-server --filter="severity>=ERROR"
+
+# View performance logs (slow requests)
+gcloud run services logs read iso-builder --region us-west1 --project cloud-ai-server --filter="Slow request detected"
+
+# View VM operation logs
+gcloud run services logs read iso-builder --region us-west1 --project cloud-ai-server --filter="VMManager"
+```
+
+**Log Format:**
+Logs include context identifiers for easy filtering:
+- `[req:12345678]` - Request ID (first 8 chars of UUID)
+- `[build:12345678]` - Build ID (first 8 chars)
+- `[VMManager]`, `[BuildOrchestrator]` - Component name
+- Timestamps include milliseconds for precise timing
+- Performance metrics show operation duration
 
 **Webapp deployment fails:**
 ```bash
