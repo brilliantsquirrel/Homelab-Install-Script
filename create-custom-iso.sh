@@ -164,6 +164,30 @@ success "Squashfs extracted to $SQUASHFS_EXTRACT"
 # Step 3: Customize the filesystem
 header "Step 3: Customizing the filesystem"
 
+# Check if REPO_DIR is on a gcsfuse mount and copy to local disk if needed
+# This is necessary because sudo rsync can't access user-mounted FUSE filesystems
+HOMELAB_SOURCE="$REPO_DIR"
+if mountpoint -q "$REPO_DIR" 2>/dev/null || df -T "$REPO_DIR" 2>/dev/null | grep -q "fuse"; then
+    warning "Repository is on a FUSE/gcsfuse filesystem - copying to local disk first"
+    log "This avoids permission issues with sudo rsync accessing user-mounted FUSE"
+
+    HOMELAB_SOURCE="$WORK_DIR/homelab-source"
+    mkdir -p "$HOMELAB_SOURCE"
+
+    log "Copying repository to local disk (this may take a minute)..."
+    # Run as regular user (not sudo) to access gcsfuse mount
+    rsync -rl --no-times --no-perms \
+        --exclude='iso-artifacts' \
+        --exclude='iso-build' \
+        --exclude='.git' \
+        --exclude='.github' \
+        "$REPO_DIR/" "$HOMELAB_SOURCE/" || {
+        error "Failed to copy repository from gcsfuse mount"
+        exit 1
+    }
+    success "Repository copied to local disk: $HOMELAB_SOURCE"
+fi
+
 log "Copying homelab scripts..."
 sudo mkdir -p "$SQUASHFS_EXTRACT/opt/homelab"
 
@@ -175,7 +199,7 @@ sudo rsync -rl --no-times \
     --exclude='iso-build' \
     --exclude='.git' \
     --exclude='.github' \
-    "$REPO_DIR/" "$SQUASHFS_EXTRACT/opt/homelab/" || {
+    "$HOMELAB_SOURCE/" "$SQUASHFS_EXTRACT/opt/homelab/" || {
     error "Failed to copy homelab scripts"
     exit 1
 }
