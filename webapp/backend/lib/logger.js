@@ -48,8 +48,9 @@ const logger = winston.createLogger({
     ],
 });
 
-// If in production, also log to file
-if (config.env === 'production') {
+// If in production and not in Cloud Run/serverless environment, log to file
+// Cloud Run/App Engine capture console output automatically
+if (config.env === 'production' && !process.env.K_SERVICE) {
     logger.add(new winston.transports.File({
         filename: 'logs/error.log',
         level: 'error',
