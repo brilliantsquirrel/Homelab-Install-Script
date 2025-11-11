@@ -21,14 +21,30 @@ class APIClient {
 
         try {
             const response = await fetch(url, config);
-            const data = await response.json();
+
+            // Check Content-Type to determine how to parse response
+            const contentType = response.headers.get('content-type');
+            let data;
+
+            if (contentType && contentType.includes('application/json')) {
+                data = await response.json();
+            } else {
+                // Handle plain text responses (like rate limit errors)
+                const text = await response.text();
+                data = { error: text, message: text };
+            }
 
             if (!response.ok) {
-                throw new Error(data.error || `HTTP ${response.status}: ${response.statusText}`);
+                throw new Error(data.error || data.message || `HTTP ${response.status}: ${response.statusText}`);
             }
 
             return data;
         } catch (error) {
+            // If error is from JSON parsing, provide better message
+            if (error instanceof SyntaxError) {
+                console.error('Failed to parse API response:', error);
+                throw new Error('Invalid response from server. Please try again.');
+            }
             console.error('API request failed:', error);
             throw error;
         }
