@@ -37,6 +37,9 @@ volumes/
 logs/
 *.log
 
+# Webapp logs
+webapp/backend/logs/
+
 # IDE and editor files
 .vscode/
 .idea/

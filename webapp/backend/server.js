@@ -10,6 +10,7 @@ const rateLimit = require('express-rate-limit');
 
 const config = require('./config/config');
 const logger = require('./lib/logger');
+const requestLogger = require('./middleware/request-logger');
 
 // Import routes
 const buildRoutes = require('./routes/build');
@@ -34,6 +35,9 @@ app.use(cors({
 app.use(compression());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Request logging with context tracking
+app.use(requestLogger);
 
 // Logging
 if (config.env === 'development') {
