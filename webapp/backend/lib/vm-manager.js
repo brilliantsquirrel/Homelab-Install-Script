@@ -268,7 +268,7 @@ log "Uploading ISO to downloads bucket..."
 ISO_FILE="iso-artifacts/ubuntu-24.04.3-homelab-amd64.iso"
 if [ -f "$ISO_FILE" ]; then
     # Construct output name safely (ISO_NAME already validated by jq)
-    ISO_OUTPUT_NAME="${ISO_NAME}-${buildIdShort}.iso"
+    ISO_OUTPUT_NAME="\${ISO_NAME}-${buildIdShort}.iso"
     gsutil -m cp "$ISO_FILE" "gs://$DOWNLOADS_BUCKET/$ISO_OUTPUT_NAME"
     log "ISO uploaded successfully: $ISO_OUTPUT_NAME"
 
