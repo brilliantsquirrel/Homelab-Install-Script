@@ -272,35 +272,39 @@ header "Step 3: Creating VM Instance"
 log "Creating VM: $VM_NAME"
 log "This may take several minutes..."
 
-# Build the gcloud command
-GCLOUD_CMD="gcloud compute instances create \"$VM_NAME\" \
-    --project=\"$PROJECT_ID\" \
-    --zone=\"$ZONE\" \
-    --machine-type=\"$MACHINE_TYPE\" \
-    --network-interface=network-tier=PREMIUM,stack-type=IPV4_ONLY,subnet=default \
-    --maintenance-policy=MIGRATE \
-    --provisioning-model=STANDARD \
-    --scopes=https://www.googleapis.com/auth/devstorage.read_write,https://www.googleapis.com/auth/logging.write,https://www.googleapis.com/auth/monitoring.write,https://www.googleapis.com/auth/servicecontrol,https://www.googleapis.com/auth/service.management.readonly,https://www.googleapis.com/auth/trace.append \
-    --create-disk=auto-delete=yes,boot=yes,device-name=\"$VM_NAME\",image=projects/$IMAGE_PROJECT/global/images/family/$IMAGE_FAMILY,mode=rw,size=$BOOT_DISK_SIZE,type=pd-ssd"
+# Build the gcloud command as an array (safe from command injection)
+GCLOUD_CMD=(
+    gcloud compute instances create "$VM_NAME"
+    --project="$PROJECT_ID"
+    --zone="$ZONE"
+    --machine-type="$MACHINE_TYPE"
+    --network-interface=network-tier=PREMIUM,stack-type=IPV4_ONLY,subnet=default
+    --maintenance-policy=MIGRATE
+    --provisioning-model=STANDARD
+    --scopes=https://www.googleapis.com/auth/devstorage.read_write,https://www.googleapis.com/auth/logging.write,https://www.googleapis.com/auth/monitoring.write,https://www.googleapis.com/auth/servicecontrol,https://www.googleapis.com/auth/service.management.readonly,https://www.googleapis.com/auth/trace.append
+    --create-disk=auto-delete=yes,boot=yes,device-name="$VM_NAME",image=projects/$IMAGE_PROJECT/global/images/family/$IMAGE_FAMILY,mode=rw,size=$BOOT_DISK_SIZE,type=pd-ssd
+)
 
 # Add local SSDs if requested
 if [ "$LOCAL_SSD_COUNT" -gt 0 ]; then
     log "Adding $LOCAL_SSD_COUNT local SSD(s)..."
     for i in $(seq 0 $((LOCAL_SSD_COUNT - 1))); do
-        GCLOUD_CMD="$GCLOUD_CMD --local-ssd=interface=SCSI"
+        GCLOUD_CMD+=(--local-ssd=interface=SCSI)
     done
 fi
 
-GCLOUD_CMD="$GCLOUD_CMD \
-    --no-shielded-secure-boot \
-    --shielded-vtpm \
-    --shielded-integrity-monitoring \
-    --labels=purpose=iso-builder,environment=development \
-    --metadata-from-file=startup-script=/tmp/iso-vm-startup.sh \
-    --metadata=bucket-name=\"$BUCKET_NAME\",local-ssd-count=\"$LOCAL_SSD_COUNT\""
+# Add remaining options
+GCLOUD_CMD+=(
+    --no-shielded-secure-boot
+    --shielded-vtpm
+    --shielded-integrity-monitoring
+    --labels=purpose=iso-builder,environment=development
+    --metadata-from-file=startup-script=/tmp/iso-vm-startup.sh
+    --metadata=bucket-name="$BUCKET_NAME",local-ssd-count="$LOCAL_SSD_COUNT"
+)
 
-# Execute the command
-eval $GCLOUD_CMD
+# Execute the command safely (no eval, no command injection risk)
+"${GCLOUD_CMD[@]}"
 
 success "✓ VM created: $VM_NAME"
 

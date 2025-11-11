@@ -87,7 +87,7 @@ services:
       - ollama_data:/root/.ollama
     environment:
       - TZ=UTC
-      - OLLAMA_API_KEY=${OLLAMA_API_KEY:-changeme}
+      - OLLAMA_API_KEY=${OLLAMA_API_KEY:?OLLAMA_API_KEY environment variable is required}
     # Uncomment the following line for GPU support (NVIDIA CUDA)
     # runtime: nvidia
     # deploy:
@@ -117,9 +117,9 @@ services:
       - openwebui_data:/app/backend/data
     environment:
       - OLLAMA_BASE_URL=http://ollama:11434
-      - OLLAMA_API_KEY=${OLLAMA_API_KEY:-changeme}
+      - OLLAMA_API_KEY=${OLLAMA_API_KEY:?OLLAMA_API_KEY environment variable is required}
       - TZ=UTC
-      - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY:-changeme}
+      - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY:?WEBUI_SECRET_KEY environment variable is required}
     depends_on:
       - ollama
     networks:
@@ -131,7 +131,7 @@ services:
     restart: unless-stopped
     environment:
       - OLLAMA_BASE_URL=http://ollama:11434
-      - LANGCHAIN_API_KEY=${LANGCHAIN_API_KEY:-changeme}
+      - LANGCHAIN_API_KEY=${LANGCHAIN_API_KEY:?LANGCHAIN_API_KEY environment variable is required}
       - TZ=UTC
     depends_on:
       - ollama
@@ -146,7 +146,7 @@ services:
       - langflow_data:/root/.langflow
     environment:
       - OLLAMA_BASE_URL=http://ollama:11434
-      - LANGFLOW_API_KEY=${LANGFLOW_API_KEY:-changeme}
+      - LANGFLOW_API_KEY=${LANGFLOW_API_KEY:?LANGFLOW_API_KEY environment variable is required}
       - TZ=UTC
     depends_on:
       - ollama
@@ -173,7 +173,7 @@ services:
       - TZ=UTC
       - POSTGRES_DB=langgraph
       - POSTGRES_USER=langgraph
-      - POSTGRES_PASSWORD=${LANGGRAPH_DB_PASSWORD:-changeme}
+      - POSTGRES_PASSWORD=${LANGGRAPH_DB_PASSWORD:?LANGGRAPH_DB_PASSWORD environment variable is required}
     networks:
       - homelab_network
 
@@ -184,8 +184,8 @@ services:
     environment:
       - TZ=UTC
       - REDIS_URI=redis://langgraph-redis:6379
-      - POSTGRES_URI=postgres://langgraph:${LANGGRAPH_DB_PASSWORD:-changeme}@langgraph-db:5432/langgraph
-      - LANGSMITH_API_KEY=${LANGGRAPH_API_KEY:-changeme}
+      - POSTGRES_URI=postgres://langgraph:${LANGGRAPH_DB_PASSWORD:?LANGGRAPH_DB_PASSWORD environment variable is required}@langgraph-db:5432/langgraph
+      - LANGSMITH_API_KEY=${LANGGRAPH_API_KEY:?LANGGRAPH_API_KEY environment variable is required}
       - OLLAMA_BASE_URL=http://ollama:11434
     depends_on:
       - ollama
@@ -206,7 +206,7 @@ services:
       - N8N_PROTOCOL=http
       - N8N_HOST=0.0.0.0
       - N8N_PORT=5678
-      - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY:-changeme-min-32-chars-required-!!}
+      - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY:?N8N_ENCRYPTION_KEY environment variable is required (min 32 chars)}
       - TZ=UTC
       - OLLAMA_BASE_URL=http://ollama:11434
     depends_on:
@@ -223,7 +223,7 @@ services:
       - ./qdrant_config.yaml:/qdrant/config/config.yaml:ro
     environment:
       - TZ=UTC
-      - QDRANT_API_KEY=${QDRANT_API_KEY:-changeme}
+      - QDRANT_API_KEY=${QDRANT_API_KEY:?QDRANT_API_KEY environment variable is required}
       - QDRANT_HTTP_PORT=6333
       - QDRANT_GRPC_PORT=6334
     # Security: Use 'expose' instead of 'ports' - only accessible via nginx reverse proxy
@@ -232,7 +232,8 @@ services:
       - "6333"
       - "6334"
     healthcheck:
-      test: ["CMD", "curl", "-f", "-H", "api-key: ${QDRANT_API_KEY:-changeme}", "http://localhost:6333/health"]
+      # Security: Use internal health endpoint without API key to avoid exposing key in logs
+      test: ["CMD", "curl", "-f", "http://localhost:6333/"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -264,8 +265,8 @@ services:
       - hoarder_data:/data
     environment:
       - TZ=UTC
-      - HOARDER_SECRET_KEY=${HOARDER_SECRET_KEY:-changeme}
-      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET:-changeme}
+      - HOARDER_SECRET_KEY=${HOARDER_SECRET_KEY:?HOARDER_SECRET_KEY environment variable is required}
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET:?NEXTAUTH_SECRET environment variable is required}
       - NEXTAUTH_URL=https://${SERVER_HOSTNAME:-homelab.local}/hoarder
     expose:
       - "3000"
@@ -315,7 +316,7 @@ services:
       - TZ=UTC
       - POSTGRES_DB=nextcloud
       - POSTGRES_USER=nextcloud
-      - POSTGRES_PASSWORD=${NEXTCLOUD_DB_PASSWORD:-changeme}
+      - POSTGRES_PASSWORD=${NEXTCLOUD_DB_PASSWORD:?NEXTCLOUD_DB_PASSWORD environment variable is required}
     networks:
       - homelab_network
 
@@ -339,7 +340,7 @@ services:
       - POSTGRES_HOST=nextcloud-db
       - POSTGRES_DB=nextcloud
       - POSTGRES_USER=nextcloud
-      - POSTGRES_PASSWORD=${NEXTCLOUD_DB_PASSWORD:-changeme}
+      - POSTGRES_PASSWORD=${NEXTCLOUD_DB_PASSWORD:?NEXTCLOUD_DB_PASSWORD environment variable is required}
       - REDIS_HOST=nextcloud-redis
       - NEXTCLOUD_TRUSTED_DOMAINS=${SERVER_HOSTNAME:-homelab.local}
       - OVERWRITEPROTOCOL=https
@@ -364,7 +365,7 @@ services:
       - ./pihole-custom-dns.conf:/etc/dnsmasq.d/02-custom-dns.conf:ro
     environment:
       - TZ=UTC
-      - WEBPASSWORD=${PIHOLE_PASSWORD:-changeme}
+      - WEBPASSWORD=${PIHOLE_PASSWORD:?PIHOLE_PASSWORD environment variable is required}
       - VIRTUAL_HOST=${SERVER_HOSTNAME:-homelab.local}
       - PROXY_LOCATION=pihole
       - FTLCONF_LOCAL_IPV4=${SERVER_IP:-}

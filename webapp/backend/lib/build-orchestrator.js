@@ -12,6 +12,10 @@ class BuildOrchestrator {
         this.builds = new Map();
         this.activeBuildCount = 0;
 
+        // Security: Maximum number of builds to keep in memory
+        // Prevents unbounded memory growth from accumulating build history
+        this.MAX_BUILDS_IN_MEMORY = 1000;
+
         // Start periodic cleanup
         this.startPeriodicCleanup();
     }
@@ -25,8 +29,16 @@ class BuildOrchestrator {
         // Validate configuration
         this.validateBuildConfig(buildConfig);
 
-        // Check concurrent build limit
-        if (this.activeBuildCount >= config.vm.maxConcurrentBuilds) {
+        // Security: Atomic check-and-increment to prevent race condition
+        // Count active builds (not queued/complete/failed)
+        let activeCount = 0;
+        for (const build of this.builds.values()) {
+            if (build.status !== 'complete' && build.status !== 'failed') {
+                activeCount++;
+            }
+        }
+
+        if (activeCount >= config.vm.maxConcurrentBuilds) {
             throw new Error(`Maximum concurrent builds (${config.vm.maxConcurrentBuilds}) reached. Please try again later.`);
         }
 
@@ -50,6 +62,11 @@ class BuildOrchestrator {
 
         this.builds.set(buildId, build);
         this.activeBuildCount++;
+
+        // Security: Enforce memory bounds - remove oldest completed/failed builds if limit exceeded
+        if (this.builds.size > this.MAX_BUILDS_IN_MEMORY) {
+            this.enforceMemoryBounds();
+        }
 
         logger.info(`Build ${buildId} queued`, { config: buildConfig });
 
@@ -151,7 +168,9 @@ class BuildOrchestrator {
             // Check if VM has shut down (indicates completion)
             if (vmStatus.status === 'TERMINATED' || vmStatus.status === 'STOPPED') {
                 // Build completed, check for ISO
-                const isoFilename = `${build.config.iso_name || 'ubuntu-24.04.3-homelab-custom'}-${buildId.substring(0, 8)}.iso`;
+                // Security: Bounds checking for buildId substring
+                const buildIdShort = buildId.length >= 8 ? buildId.substring(0, 8) : buildId;
+                const isoFilename = `${build.config.iso_name || 'ubuntu-24.04.3-homelab-custom'}-${buildIdShort}.iso`;
                 const exists = await gcsManager.isoExists(isoFilename);
 
                 if (exists) {
@@ -269,8 +288,26 @@ class BuildOrchestrator {
         }
 
         // Validate ISO name (alphanumeric, periods, hyphens, underscores only)
-        if (iso_name && !/^[a-zA-Z0-9._-]+$/.test(iso_name)) {
-            throw new Error('Invalid ISO name. Use only alphanumeric characters, periods, hyphens, and underscores.');
+        if (iso_name) {
+            // Check character whitelist
+            if (!/^[a-zA-Z0-9._-]+$/.test(iso_name)) {
+                throw new Error('Invalid ISO name. Use only alphanumeric characters, periods, hyphens, and underscores.');
+            }
+
+            // Check for path traversal patterns
+            if (iso_name.includes('..') || iso_name.includes('/') || iso_name.includes('\\')) {
+                throw new Error('Invalid ISO name. Path traversal patterns not allowed.');
+            }
+
+            // Check length (max 255 characters for filesystem compatibility)
+            if (iso_name.length > 255) {
+                throw new Error('Invalid ISO name. Maximum length is 255 characters.');
+            }
+
+            // Check for leading/trailing periods or hyphens (filesystem edge cases)
+            if (/^[.-]|[.-]$/.test(iso_name)) {
+                throw new Error('Invalid ISO name. Cannot start or end with period or hyphen.');
+            }
         }
     }
 
@@ -323,6 +360,29 @@ class BuildOrchestrator {
      */
     estimateTimestampMinutes(buildConfig) {
         return this.estimateBuildMinutes(buildConfig);
+    }
+
+    /**
+     * Enforce memory bounds by removing oldest completed/failed builds
+     * Security: Prevents unbounded memory growth
+     */
+    enforceMemoryBounds() {
+        // Get completed and failed builds sorted by creation time (oldest first)
+        const finishedBuilds = Array.from(this.builds.entries())
+            .filter(([_, build]) => build.status === 'complete' || build.status === 'failed')
+            .sort((a, b) => new Date(a[1].created) - new Date(b[1].created));
+
+        // Remove oldest builds until we're under the limit
+        const buildsToRemove = this.builds.size - this.MAX_BUILDS_IN_MEMORY + 10; // Remove 10 extra for buffer
+        if (buildsToRemove > 0) {
+            logger.warn(`Memory bounds exceeded (${this.builds.size} builds), removing ${buildsToRemove} oldest builds`);
+
+            for (let i = 0; i < Math.min(buildsToRemove, finishedBuilds.length); i++) {
+                const [buildId] = finishedBuilds[i];
+                this.builds.delete(buildId);
+                logger.info(`Removed old build from memory: ${buildId}`);
+            }
+        }
     }
 
     /**

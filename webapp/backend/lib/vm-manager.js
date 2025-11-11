@@ -19,7 +19,9 @@ class VMManager {
      * @returns {string} VM name
      */
     async createBuildVM(buildId, buildConfig) {
-        const vmName = `${config.vm.namePrefix}-${buildId.substring(0, 8)}`;
+        // Security: Bounds checking for buildId substring
+        const buildIdShort = buildId.length >= 8 ? buildId.substring(0, 8) : buildId;
+        const vmName = `${config.vm.namePrefix}-${buildIdShort}`;
         const vmLogger = logger.withContext({ buildId, component: 'VMManager', vmName });
 
         vmLogger.info('Starting VM creation', {
@@ -101,7 +103,7 @@ class VMManager {
                 },
                 labels: {
                     'purpose': 'iso-builder',
-                    'build-id': buildId.substring(0, 8),
+                    'build-id': buildIdShort,
                     'environment': config.env,
                 },
                 shieldedInstanceConfig: {
@@ -165,9 +167,15 @@ class VMManager {
 
     /**
      * Generate startup script for VM
+     * Security: Uses JSON-encoded build config from metadata instead of direct interpolation
      */
     generateStartupScript(buildId, buildConfig) {
-        const { services, models, gpu_enabled, iso_name } = buildConfig;
+        // Build config is passed as JSON in instance metadata (line 98)
+        // We'll parse it in the script instead of interpolating values directly
+        // This prevents command injection from malicious service/model names or ISO names
+
+        // Security: Bounds checking for buildId substring
+        const buildIdShort = buildId.length >= 8 ? buildId.substring(0, 8) : buildId;
 
         return `#!/bin/bash
 # Startup script for ISO build VM
@@ -190,11 +198,11 @@ export DEBIAN_FRONTEND=noninteractive
 apt-get update
 apt-get upgrade -y
 
-# Install dependencies
+# Install dependencies (includes jq for JSON parsing)
 log "Installing build dependencies..."
 apt-get install -y \\
     git rsync curl wget gnupg lsb-release ca-certificates \\
-    software-properties-common fuse pigz pv xorriso squashfs-tools
+    software-properties-common fuse pigz pv xorriso squashfs-tools jq
 
 # Install gcsfuse
 log "Installing gcsfuse..."
@@ -231,12 +239,22 @@ cd /root
 git clone https://github.com/brilliantsquirrel/Homelab-Install-Script.git
 cd Homelab-Install-Script
 
-# Set build configuration
-export SELECTED_SERVICES="${services.join(',')}"
-export SELECTED_MODELS="${models.join(',')}"
-export GPU_ENABLED="${gpu_enabled ? 'true' : 'false'}"
-export ISO_NAME="${iso_name || 'ubuntu-24.04.3-homelab-custom'}"
+# Parse build configuration from instance metadata (secure, no command injection risk)
+log "Loading build configuration from metadata..."
+BUILD_CONFIG_JSON=$(curl -s "http://metadata.google.internal/computeMetadata/v1/instance/attributes/build-config" -H "Metadata-Flavor: Google")
+
+# Extract values safely using jq
+export SELECTED_SERVICES=$(echo "$BUILD_CONFIG_JSON" | jq -r '.services | join(",")')
+export SELECTED_MODELS=$(echo "$BUILD_CONFIG_JSON" | jq -r '.models | join(",")')
+export GPU_ENABLED=$(echo "$BUILD_CONFIG_JSON" | jq -r '.gpu_enabled // false')
+export ISO_NAME=$(echo "$BUILD_CONFIG_JSON" | jq -r '.iso_name // "ubuntu-24.04.3-homelab-custom"')
 export GCS_BUCKET="gs://$ARTIFACTS_BUCKET"
+
+log "Build configuration loaded:"
+log "  Services: $SELECTED_SERVICES"
+log "  Models: $SELECTED_MODELS"
+log "  GPU: $GPU_ENABLED"
+log "  ISO Name: $ISO_NAME"
 
 # Run build scripts
 log "Running iso-prepare-dynamic.sh..."
@@ -249,7 +267,8 @@ bash create-custom-iso.sh
 log "Uploading ISO to downloads bucket..."
 ISO_FILE="iso-artifacts/ubuntu-24.04.3-homelab-amd64.iso"
 if [ -f "$ISO_FILE" ]; then
-    ISO_OUTPUT_NAME="${iso_name || 'ubuntu-24.04.3-homelab-custom'}-${buildId.substring(0, 8)}.iso"
+    # Construct output name safely (ISO_NAME already validated by jq)
+    ISO_OUTPUT_NAME="${ISO_NAME}-${buildIdShort}.iso"
     gsutil -m cp "$ISO_FILE" "gs://$DOWNLOADS_BUCKET/$ISO_OUTPUT_NAME"
     log "ISO uploaded successfully: $ISO_OUTPUT_NAME"
 

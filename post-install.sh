@@ -145,9 +145,14 @@ setup_environment() {
     log "Generated 13 secure API keys and passwords"
     echo ""
 
-    # Copy template
+    # Set restrictive umask before creating file (prevents race condition)
+    # This ensures .env is created with 600 permissions from the start
+    local old_umask=$(umask)
+    umask 077
+
+    # Copy template (will inherit restrictive permissions from umask)
     cp .env.example .env
-    debug "Copied .env from .env.example"
+    debug "Copied .env from .env.example with secure permissions (600)"
 
     # Replace values in .env
     sed -i "s|^OLLAMA_API_KEY=.*|OLLAMA_API_KEY=$OLLAMA_API_KEY|" .env
@@ -166,7 +171,10 @@ setup_environment() {
 
     debug "Replaced all API keys and passwords in .env"
 
-    # Set restrictive permissions
+    # Restore original umask
+    umask "$old_umask"
+
+    # Verify permissions (defense in depth)
     chmod 600 .env
     log ".env file created with auto-generated keys (permissions: 600)"
 
@@ -182,16 +190,55 @@ setup_environment() {
         # Trim whitespace
         n8n_email=$(echo "$n8n_email" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
 
-        # Validate email format
+        # Security: Length validation (RFC 5321: max 254 chars for email)
+        if [ ${#n8n_email} -gt 254 ]; then
+            error "Email too long. Maximum 254 characters allowed."
+            n8n_email=""
+            continue
+        fi
+
+        # Security: Check for header injection patterns (newlines, carriage returns)
+        if [[ "$n8n_email" =~ [$'\n\r'] ]]; then
+            error "Invalid email: contains prohibited characters."
+            n8n_email=""
+            continue
+        fi
+
+        # Security: Check for dangerous shell metacharacters
+        if [[ "$n8n_email" =~ [\;\|\&\$\`\\] ]]; then
+            error "Invalid email: contains prohibited characters."
+            n8n_email=""
+            continue
+        fi
+
+        # Security: Check for path traversal patterns
+        if [[ "$n8n_email" == *".."* ]]; then
+            error "Invalid email: contains prohibited patterns."
+            n8n_email=""
+            continue
+        fi
+
+        # Validate email format (stricter regex)
         if ! [[ "$n8n_email" =~ ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]]; then
             error "Invalid email format. Please try again."
             n8n_email=""
             continue
         fi
+
+        # Security: Validate local part and domain lengths (RFC 5321)
+        local local_part="${n8n_email%%@*}"
+        local domain_part="${n8n_email#*@}"
+        if [ ${#local_part} -gt 64 ] || [ ${#domain_part} -gt 253 ]; then
+            error "Invalid email: local part (max 64 chars) or domain (max 253 chars) too long."
+            n8n_email=""
+            continue
+        fi
     done
 
-    # Update N8N_ADMIN_EMAIL
-    sed -i "s|^N8N_ADMIN_EMAIL=.*|N8N_ADMIN_EMAIL=$n8n_email|" .env
+    # Security: Update N8N_ADMIN_EMAIL safely (escape special sed characters)
+    # Use a different delimiter (|) and escape any | characters in the email
+    local escaped_email="${n8n_email//|/\\|}"
+    sed -i "s|^N8N_ADMIN_EMAIL=.*|N8N_ADMIN_EMAIL=$escaped_email|" .env
     log "N8N_ADMIN_EMAIL configured"
 
     echo ""

@@ -222,8 +222,13 @@ header "Step 6: Deploying to Cloud Run"
 
 log "This will take 5-10 minutes..."
 
-# Generate random API secret
-API_SECRET=$(openssl rand -hex 32 2>/dev/null || cat /dev/urandom | LC_ALL=C tr -dc 'a-zA-Z0-9' | fold -w 32 | head -n 1)
+# Generate random API secret (require openssl for cryptographic randomness)
+if ! command_exists openssl; then
+    error "openssl is required for generating secure API secrets"
+    error "Please install openssl: apt-get install openssl (Debian/Ubuntu) or brew install openssl (macOS)"
+    exit 1
+fi
+API_SECRET=$(openssl rand -hex 32)
 
 # Step 6a: Build Docker image using Cloud Build
 log "Building Docker image..."

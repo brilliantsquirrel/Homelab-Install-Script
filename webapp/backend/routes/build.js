@@ -12,15 +12,85 @@ const gcsManager = require('../lib/gcs-manager');
  */
 router.post('/', async (req, res) => {
     try {
+        // Validate input types before processing
+        if (req.body.services !== undefined && !Array.isArray(req.body.services)) {
+            return res.status(400).json({ error: 'services must be an array' });
+        }
+
+        if (req.body.models !== undefined && !Array.isArray(req.body.models)) {
+            return res.status(400).json({ error: 'models must be an array' });
+        }
+
+        if (req.body.gpu_enabled !== undefined && typeof req.body.gpu_enabled !== 'boolean') {
+            return res.status(400).json({ error: 'gpu_enabled must be a boolean' });
+        }
+
+        if (req.body.iso_name !== undefined && typeof req.body.iso_name !== 'string') {
+            return res.status(400).json({ error: 'iso_name must be a string' });
+        }
+
+        if (req.body.email !== undefined && typeof req.body.email !== 'string') {
+            return res.status(400).json({ error: 'email must be a string' });
+        }
+
+        // Security: Validate email if provided
+        if (req.body.email !== undefined && req.body.email.trim() !== '') {
+            const email = req.body.email.trim();
+
+            // Security: Length validation (RFC 5321: max 254 chars)
+            if (email.length > 254) {
+                return res.status(400).json({ error: 'email too long. Maximum 254 characters allowed' });
+            }
+
+            // Security: Check for header injection patterns (newlines, carriage returns)
+            if (/[\r\n]/.test(email)) {
+                return res.status(400).json({ error: 'email contains prohibited characters' });
+            }
+
+            // Security: Check for dangerous characters
+            if (/[;|&$`\\]/.test(email)) {
+                return res.status(400).json({ error: 'email contains prohibited characters' });
+            }
+
+            // Security: Validate email format (RFC 5322 compliant)
+            if (!/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(email)) {
+                return res.status(400).json({ error: 'invalid email format' });
+            }
+
+            // Security: Validate local part and domain lengths (RFC 5321)
+            const [localPart, domainPart] = email.split('@');
+            if (localPart.length > 64 || domainPart.length > 253) {
+                return res.status(400).json({ error: 'email local part (max 64 chars) or domain (max 253 chars) too long' });
+            }
+        }
+
+        // Validate array elements are strings
+        const services = req.body.services || [];
+        const models = req.body.models || [];
+
+        if (services.some(s => typeof s !== 'string' || s.trim() === '')) {
+            return res.status(400).json({ error: 'All services must be non-empty strings' });
+        }
+
+        if (models.some(m => typeof m !== 'string' || m.trim() === '')) {
+            return res.status(400).json({ error: 'All models must be non-empty strings' });
+        }
+
+        // Sanitize strings (trim whitespace)
         const buildConfig = {
-            services: req.body.services || [],
-            models: req.body.models || [],
+            services: services.map(s => s.trim()),
+            models: models.map(m => m.trim()),
             gpu_enabled: req.body.gpu_enabled || false,
-            email: req.body.email,
-            iso_name: req.body.iso_name || 'ubuntu-24.04.3-homelab-custom',
+            email: req.body.email ? req.body.email.trim() : undefined,
+            iso_name: req.body.iso_name ? req.body.iso_name.trim() : 'ubuntu-24.04.3-homelab-custom',
         };
 
-        logger.info('New build request:', buildConfig);
+        // Sanitized config for logging (safe to log now)
+        const sanitizedConfig = {
+            ...buildConfig,
+            email: buildConfig.email ? '***@***' : undefined,
+        };
+        logger.info('New build request:', sanitizedConfig);
 
         const result = await buildOrchestrator.startBuild(buildConfig);
 

@@ -48,6 +48,12 @@ class GCSManager {
         try {
             const file = this.downloadsBucket.file(isoFilename);
 
+            // Security: Check if file exists before generating signed URL
+            const [exists] = await file.exists();
+            if (!exists) {
+                throw new Error(`ISO file not found: ${isoFilename}`);
+            }
+
             const [url] = await file.getSignedUrl({
                 version: 'v4',
                 action: 'read',

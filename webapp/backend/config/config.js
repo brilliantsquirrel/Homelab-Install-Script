@@ -52,8 +52,36 @@ module.exports = {
 
     // Security
     security: {
-        apiSecretKey: process.env.API_SECRET_KEY || 'change-me-in-production',
-        corsOrigins: process.env.CORS_ORIGINS ? process.env.CORS_ORIGINS.split(',') : ['*'],
+        apiSecretKey: (() => {
+            const key = process.env.API_SECRET_KEY;
+            if (!key || key === 'change-me-in-production') {
+                throw new Error(
+                    'SECURITY ERROR: API_SECRET_KEY environment variable must be set to a secure random value. ' +
+                    'Generate one with: openssl rand -hex 32'
+                );
+            }
+            if (key.length < 32) {
+                throw new Error(
+                    'SECURITY ERROR: API_SECRET_KEY must be at least 32 characters long. ' +
+                    'Generate one with: openssl rand -hex 32'
+                );
+            }
+            return key;
+        })(),
+        corsOrigins: (() => {
+            const origins = process.env.CORS_ORIGINS ? process.env.CORS_ORIGINS.split(',') : null;
+            if (!origins || origins.includes('*')) {
+                if (process.env.NODE_ENV === 'production') {
+                    throw new Error(
+                        'SECURITY ERROR: CORS_ORIGINS must be explicitly set in production (no wildcards). ' +
+                        'Example: CORS_ORIGINS=https://example.com,https://app.example.com'
+                    );
+                }
+                // Allow wildcard in development only
+                return ['*'];
+            }
+            return origins;
+        })(),
     },
 
     // Email notifications (optional)
