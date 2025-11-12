@@ -171,29 +171,74 @@ rsync -rlv --no-times --no-perms --exclude='iso-artifacts' --exclude='.git' "$RE
     warning "⚠ rsync reported errors (expected on gcsfuse)"
     log "Files copied successfully"
 }
+
+# Ensure Python and PyYAML are available
+log "Checking Python dependencies..."
+if ! command -v python3 &> /dev/null; then
+    error "Python3 not found, installing..."
+    sudo apt-get update
+    sudo apt-get install -y python3
+fi
+
+if ! python3 -c "import yaml" 2>/dev/null; then
+    log "Installing PyYAML..."
+    sudo apt-get install -y python3-yaml
+fi
+
 write_status "preparing" 27 "Generating custom docker-compose.yml"
 
 # Generate custom docker-compose.yml with only selected services
 log "Generating custom docker-compose.yml..."
-python3 << PYTHON_EOF
+log "REPO_DIR=$REPO_DIR"
+log "HOMELAB_DIR=$HOMELAB_DIR"
+log "Checking if docker-compose.yml exists..."
+if [ ! -f "$REPO_DIR/docker-compose.yml" ]; then
+    error "docker-compose.yml not found at $REPO_DIR/docker-compose.yml"
+    write_status "failed" 0 "docker-compose.yml not found"
+    exit 1
+fi
+
+REPO_DIR="$REPO_DIR" HOMELAB_DIR="$HOMELAB_DIR" SELECTED_SERVICES="$SELECTED_SERVICES" GPU_ENABLED="${GPU_ENABLED:-false}" python3 << 'PYTHON_EOF'
 import yaml
 import sys
+import os
+
+# Get variables from environment
+repo_dir = os.environ.get('REPO_DIR', '.')
+homelab_dir = os.environ.get('HOMELAB_DIR', './homelab')
+selected_services_str = os.environ.get('SELECTED_SERVICES', '')
+gpu_enabled = os.environ.get('GPU_ENABLED', 'false')
+
+print(f"[DEBUG] repo_dir={repo_dir}")
+print(f"[DEBUG] homelab_dir={homelab_dir}")
+print(f"[DEBUG] selected_services={selected_services_str}")
+print(f"[DEBUG] gpu_enabled={gpu_enabled}")
 
 # Read original docker-compose.yml
-with open('$REPO_DIR/docker-compose.yml', 'r') as f:
-    compose = yaml.safe_load(f)
+compose_path = f"{repo_dir}/docker-compose.yml"
+print(f"[DEBUG] Reading {compose_path}")
 
-selected_services = '${SELECTED_SERVICES}'.split(',')
+try:
+    with open(compose_path, 'r') as f:
+        compose = yaml.safe_load(f)
+except Exception as e:
+    print(f"[ERROR] Failed to read docker-compose.yml: {e}", file=sys.stderr)
+    sys.exit(1)
+
+selected_services = [s.strip() for s in selected_services_str.split(',') if s.strip()]
+print(f"[DEBUG] Selected services: {selected_services}")
 
 # Filter services
 filtered_services = {}
 for service in selected_services:
-    if service in compose['services']:
+    if service in compose.get('services', {}):
         filtered_services[service] = compose['services'][service]
+    else:
+        print(f"[WARNING] Service '{service}' not found in docker-compose.yml")
 
 # Always include dependencies
 def add_dependencies(service_name):
-    service = compose['services'].get(service_name)
+    service = compose.get('services', {}).get(service_name)
     if not service:
         return
 
@@ -201,8 +246,9 @@ def add_dependencies(service_name):
     if 'depends_on' in service:
         for dep in service['depends_on']:
             if dep not in filtered_services:
-                filtered_services[dep] = compose['services'][dep]
-                add_dependencies(dep)
+                if dep in compose['services']:
+                    filtered_services[dep] = compose['services'][dep]
+                    add_dependencies(dep)
 
 for service in list(filtered_services.keys()):
     add_dependencies(service)
@@ -210,18 +256,31 @@ for service in list(filtered_services.keys()):
 compose['services'] = filtered_services
 
 # Enable GPU if requested
-if '${GPU_ENABLED}' == 'true':
+if gpu_enabled == 'true':
     for service_name in ['ollama', 'plex']:
         if service_name in filtered_services:
-            if 'runtime' in compose['services'][service_name]:
+            # Check if runtime field exists in original config
+            if 'runtime' in compose.get('services', {}).get(service_name, {}):
                 filtered_services[service_name]['runtime'] = 'nvidia'
 
 # Write custom docker-compose.yml
-with open('$HOMELAB_DIR/docker-compose.yml', 'w') as f:
-    yaml.dump(compose, f, default_flow_style=False)
+output_path = f"{homelab_dir}/docker-compose.yml"
+print(f"[DEBUG] Writing to {output_path}")
 
-print(f"Generated docker-compose.yml with {len(filtered_services)} services")
+try:
+    with open(output_path, 'w') as f:
+        yaml.dump(compose, f, default_flow_style=False)
+    print(f"Generated docker-compose.yml with {len(filtered_services)} services")
+except Exception as e:
+    print(f"[ERROR] Failed to write docker-compose.yml: {e}", file=sys.stderr)
+    sys.exit(1)
 PYTHON_EOF
+
+if [ $? -ne 0 ]; then
+    error "Failed to generate docker-compose.yml"
+    write_status "failed" 0 "Failed to generate docker-compose.yml"
+    exit 1
+fi
 
 success "✓ Custom docker-compose.yml generated"
 
