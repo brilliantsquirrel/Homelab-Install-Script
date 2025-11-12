@@ -149,6 +149,8 @@ class BuildOrchestrator {
         const build = this.builds.get(buildId);
         const startTime = Date.now();
         const timeoutMs = config.vm.buildTimeout * 60 * 60 * 1000; // hours to ms
+        const buildIdShort = buildId.length >= 8 ? buildId.substring(0, 8) : buildId;
+        const statusFile = `build-status-${buildIdShort}.json`;
 
         while (Date.now() - startTime < timeoutMs) {
             // Check VM status
@@ -157,19 +159,42 @@ class BuildOrchestrator {
                 throw new Error('VM no longer exists');
             }
 
-            // In a real implementation, we would check build status file on VM
-            // For now, simulate progress based on time elapsed
-            const elapsedMinutes = (Date.now() - startTime) / 60000;
-            const estimatedMinutes = this.estimateBuildMinutes(build.config);
+            // Try to read real-time status from GCS
+            let progress = 0;
+            let stage = 'Initializing...';
 
-            let progress = Math.min(95, Math.floor((elapsedMinutes / estimatedMinutes) * 100));
-            let stage = this.getStageForProgress(progress);
+            try {
+                const statusExists = await gcsManager.isoExists(statusFile);
+                if (statusExists) {
+                    // Download and parse status file
+                    const statusData = await gcsManager.downloadStatusFile(statusFile);
+                    if (statusData) {
+                        progress = statusData.progress || 0;
+                        stage = statusData.message || statusData.stage || stage;
 
-            // Check if VM has shut down (indicates completion)
-            if (vmStatus.status === 'TERMINATED' || vmStatus.status === 'STOPPED') {
-                // Build completed, check for ISO
-                // Security: Bounds checking for buildId substring
-                const buildIdShort = buildId.length >= 8 ? buildId.substring(0, 8) : buildId;
+                        // Add status update to logs if it's a new message
+                        const lastLog = build.logs[build.logs.length - 1] || '';
+                        if (!lastLog.includes(stage)) {
+                            this.updateBuildStatus(buildId, {
+                                logs: [...build.logs, `[${statusData.stage}] ${statusData.message}`],
+                            });
+                        }
+
+                        logger.debug(`Build ${buildIdShort} status from GCS: ${progress}% - ${stage}`);
+                    }
+                }
+            } catch (error) {
+                logger.debug(`Could not read status file for build ${buildIdShort}: ${error.message}`);
+                // Fall back to time-based estimation if status file not available yet
+                const elapsedMinutes = (Date.now() - startTime) / 60000;
+                const estimatedMinutes = this.estimateBuildMinutes(build.config);
+                progress = Math.min(85, Math.floor((elapsedMinutes / estimatedMinutes) * 100));
+                stage = this.getStageForProgress(progress);
+            }
+
+            // Check if build status indicates completion
+            if (progress >= 100) {
+                // Build marked as complete in status file
                 const isoFilename = `${build.config.iso_name || 'ubuntu-24.04.3-homelab-custom'}-${buildIdShort}.iso`;
                 const exists = await gcsManager.isoExists(isoFilename);
 
@@ -180,19 +205,88 @@ class BuildOrchestrator {
                         progress: 100,
                         stage: 'Complete',
                         isoFilename,
-                        logs: [...build.logs, 'ISO build completed successfully!'],
+                        logs: [...build.logs, 'ISO build completed and uploaded successfully!'],
                     });
 
                     // Cleanup VM
                     if (config.vm.autoCleanup) {
-                        await vmManager.deleteVM(vmName);
-                        logger.info(`Cleaned up VM ${vmName}`);
+                        try {
+                            await vmManager.deleteVM(vmName, buildId);
+                            logger.info(`Cleaned up VM ${vmName}`);
+                        } catch (error) {
+                            logger.warn(`Failed to cleanup VM ${vmName}: ${error.message}`);
+                        }
+                    }
+
+                    // Cleanup status file
+                    try {
+                        await gcsManager.deleteFile(statusFile);
+                    } catch (error) {
+                        logger.debug(`Could not delete status file: ${error.message}`);
                     }
 
                     this.activeBuildCount--;
                     return;
                 } else {
-                    throw new Error('Build completed but ISO not found in downloads bucket');
+                    // Status says complete but ISO not found - wait a bit for sync
+                    logger.warn(`Build ${buildIdShort} marked complete but ISO not found yet, waiting...`);
+                    await new Promise(resolve => setTimeout(resolve, 5000));
+
+                    // Check again
+                    const existsNow = await gcsManager.isoExists(isoFilename);
+                    if (existsNow) {
+                        this.updateBuildStatus(buildId, {
+                            status: 'complete',
+                            progress: 100,
+                            stage: 'Complete',
+                            isoFilename,
+                            logs: [...build.logs, 'ISO build completed and uploaded successfully!'],
+                        });
+
+                        if (config.vm.autoCleanup) {
+                            await vmManager.deleteVM(vmName, buildId);
+                        }
+
+                        try {
+                            await gcsManager.deleteFile(statusFile);
+                        } catch (error) {
+                            logger.debug(`Could not delete status file: ${error.message}`);
+                        }
+
+                        this.activeBuildCount--;
+                        return;
+                    } else {
+                        throw new Error('Build marked complete but ISO not found in downloads bucket');
+                    }
+                }
+            }
+
+            // Check if VM has shut down unexpectedly (before status showed complete)
+            if (vmStatus.status === 'TERMINATED' || vmStatus.status === 'STOPPED') {
+                // VM stopped - check if build actually completed
+                const isoFilename = `${build.config.iso_name || 'ubuntu-24.04.3-homelab-custom'}-${buildIdShort}.iso`;
+                const exists = await gcsManager.isoExists(isoFilename);
+
+                if (exists) {
+                    // Build successful (VM shut down after completion)
+                    this.updateBuildStatus(buildId, {
+                        status: 'complete',
+                        progress: 100,
+                        stage: 'Complete',
+                        isoFilename,
+                        logs: [...build.logs, 'ISO build completed successfully!'],
+                    });
+
+                    try {
+                        await gcsManager.deleteFile(statusFile);
+                    } catch (error) {
+                        logger.debug(`Could not delete status file: ${error.message}`);
+                    }
+
+                    this.activeBuildCount--;
+                    return;
+                } else {
+                    throw new Error('VM stopped but ISO not found in downloads bucket - build may have failed');
                 }
             }
 
@@ -206,7 +300,7 @@ class BuildOrchestrator {
             await new Promise(resolve => setTimeout(resolve, config.build.pollIntervalMs));
         }
 
-        throw new Error('Build timeout exceeded');
+        throw new Error('Build timeout exceeded (8 hours)');
     }
 
     /**
