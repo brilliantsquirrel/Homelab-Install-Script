@@ -216,18 +216,18 @@ EOF
 }
 
 log "Starting ISO build for build ID: $BUILD_ID"
-write_status "initializing" 5 "Starting VM initialization"
+write_status "initializing" 20 "Starting VM initialization"
 
 # Update system
 log "Updating system packages..."
-write_status "initializing" 10 "Updating system packages"
+write_status "initializing" 24 "Updating system packages"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
 apt-get upgrade -y
 
 # Install dependencies (includes jq for JSON parsing)
 log "Installing build dependencies..."
-write_status "initializing" 15 "Installing build dependencies"
+write_status "initializing" 28 "Installing build dependencies"
 apt-get install -y \\
     git rsync curl wget gnupg lsb-release ca-certificates \\
     software-properties-common fuse pigz pv xorriso squashfs-tools jq bc
@@ -261,7 +261,7 @@ mkdir -p /mnt/downloads
 gcsfuse --implicit-dirs "$ARTIFACTS_BUCKET" /mnt/artifacts
 gcsfuse --implicit-dirs "$DOWNLOADS_BUCKET" /mnt/downloads
 
-write_status "cloning" 20 "Cloning repository"
+write_status "cloning" 33 "Cloning repository"
 
 # Clone repository
 log "Cloning Homelab repository..."
@@ -287,16 +287,16 @@ log "  GPU: $GPU_ENABLED"
 log "  ISO Name: $ISO_NAME"
 
 # Run build scripts
-write_status "downloading" 25 "Downloading dependencies"
+write_status "downloading" 37 "Downloading dependencies"
 log "Running iso-prepare-dynamic.sh..."
 bash webapp/scripts/iso-prepare-dynamic.sh
 
-write_status "building" 60 "Building custom ISO"
+write_status "building" 66 "Building custom ISO"
 log "Running create-custom-iso.sh..."
 bash create-custom-iso.sh
 
 # Upload ISO to downloads bucket with verification
-write_status "uploading" 85 "Uploading ISO to storage"
+write_status "uploading" 87 "Uploading ISO to storage"
 log "Uploading ISO to downloads bucket..."
 ISO_FILE="iso-artifacts/ubuntu-24.04.3-homelab-amd64.iso"
 
@@ -320,7 +320,7 @@ UPLOAD_TARGET="gs://$DOWNLOADS_BUCKET/$ISO_OUTPUT_NAME"
 UPLOAD_SUCCESS=false
 for attempt in {1..3}; do
     log "Upload attempt $attempt/3..."
-    write_status "uploading" $((85 + attempt * 3)) "Uploading ISO (attempt $attempt/3)"
+    write_status "uploading" $((87 + attempt * 3)) "Uploading ISO (attempt $attempt/3)"
 
     if gsutil -m -o "GSUtil:parallel_process_count=4" cp "$ISO_FILE" "$UPLOAD_TARGET" 2>&1 | tee -a "$LOG_FILE"; then
         log "Upload command completed, verifying..."
