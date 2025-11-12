@@ -239,7 +239,7 @@ class HomeLabISOBuilder {
             document.getElementById('vm-name').textContent = 'Creating...';
             document.getElementById('estimated-completion').textContent = 'Calculating...';
             this.clearLogs();
-            this.addLog('Submitting build request...');
+            this.addLog('Submitting build request...', 'progress');
 
             // Start build
             const response = await window.api.startBuild(buildConfig);
@@ -248,8 +248,8 @@ class HomeLabISOBuilder {
 
             // Update UI with build info
             document.getElementById('build-id').textContent = this.buildId;
-            this.addLog(`Build ID: ${this.buildId}`);
-            this.addLog(`Status: ${response.status}`);
+            this.addLog(`Build ID: ${this.buildId}`, 'info');
+            this.addLog(`Status: ${response.status}`, 'success');
 
             if (response.estimated_time_minutes) {
                 const estimatedCompletion = new Date(Date.now() + response.estimated_time_minutes * 60000);
@@ -363,11 +363,68 @@ class HomeLabISOBuilder {
         progressStage.textContent = stage;
     }
 
-    addLog(message) {
+    detectLogType(message) {
+        const lowerMessage = message.toLowerCase();
+
+        // Error patterns
+        if (lowerMessage.includes('error') || lowerMessage.includes('failed') ||
+            lowerMessage.includes('failure') || lowerMessage.startsWith('✗')) {
+            return 'error';
+        }
+
+        // Success patterns
+        if (lowerMessage.includes('success') || lowerMessage.includes('completed') ||
+            lowerMessage.includes('ready') || lowerMessage.startsWith('✓') ||
+            lowerMessage.includes('uploaded successfully')) {
+            return 'success';
+        }
+
+        // Warning patterns
+        if (lowerMessage.includes('warning') || lowerMessage.includes('retry') ||
+            lowerMessage.includes('⚠')) {
+            return 'warning';
+        }
+
+        // Progress patterns
+        if (lowerMessage.includes('downloading') || lowerMessage.includes('building') ||
+            lowerMessage.includes('uploading') || lowerMessage.includes('creating') ||
+            lowerMessage.includes('installing') || lowerMessage.includes('progress') ||
+            lowerMessage.includes('%')) {
+            return 'progress';
+        }
+
+        return 'info';
+    }
+
+    addLog(message, type = null) {
+        // Auto-detect type if not specified
+        if (!type) {
+            type = this.detectLogType(message);
+        }
+
         const logContainer = document.getElementById('log-container');
         const logEntry = document.createElement('div');
-        logEntry.className = 'log-entry';
-        logEntry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+        logEntry.className = `log-entry log-${type}`;
+
+        // Format timestamp with milliseconds for precision
+        const now = new Date();
+        const timestamp = now.toLocaleTimeString('en-US', {
+            hour12: false,
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit'
+        }) + '.' + String(now.getMilliseconds()).padStart(3, '0');
+
+        // Format log entry with type indicator
+        const typeIndicator = {
+            'info': 'ℹ️',
+            'success': '✅',
+            'warning': '⚠️',
+            'error': '❌',
+            'progress': '⏳'
+        }[type] || 'ℹ️';
+
+        logEntry.textContent = `[${timestamp}] ${typeIndicator} ${message}`;
         logContainer.appendChild(logEntry);
 
         // Auto-scroll to bottom
@@ -383,6 +440,30 @@ class HomeLabISOBuilder {
     clearLogs() {
         const logContainer = document.getElementById('log-container');
         logContainer.innerHTML = '';
+    }
+
+    async copyLogs() {
+        const logContainer = document.getElementById('log-container');
+        const logs = Array.from(logContainer.children);
+        const logText = logs.map(log => log.textContent).join('\n');
+
+        try {
+            await navigator.clipboard.writeText(logText);
+
+            // Visual feedback
+            const copyBtn = document.getElementById('copy-logs-btn');
+            const originalText = copyBtn.textContent;
+            copyBtn.textContent = '✅ Copied!';
+            copyBtn.disabled = true;
+
+            setTimeout(() => {
+                copyBtn.textContent = originalText;
+                copyBtn.disabled = false;
+            }, 2000);
+        } catch (err) {
+            console.error('Failed to copy logs:', err);
+            alert('Failed to copy logs to clipboard. Please select and copy manually.');
+        }
     }
 
     showError(title, message) {

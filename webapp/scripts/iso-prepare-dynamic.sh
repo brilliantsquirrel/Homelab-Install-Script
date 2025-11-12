@@ -123,6 +123,9 @@ mkdir -p "$SCRIPTS_DIR"
 
 success "✓ Created: $ISO_DIR"
 
+# Note: Progress values are offset by +20% to account for initial VM creation phase
+# This ensures the progress bar never goes backward (was issue where it went from 20% → 5%)
+
 # ========================================
 # Google Cloud Storage Configuration
 # ========================================
@@ -170,7 +173,7 @@ fi
 header "Copying Homelab Scripts"
 
 log "Copying homelab files..."
-write_status "preparing" 26 "Copying homelab scripts"
+write_status "preparing" 38 "Copying homelab scripts"
 rsync -rlv --no-times --no-perms --exclude='iso-artifacts' --exclude='.git' "$REPO_DIR/" "$HOMELAB_DIR/" || {
     warning "⚠ rsync reported errors (expected on gcsfuse)"
     log "Files copied successfully"
@@ -189,7 +192,7 @@ if ! python3 -c "import yaml" 2>/dev/null; then
     sudo apt-get install -y python3-yaml
 fi
 
-write_status "preparing" 27 "Generating custom docker-compose.yml"
+write_status "preparing" 39 "Generating custom docker-compose.yml"
 
 # Generate custom docker-compose.yml with only selected services
 log "Generating custom docker-compose.yml..."
@@ -294,7 +297,7 @@ success "✓ Custom docker-compose.yml generated"
 
 header "Step 0: Downloading Ubuntu Server 24.04 LTS ISO"
 
-write_status "downloading-ubuntu" 28 "Downloading Ubuntu Server ISO"
+write_status "downloading-ubuntu" 39 "Downloading Ubuntu Server ISO"
 
 UBUNTU_VERSION="24.04.3"
 UBUNTU_ISO_URL="https://releases.ubuntu.com/24.04/ubuntu-${UBUNTU_VERSION}-live-server-amd64.iso"
@@ -304,12 +307,12 @@ UBUNTU_ISO_GCS="iso/ubuntu-${UBUNTU_VERSION}-live-server-amd64.iso"
 # Check if ISO already exists
 if [ -f "$UBUNTU_ISO_FILE" ]; then
     log "Ubuntu Server ISO already downloaded"
-    write_status "downloading-ubuntu" 29 "Ubuntu Server ISO already available"
+    write_status "downloading-ubuntu" 40 "Ubuntu Server ISO already available"
 elif [ "$GCS_ENABLED" = true ] && gsutil -q stat "$GCS_BUCKET/$UBUNTU_ISO_GCS" 2>/dev/null; then
     log "Downloading Ubuntu ISO from GCS..."
     gsutil cp "$GCS_BUCKET/$UBUNTU_ISO_GCS" "$UBUNTU_ISO_FILE"
     success "✓ Downloaded from GCS"
-    write_status "downloading-ubuntu" 29 "Ubuntu Server ISO downloaded from cache"
+    write_status "downloading-ubuntu" 40 "Ubuntu Server ISO downloaded from cache"
 else
     log "Downloading Ubuntu Server ISO from official source..."
     wget -O "$UBUNTU_ISO_FILE" "$UBUNTU_ISO_URL" || {
@@ -318,7 +321,7 @@ else
         exit 1
     }
     success "✓ Downloaded Ubuntu ISO"
-    write_status "downloading-ubuntu" 29 "Ubuntu Server ISO downloaded"
+    write_status "downloading-ubuntu" 40 "Ubuntu Server ISO downloaded"
 fi
 
 # ========================================
@@ -363,10 +366,10 @@ DOCKER_IMAGES=($(printf "%s\n" "${DOCKER_IMAGES[@]}" | sort -u))
 
 log "Downloading ${#DOCKER_IMAGES[@]} Docker images..."
 
-# Calculate progress increment per image (30-55% range for Docker images)
+# Calculate progress increment per image (41-62% range for Docker images)
 TOTAL_IMAGES=${#DOCKER_IMAGES[@]}
-PROGRESS_START=30
-PROGRESS_END=55
+PROGRESS_START=41
+PROGRESS_END=62
 if [ $TOTAL_IMAGES -gt 0 ]; then
     PROGRESS_PER_IMAGE=$(( (PROGRESS_END - PROGRESS_START) / TOTAL_IMAGES ))
 else
@@ -414,7 +417,7 @@ for image in "${DOCKER_IMAGES[@]}"; do
     CURRENT_PROGRESS=$((CURRENT_PROGRESS + PROGRESS_PER_IMAGE))
 done
 
-write_status "downloading-images" 55 "All Docker images downloaded"
+write_status "downloading-images" 62 "All Docker images downloaded"
 success "✓ All Docker images ready"
 
 # ========================================
@@ -424,10 +427,10 @@ success "✓ All Docker images ready"
 if [ ${#MODELS[@]} -gt 0 ]; then
     header "Step 2: Downloading Selected Ollama Models"
 
-    # Calculate progress increment per model (56-59% range for Ollama models)
+    # Calculate progress increment per model (63-66% range for Ollama models)
     TOTAL_MODELS=${#MODELS[@]}
-    PROGRESS_START=56
-    PROGRESS_END=59
+    PROGRESS_START=63
+    PROGRESS_END=66
     if [ $TOTAL_MODELS -gt 0 ]; then
         PROGRESS_PER_MODEL=$(( (PROGRESS_END - PROGRESS_START) / TOTAL_MODELS ))
         if [ $PROGRESS_PER_MODEL -lt 1 ]; then
@@ -494,10 +497,10 @@ if [ ${#MODELS[@]} -gt 0 ]; then
         CURRENT_PROGRESS=$((CURRENT_PROGRESS + PROGRESS_PER_MODEL))
     done
 
-    write_status "downloading-models" 59 "All Ollama models downloaded"
+    write_status "downloading-models" 66 "All Ollama models downloaded"
     success "✓ All Ollama models ready"
 else
-    write_status "downloading-models" 56 "No Ollama models selected, skipping"
+    write_status "downloading-models" 63 "No Ollama models selected, skipping"
     log "No Ollama models selected, skipping model download"
 fi
 
@@ -514,6 +517,6 @@ echo "  - Ollama Models: ${#MODELS[@]}"
 echo "  - GPU Enabled: ${GPU_ENABLED:-false}"
 echo ""
 
-write_status "preparation-complete" 59 "All dependencies downloaded, ready for ISO build"
+write_status "preparation-complete" 66 "All dependencies downloaded, ready for ISO build"
 success "✓ Ready for ISO building"
 log "Next step: Run create-custom-iso.sh to build the ISO"

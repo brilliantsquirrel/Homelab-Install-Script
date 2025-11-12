@@ -353,6 +353,23 @@ header h1 {
     color: var(--text);
 }
 
+.logs-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+}
+
+.logs-header h3 {
+    margin: 0;
+}
+
+.btn-small {
+    padding: 0.4rem 0.8rem;
+    font-size: 0.85rem;
+    cursor: pointer;
+}
+
 .log-container {
     background: #1e293b;
     color: #94a3b8;
@@ -367,10 +384,33 @@ header h1 {
 .log-entry {
     padding: 0.25rem 0;
     border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    line-height: 1.6;
 }
 
 .log-entry:last-child {
     border-bottom: none;
+}
+
+/* Log type styling */
+.log-info {
+    color: #94a3b8;
+}
+
+.log-success {
+    color: #4ade80;
+}
+
+.log-warning {
+    color: #fbbf24;
+}
+
+.log-error {
+    color: #f87171;
+}
+
+.log-progress {
+    color: #60a5fa;
+    font-weight: 500;
 }
 
 /* Completion */
