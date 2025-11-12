@@ -354,13 +354,168 @@ class HomeLabISOBuilder {
     }
 
     updateProgress(percentage, stage) {
-        const progressFill = document.getElementById('progress-fill');
-        const progressPercentage = document.getElementById('progress-percentage');
-        const progressStage = document.getElementById('progress-stage');
+        // Update overall progress
+        const overallProgress = document.getElementById('overall-progress');
+        if (overallProgress) {
+            overallProgress.textContent = `${percentage}%`;
+        }
 
-        progressFill.style.width = `${percentage}%`;
-        progressPercentage.textContent = `${percentage}%`;
-        progressStage.textContent = stage;
+        // Update pipeline stage based on percentage and stage name
+        this.updatePipelineStage(percentage, stage);
+
+        // Update checklist based on stage
+        this.updateChecklist(stage, percentage);
+    }
+
+    updatePipelineStage(percentage, stageName) {
+        // Map stages to pipeline stages
+        const stageMapping = {
+            'queued': 0,
+            'creating': 10,
+            'downloading': 20,
+            'building': 40,
+            'uploading': 80,
+            'complete': 100
+        };
+
+        // Determine which pipeline stage to highlight
+        let currentStage = 'queued';
+        if (percentage >= 80) currentStage = 'uploading';
+        else if (percentage >= 40) currentStage = 'building';
+        else if (percentage >= 20) currentStage = 'downloading';
+        else if (percentage >= 10) currentStage = 'creating-vm';
+
+        if (percentage === 100) currentStage = 'complete';
+
+        // Update pipeline stages
+        const stages = document.querySelectorAll('.pipeline-stage');
+        stages.forEach(stage => {
+            const stageData = stage.getAttribute('data-stage');
+            const statusEl = stage.querySelector('.stage-status');
+
+            // Determine status based on progress
+            if (stageData === currentStage) {
+                stage.classList.add('active');
+                stage.classList.remove('completed');
+                statusEl.textContent = 'in progress';
+            } else if (this.isStageCompleted(stageData, currentStage)) {
+                stage.classList.remove('active');
+                stage.classList.add('completed');
+                statusEl.textContent = 'completed';
+            } else {
+                stage.classList.remove('active', 'completed');
+                statusEl.textContent = 'pending';
+            }
+        });
+
+        // Update connectors
+        const connectors = document.querySelectorAll('.pipeline-connector');
+        connectors.forEach((connector, index) => {
+            if (index < this.getStageIndex(currentStage)) {
+                connector.classList.add('completed');
+            } else {
+                connector.classList.remove('completed');
+            }
+        });
+    }
+
+    isStageCompleted(stage, currentStage) {
+        const stageOrder = ['queued', 'creating-vm', 'downloading', 'building', 'uploading', 'complete'];
+        return stageOrder.indexOf(stage) < stageOrder.indexOf(currentStage);
+    }
+
+    getStageIndex(stageName) {
+        const stageOrder = ['queued', 'creating-vm', 'downloading', 'building', 'uploading', 'complete'];
+        return stageOrder.indexOf(stageName);
+    }
+
+    updateChecklist(stageName, percentage) {
+        // Map stage names and messages to checklist tasks
+        const taskMapping = {
+            'vm': 'vm-creation',
+            'creating': 'vm-creation',
+            'cache': 'cache-check',
+            'docker': 'docker-images',
+            'image': 'docker-images',
+            'ollama': 'ollama-models',
+            'model': 'ollama-models',
+            'building': 'iso-build',
+            'uploading': 'iso-upload',
+            'populating': 'cache-populate'
+        };
+
+        const lowerStage = stageName.toLowerCase();
+
+        // Determine which task is active
+        for (const [key, taskId] of Object.entries(taskMapping)) {
+            if (lowerStage.includes(key)) {
+                this.updateChecklistItem(taskId, 'in-progress', percentage);
+
+                // Mark previous tasks as complete
+                this.markPreviousTasksComplete(taskId);
+                break;
+            }
+        }
+    }
+
+    updateChecklistItem(taskId, status, percentage = null) {
+        const item = document.querySelector(`.checklist-item[data-task="${taskId}"]`);
+        if (!item) return;
+
+        const checkbox = item.querySelector('.task-checkbox');
+        const progressEl = item.querySelector('.task-progress');
+
+        item.classList.remove('pending', 'in-progress', 'completed');
+
+        if (status === 'completed') {
+            item.classList.add('completed');
+            checkbox.textContent = '☑';
+            progressEl.textContent = '';
+        } else if (status === 'in-progress') {
+            item.classList.add('in-progress');
+            checkbox.textContent = '⏳';
+            if (percentage !== null) {
+                // Calculate sub-task percentage (within the stage range)
+                const taskPercentage = this.calculateTaskPercentage(taskId, percentage);
+                progressEl.textContent = `${taskPercentage}%`;
+            }
+        } else {
+            item.classList.add('pending');
+            checkbox.textContent = '☐';
+            progressEl.textContent = '';
+        }
+    }
+
+    calculateTaskPercentage(taskId, overallPercentage) {
+        // Map tasks to their percentage ranges
+        const taskRanges = {
+            'vm-creation': [0, 10],
+            'cache-check': [10, 20],
+            'docker-images': [20, 40],
+            'ollama-models': [40, 60],
+            'iso-build': [60, 80],
+            'iso-upload': [80, 95],
+            'cache-populate': [95, 100]
+        };
+
+        const range = taskRanges[taskId] || [0, 100];
+        const [start, end] = range;
+
+        if (overallPercentage < start) return 0;
+        if (overallPercentage > end) return 100;
+
+        // Calculate percentage within this task's range
+        const taskProgress = ((overallPercentage - start) / (end - start)) * 100;
+        return Math.round(taskProgress);
+    }
+
+    markPreviousTasksComplete(currentTaskId) {
+        const taskOrder = ['vm-creation', 'cache-check', 'docker-images', 'ollama-models', 'iso-build', 'iso-upload', 'cache-populate'];
+        const currentIndex = taskOrder.indexOf(currentTaskId);
+
+        for (let i = 0; i < currentIndex; i++) {
+            this.updateChecklistItem(taskOrder[i], 'completed');
+        }
     }
 
     detectLogType(message) {

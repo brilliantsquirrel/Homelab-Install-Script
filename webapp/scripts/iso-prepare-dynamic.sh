@@ -411,6 +411,18 @@ for image in "${DOCKER_IMAGES[@]}"; do
         fi
 
         success "✓ $image (downloaded and saved)"
+
+        # Upload to GCS cache for future builds (run in background)
+        if [ "$GCS_ENABLED" = true ]; then
+            log "Uploading $image to GCS cache for future builds..."
+            (
+                if gsutil cp "$local_file" "$GCS_BUCKET/$gcs_filename" 2>/dev/null; then
+                    echo "[INFO] ✓ Cached $image in GCS for future builds"
+                else
+                    echo "[WARNING] Failed to cache $image in GCS (will retry on next build)"
+                fi
+            ) &
+        fi
     fi
 
     # Increment progress
@@ -484,6 +496,18 @@ if [ ${#MODELS[@]} -gt 0 ]; then
                 sh -c "cd /models && tar czf - ." > "$model_tar_file"
 
             success "✓ Exported: $model"
+
+            # Upload to GCS cache for future builds (run in background)
+            if [ "$GCS_ENABLED" = true ] && [ -f "$model_tar_file" ]; then
+                log "Uploading $model to GCS cache for future builds..."
+                (
+                    if gsutil cp "$model_tar_file" "$GCS_BUCKET/$model_gcs_filename" 2>/dev/null; then
+                        echo "[INFO] ✓ Cached $model in GCS for future builds"
+                    else
+                        echo "[WARNING] Failed to cache $model in GCS (will retry on next build)"
+                    fi
+                ) &
+            fi
         else
             warning "Failed to download: $model, skipping"
         fi
@@ -502,6 +526,21 @@ if [ ${#MODELS[@]} -gt 0 ]; then
 else
     write_status "downloading-models" 63 "No Ollama models selected, skipping"
     log "No Ollama models selected, skipping model download"
+fi
+
+# ========================================
+# Wait for GCS Cache Uploads
+# ========================================
+
+# Wait for any background GCS upload jobs to complete
+# This ensures artifacts are cached before the VM shuts down
+if [ "$GCS_ENABLED" = true ]; then
+    BACKGROUND_JOBS=$(jobs -r | wc -l)
+    if [ "$BACKGROUND_JOBS" -gt 0 ]; then
+        log "Waiting for $BACKGROUND_JOBS background cache upload(s) to complete..."
+        wait
+        success "✓ All cache uploads completed"
+    fi
 fi
 
 # ========================================

@@ -258,16 +258,46 @@
                 <h2>Building Your Custom ISO</h2>
                 <p class="step-description">This may take 45-90 minutes depending on selected components</p>
 
-                <div class="progress-container">
-                    <div class="progress-bar">
-                        <div id="progress-fill" class="progress-fill" style="width: 0%"></div>
+                <!-- Sectioned Progress Bar (Domino's-style) -->
+                <div class="pipeline-progress">
+                    <div class="pipeline-stage" data-stage="queued">
+                        <div class="stage-icon">📋</div>
+                        <div class="stage-name">Queued</div>
+                        <div class="stage-status">pending</div>
                     </div>
-                    <div class="progress-text">
-                        <span id="progress-percentage">0%</span>
-                        <span id="progress-stage">Initializing...</span>
+                    <div class="pipeline-connector"></div>
+                    <div class="pipeline-stage" data-stage="creating-vm">
+                        <div class="stage-icon">🖥️</div>
+                        <div class="stage-name">Creating VM</div>
+                        <div class="stage-status">pending</div>
+                    </div>
+                    <div class="pipeline-connector"></div>
+                    <div class="pipeline-stage" data-stage="downloading">
+                        <div class="stage-icon">📦</div>
+                        <div class="stage-name">Downloading</div>
+                        <div class="stage-status">pending</div>
+                    </div>
+                    <div class="pipeline-connector"></div>
+                    <div class="pipeline-stage" data-stage="building">
+                        <div class="stage-icon">🔨</div>
+                        <div class="stage-name">Building ISO</div>
+                        <div class="stage-status">pending</div>
+                    </div>
+                    <div class="pipeline-connector"></div>
+                    <div class="pipeline-stage" data-stage="uploading">
+                        <div class="stage-icon">☁️</div>
+                        <div class="stage-name">Uploading</div>
+                        <div class="stage-status">pending</div>
+                    </div>
+                    <div class="pipeline-connector"></div>
+                    <div class="pipeline-stage" data-stage="complete">
+                        <div class="stage-icon">✅</div>
+                        <div class="stage-name">Complete</div>
+                        <div class="stage-status">pending</div>
                     </div>
                 </div>
 
+                <!-- Build Info -->
                 <div class="build-info">
                     <div class="info-item">
                         <strong>Build ID:</strong>
@@ -278,20 +308,67 @@
                         <span id="vm-name">-</span>
                     </div>
                     <div class="info-item">
+                        <strong>Overall Progress:</strong>
+                        <span id="overall-progress">0%</span>
+                    </div>
+                    <div class="info-item">
                         <strong>Estimated Completion:</strong>
                         <span id="estimated-completion">-</span>
                     </div>
                 </div>
 
+                <!-- Task Checklist -->
+                <div class="task-checklist">
+                    <h3>Build Tasks</h3>
+                    <div class="checklist-container">
+                        <div class="checklist-item" data-task="vm-creation">
+                            <div class="task-checkbox">☐</div>
+                            <div class="task-name">Creating build VM</div>
+                            <div class="task-progress"></div>
+                        </div>
+                        <div class="checklist-item" data-task="cache-check">
+                            <div class="task-checkbox">☐</div>
+                            <div class="task-name">Checking GCS artifact cache</div>
+                            <div class="task-progress"></div>
+                        </div>
+                        <div class="checklist-item" data-task="docker-images">
+                            <div class="task-checkbox">☐</div>
+                            <div class="task-name">Downloading Docker images</div>
+                            <div class="task-progress"></div>
+                        </div>
+                        <div class="checklist-item" data-task="ollama-models">
+                            <div class="task-checkbox">☐</div>
+                            <div class="task-name">Downloading Ollama models</div>
+                            <div class="task-progress"></div>
+                        </div>
+                        <div class="checklist-item" data-task="iso-build">
+                            <div class="task-checkbox">☐</div>
+                            <div class="task-name">Building custom ISO</div>
+                            <div class="task-progress"></div>
+                        </div>
+                        <div class="checklist-item" data-task="iso-upload">
+                            <div class="task-checkbox">☐</div>
+                            <div class="task-name">Uploading ISO to storage</div>
+                            <div class="task-progress"></div>
+                        </div>
+                        <div class="checklist-item" data-task="cache-populate">
+                            <div class="task-checkbox">☐</div>
+                            <div class="task-name">Populating artifact cache</div>
+                            <div class="task-progress"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Live Debug Log -->
                 <div class="build-logs">
                     <div class="logs-header">
-                        <h3>Build Logs</h3>
+                        <h3>📜 Live Debug Log</h3>
                         <button id="copy-logs-btn" class="btn btn-small btn-secondary" onclick="app.copyLogs()" title="Copy logs to clipboard">
-                            📋 Copy Logs
+                            📋 Copy
                         </button>
                     </div>
                     <div id="log-container" class="log-container">
-                        <div class="log-entry">Waiting for build to start...</div>
+                        <div class="log-entry log-info">Waiting for build to start...</div>
                     </div>
                 </div>
             </section>
