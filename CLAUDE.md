@@ -700,7 +700,8 @@ The webapp orchestrates Google Cloud Compute Engine VMs to perform the actual IS
 - `iso-prepare-dynamic.sh` - Modified version that reads `SELECTED_SERVICES` and `SELECTED_MODELS` environment variables
   - Generates custom docker-compose.yml with only selected services
   - Downloads only required Docker images and Ollama models
-  - Supports GCS artifact caching for faster subsequent builds
+  - **Automatic GCS artifact caching**: Downloads check GCS first for cached artifacts; newly downloaded artifacts are automatically uploaded to GCS cache in the background for faster subsequent builds
+  - Waits for all background cache uploads to complete before finishing
   - Handles GPU configuration automatically
 
 **Deployment Files:**
