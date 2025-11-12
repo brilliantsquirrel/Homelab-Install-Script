@@ -31,7 +31,7 @@ module.exports = {
         imageFamily: 'ubuntu-2204-lts',
         imageProject: 'ubuntu-os-cloud',
         maxConcurrentBuilds: parseInt(process.env.MAX_CONCURRENT_BUILDS) || 3,
-        buildTimeout: parseInt(process.env.BUILD_TIMEOUT_HOURS) || 4,
+        buildTimeout: parseInt(process.env.BUILD_TIMEOUT_HOURS) || 8, // Increased from 4 to 8 hours for large ISO uploads
         autoCleanup: process.env.VM_AUTO_CLEANUP !== 'false',
     },
 

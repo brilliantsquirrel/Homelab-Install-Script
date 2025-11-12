@@ -199,6 +199,50 @@ class GCSManager {
             return [];
         }
     }
+
+    /**
+     * Download and parse build status file
+     * @param {string} statusFilename - Status filename in downloads bucket
+     * @returns {Object} Parsed status data
+     */
+    async downloadStatusFile(statusFilename) {
+        try {
+            const file = this.downloadsBucket.file(statusFilename);
+            const [exists] = await file.exists();
+
+            if (!exists) {
+                return null;
+            }
+
+            const [contents] = await file.download();
+            const statusData = JSON.parse(contents.toString());
+
+            logger.debug(`Downloaded status file ${statusFilename}:`, statusData);
+            return statusData;
+        } catch (error) {
+            logger.debug(`Error downloading status file ${statusFilename}: ${error.message}`);
+            return null;
+        }
+    }
+
+    /**
+     * Delete file from downloads bucket
+     * @param {string} filename - File to delete
+     */
+    async deleteFile(filename) {
+        try {
+            const file = this.downloadsBucket.file(filename);
+            const [exists] = await file.exists();
+
+            if (exists) {
+                await file.delete();
+                logger.info(`Deleted file: ${filename}`);
+            }
+        } catch (error) {
+            logger.error(`Error deleting file ${filename}:`, error);
+            throw error;
+        }
+    }
 }
 
 module.exports = new GCSManager();

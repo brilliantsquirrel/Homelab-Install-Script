@@ -185,24 +185,52 @@ LOG_FILE="/var/log/iso-build.log"
 BUILD_ID="${buildId}"
 ARTIFACTS_BUCKET="${config.gcs.artifactsBucket}"
 DOWNLOADS_BUCKET="${config.gcs.downloadsBucket}"
+STATUS_FILE="gs://$DOWNLOADS_BUCKET/build-status-${buildIdShort}.json"
 
 log() {
     echo "[$(date +'%Y-%m-%d %H:%M:%S')] $1" | tee -a "$LOG_FILE"
 }
 
+# Function to write build status to GCS for real-time progress tracking
+write_status() {
+    local stage="$1"
+    local progress="$2"
+    local message="$3"
+
+    cat > /tmp/build-status.json <<EOF
+{
+  "stage": "$stage",
+  "progress": $progress,
+  "message": "$message",
+  "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+}
+EOF
+
+    # Upload status file (retry up to 3 times)
+    for i in {1..3}; do
+        if gsutil cp /tmp/build-status.json "$STATUS_FILE" 2>/dev/null; then
+            break
+        fi
+        sleep 2
+    done
+}
+
 log "Starting ISO build for build ID: $BUILD_ID"
+write_status "initializing" 5 "Starting VM initialization"
 
 # Update system
 log "Updating system packages..."
+write_status "initializing" 10 "Updating system packages"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
 apt-get upgrade -y
 
 # Install dependencies (includes jq for JSON parsing)
 log "Installing build dependencies..."
+write_status "initializing" 15 "Installing build dependencies"
 apt-get install -y \\
     git rsync curl wget gnupg lsb-release ca-certificates \\
-    software-properties-common fuse pigz pv xorriso squashfs-tools jq
+    software-properties-common fuse pigz pv xorriso squashfs-tools jq bc
 
 # Install gcsfuse
 log "Installing gcsfuse..."
@@ -233,6 +261,8 @@ mkdir -p /mnt/downloads
 gcsfuse --implicit-dirs "$ARTIFACTS_BUCKET" /mnt/artifacts
 gcsfuse --implicit-dirs "$DOWNLOADS_BUCKET" /mnt/downloads
 
+write_status "cloning" 20 "Cloning repository"
+
 # Clone repository
 log "Cloning Homelab repository..."
 cd /root
@@ -257,34 +287,91 @@ log "  GPU: $GPU_ENABLED"
 log "  ISO Name: $ISO_NAME"
 
 # Run build scripts
+write_status "downloading" 25 "Downloading dependencies"
 log "Running iso-prepare-dynamic.sh..."
 bash webapp/scripts/iso-prepare-dynamic.sh
 
+write_status "building" 60 "Building custom ISO"
 log "Running create-custom-iso.sh..."
 bash create-custom-iso.sh
 
-# Upload ISO to downloads bucket
+# Upload ISO to downloads bucket with verification
+write_status "uploading" 85 "Uploading ISO to storage"
 log "Uploading ISO to downloads bucket..."
 ISO_FILE="iso-artifacts/ubuntu-24.04.3-homelab-amd64.iso"
-if [ -f "$ISO_FILE" ]; then
-    # Construct output name safely (ISO_NAME already validated by jq)
-    ISO_OUTPUT_NAME="\${ISO_NAME}-${buildIdShort}.iso"
-    gsutil -m cp "$ISO_FILE" "gs://$DOWNLOADS_BUCKET/$ISO_OUTPUT_NAME"
-    log "ISO uploaded successfully: $ISO_OUTPUT_NAME"
+
+if [ ! -f "$ISO_FILE" ]; then
+    log "ERROR: ISO file not found!"
+    write_status "failed" 0 "ISO file not found after build"
+    echo "failed" > /tmp/build-status
+    echo "ISO file not found" > /tmp/build-error
+    exit 1
+fi
+
+# Get ISO size for verification
+ISO_SIZE=$(stat -c%s "$ISO_FILE")
+log "ISO file size: $ISO_SIZE bytes ($(echo "scale=2; $ISO_SIZE / 1024 / 1024 / 1024" | bc) GB)"
+
+# Construct output name safely (ISO_NAME already validated by jq)
+ISO_OUTPUT_NAME="\${ISO_NAME}-${buildIdShort}.iso"
+UPLOAD_TARGET="gs://$DOWNLOADS_BUCKET/$ISO_OUTPUT_NAME"
+
+# Upload with retry logic (up to 3 attempts)
+UPLOAD_SUCCESS=false
+for attempt in {1..3}; do
+    log "Upload attempt $attempt/3..."
+    write_status "uploading" $((85 + attempt * 3)) "Uploading ISO (attempt $attempt/3)"
+
+    if gsutil -m -o "GSUtil:parallel_process_count=4" cp "$ISO_FILE" "$UPLOAD_TARGET" 2>&1 | tee -a "$LOG_FILE"; then
+        log "Upload command completed, verifying..."
+
+        # Verify upload by checking file size in GCS
+        UPLOADED_SIZE=$(gsutil stat "$UPLOAD_TARGET" | grep "Content-Length:" | awk '{print $2}' || echo "0")
+
+        if [ "$UPLOADED_SIZE" = "$ISO_SIZE" ]; then
+            log "Upload verification successful! Sizes match: $ISO_SIZE bytes"
+            UPLOAD_SUCCESS=true
+            break
+        else
+            log "Upload verification failed: Local=$ISO_SIZE, Remote=$UPLOADED_SIZE"
+            if [ $attempt -lt 3 ]; then
+                log "Retrying upload in 30 seconds..."
+                sleep 30
+            fi
+        fi
+    else
+        log "Upload command failed"
+        if [ $attempt -lt 3 ]; then
+            log "Retrying upload in 30 seconds..."
+            sleep 30
+        fi
+    fi
+done
+
+if [ "$UPLOAD_SUCCESS" = true ]; then
+    log "ISO uploaded and verified successfully: $ISO_OUTPUT_NAME"
+    write_status "complete" 100 "ISO build completed successfully"
 
     # Write build completion marker
     echo "complete" > /tmp/build-status
     echo "$ISO_OUTPUT_NAME" > /tmp/iso-filename
+
+    log "Build process completed successfully"
 else
-    log "ERROR: ISO file not found!"
+    log "ERROR: Failed to upload ISO after 3 attempts"
+    write_status "failed" 0 "Failed to upload ISO after 3 attempts"
     echo "failed" > /tmp/build-status
-    echo "ISO file not found" > /tmp/build-error
+    echo "Failed to upload ISO" > /tmp/build-error
+    exit 1
 fi
 
-log "Build process completed"
+# Wait for GCS sync to complete before shutting down
+log "Syncing all files to GCS..."
+sync
+sleep 5
 
 # Shutdown VM if auto-cleanup is enabled
-${config.vm.autoCleanup ? 'log "Auto-cleanup enabled, shutting down VM..."\nsudo shutdown -h now' : 'log "Auto-cleanup disabled, VM will remain running"'}
+${config.vm.autoCleanup ? 'log "Auto-cleanup enabled, shutting down VM in 10 seconds..."\nsleep 10\nsudo shutdown -h now' : 'log "Auto-cleanup disabled, VM will remain running"'}
 `;
     }
 
