@@ -92,9 +92,13 @@ EOF
 }
 
 # Get the repository root directory
-REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# This script is in webapp/scripts/, so go up 2 levels to get repo root
+REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 header "Dynamic ISO Preparation - Custom Homelab Configuration"
+
+log "Script location: ${BASH_SOURCE[0]}"
+log "Repository root: $REPO_DIR"
 
 # Parse environment variables
 IFS=',' read -ra SERVICES <<< "$SELECTED_SERVICES"
