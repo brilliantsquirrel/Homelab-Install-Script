@@ -9,6 +9,8 @@
 #   SELECTED_MODELS - Comma-separated list of Ollama models to include
 #   GPU_ENABLED - "true" or "false" for GPU support
 #   GCS_BUCKET - GCS bucket for artifacts (optional, will be detected from metadata)
+#   BUILD_ID - Build ID for progress tracking (optional)
+#   DOWNLOADS_BUCKET - GCS downloads bucket for status updates (optional)
 
 set -e
 
@@ -42,6 +44,51 @@ header() {
     echo -e "${BLUE}$1${NC}"
     echo -e "${BLUE}========================================${NC}"
     echo ""
+}
+
+# Progress tracking for webapp builds
+# Get BUILD_ID from metadata if not set
+if [ -z "${BUILD_ID:-}" ] && command -v curl &> /dev/null; then
+    BUILD_ID=$(curl -s -f -H "Metadata-Flavor: Google" \
+        "http://metadata.google.internal/computeMetadata/v1/instance/attributes/build-id" 2>/dev/null || echo "")
+fi
+
+# Get DOWNLOADS_BUCKET from metadata if not set
+if [ -z "${DOWNLOADS_BUCKET:-}" ] && command -v curl &> /dev/null; then
+    DOWNLOADS_BUCKET=$(curl -s -f -H "Metadata-Flavor: Google" \
+        "http://metadata.google.internal/computeMetadata/v1/instance/attributes/downloads-bucket" 2>/dev/null || echo "")
+fi
+
+# Function to write build status to GCS for real-time progress tracking
+write_status() {
+    local stage="$1"
+    local progress="$2"
+    local message="$3"
+
+    # Only write status if BUILD_ID and DOWNLOADS_BUCKET are set
+    if [ -z "${BUILD_ID:-}" ] || [ -z "${DOWNLOADS_BUCKET:-}" ]; then
+        return 0
+    fi
+
+    local BUILD_ID_SHORT="${BUILD_ID:0:8}"
+    local STATUS_FILE="gs://$DOWNLOADS_BUCKET/build-status-${BUILD_ID_SHORT}.json"
+
+    cat > /tmp/build-status.json <<EOF
+{
+  "stage": "$stage",
+  "progress": $progress,
+  "message": "$message",
+  "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+}
+EOF
+
+    # Upload status file (retry up to 3 times, silently)
+    for i in {1..3}; do
+        if gsutil cp /tmp/build-status.json "$STATUS_FILE" 2>/dev/null; then
+            break
+        fi
+        sleep 1
+    done
 }
 
 # Get the repository root directory
@@ -119,10 +166,12 @@ fi
 header "Copying Homelab Scripts"
 
 log "Copying homelab files..."
+write_status "preparing" 26 "Copying homelab scripts"
 rsync -rlv --no-times --no-perms --exclude='iso-artifacts' --exclude='.git' "$REPO_DIR/" "$HOMELAB_DIR/" || {
     warning "⚠ rsync reported errors (expected on gcsfuse)"
     log "Files copied successfully"
 }
+write_status "preparing" 27 "Generating custom docker-compose.yml"
 
 # Generate custom docker-compose.yml with only selected services
 log "Generating custom docker-compose.yml..."
@@ -182,6 +231,8 @@ success "✓ Custom docker-compose.yml generated"
 
 header "Step 0: Downloading Ubuntu Server 24.04 LTS ISO"
 
+write_status "downloading-ubuntu" 28 "Downloading Ubuntu Server ISO"
+
 UBUNTU_VERSION="24.04.3"
 UBUNTU_ISO_URL="https://releases.ubuntu.com/24.04/ubuntu-${UBUNTU_VERSION}-live-server-amd64.iso"
 UBUNTU_ISO_FILE="$ISO_DIR/ubuntu-${UBUNTU_VERSION}-live-server-amd64.iso"
@@ -190,17 +241,21 @@ UBUNTU_ISO_GCS="iso/ubuntu-${UBUNTU_VERSION}-live-server-amd64.iso"
 # Check if ISO already exists
 if [ -f "$UBUNTU_ISO_FILE" ]; then
     log "Ubuntu Server ISO already downloaded"
+    write_status "downloading-ubuntu" 29 "Ubuntu Server ISO already available"
 elif [ "$GCS_ENABLED" = true ] && gsutil -q stat "$GCS_BUCKET/$UBUNTU_ISO_GCS" 2>/dev/null; then
     log "Downloading Ubuntu ISO from GCS..."
     gsutil cp "$GCS_BUCKET/$UBUNTU_ISO_GCS" "$UBUNTU_ISO_FILE"
     success "✓ Downloaded from GCS"
+    write_status "downloading-ubuntu" 29 "Ubuntu Server ISO downloaded from cache"
 else
     log "Downloading Ubuntu Server ISO from official source..."
     wget -O "$UBUNTU_ISO_FILE" "$UBUNTU_ISO_URL" || {
         error "Failed to download Ubuntu ISO"
+        write_status "failed" 0 "Failed to download Ubuntu Server ISO"
         exit 1
     }
     success "✓ Downloaded Ubuntu ISO"
+    write_status "downloading-ubuntu" 29 "Ubuntu Server ISO downloaded"
 fi
 
 # ========================================
@@ -245,14 +300,31 @@ DOCKER_IMAGES=($(printf "%s\n" "${DOCKER_IMAGES[@]}" | sort -u))
 
 log "Downloading ${#DOCKER_IMAGES[@]} Docker images..."
 
+# Calculate progress increment per image (30-55% range for Docker images)
+TOTAL_IMAGES=${#DOCKER_IMAGES[@]}
+PROGRESS_START=30
+PROGRESS_END=55
+if [ $TOTAL_IMAGES -gt 0 ]; then
+    PROGRESS_PER_IMAGE=$(( (PROGRESS_END - PROGRESS_START) / TOTAL_IMAGES ))
+else
+    PROGRESS_PER_IMAGE=0
+fi
+CURRENT_PROGRESS=$PROGRESS_START
+IMAGE_COUNT=0
+
 for image in "${DOCKER_IMAGES[@]}"; do
+    IMAGE_COUNT=$((IMAGE_COUNT + 1))
     filename=$(echo "$image" | sed 's/[\/:]/_/g')
     local_file="$DOCKER_DIR/${filename}.tar.gz"
     gcs_filename="docker-images/${filename}.tar.gz"
 
+    # Update progress
+    write_status "downloading-images" $CURRENT_PROGRESS "Downloading Docker image $IMAGE_COUNT/$TOTAL_IMAGES: $image"
+
     # Check if already exists locally
     if [ -f "$local_file" ]; then
         log "✓ $image (exists locally)"
+        CURRENT_PROGRESS=$((CURRENT_PROGRESS + PROGRESS_PER_IMAGE))
         continue
     fi
 
@@ -274,8 +346,12 @@ for image in "${DOCKER_IMAGES[@]}"; do
 
         success "✓ $image (downloaded and saved)"
     fi
+
+    # Increment progress
+    CURRENT_PROGRESS=$((CURRENT_PROGRESS + PROGRESS_PER_IMAGE))
 done
 
+write_status "downloading-images" 55 "All Docker images downloaded"
 success "✓ All Docker images ready"
 
 # ========================================
@@ -285,14 +361,34 @@ success "✓ All Docker images ready"
 if [ ${#MODELS[@]} -gt 0 ]; then
     header "Step 2: Downloading Selected Ollama Models"
 
+    # Calculate progress increment per model (56-59% range for Ollama models)
+    TOTAL_MODELS=${#MODELS[@]}
+    PROGRESS_START=56
+    PROGRESS_END=59
+    if [ $TOTAL_MODELS -gt 0 ]; then
+        PROGRESS_PER_MODEL=$(( (PROGRESS_END - PROGRESS_START) / TOTAL_MODELS ))
+        if [ $PROGRESS_PER_MODEL -lt 1 ]; then
+            PROGRESS_PER_MODEL=1
+        fi
+    else
+        PROGRESS_PER_MODEL=0
+    fi
+    CURRENT_PROGRESS=$PROGRESS_START
+    MODEL_COUNT=0
+
     for model in "${MODELS[@]}"; do
+        MODEL_COUNT=$((MODEL_COUNT + 1))
         model_filename=$(echo "$model" | sed 's/[\/:]/_/g')
         model_tar_file="$MODELS_DIR/${model_filename}.tar.gz"
         model_gcs_filename="ollama-models/${model_filename}.tar.gz"
 
+        # Update progress
+        write_status "downloading-models" $CURRENT_PROGRESS "Downloading Ollama model $MODEL_COUNT/$TOTAL_MODELS: $model"
+
         # Check if already exists
         if [ -f "$model_tar_file" ]; then
             log "✓ $model (exists locally)"
+            CURRENT_PROGRESS=$((CURRENT_PROGRESS + PROGRESS_PER_MODEL))
             continue
         fi
 
@@ -301,6 +397,7 @@ if [ ${#MODELS[@]} -gt 0 ]; then
             log "Downloading $model from GCS..."
             gsutil cp "$GCS_BUCKET/$model_gcs_filename" "$model_tar_file"
             success "✓ $model (from GCS)"
+            CURRENT_PROGRESS=$((CURRENT_PROGRESS + PROGRESS_PER_MODEL))
             continue
         fi
 
@@ -329,10 +426,15 @@ if [ ${#MODELS[@]} -gt 0 ]; then
         sudo docker stop "$container_name" 2>/dev/null || true
         sudo docker rm "$container_name" 2>/dev/null || true
         sudo docker volume rm "$volume_name" 2>/dev/null || true
+
+        # Increment progress
+        CURRENT_PROGRESS=$((CURRENT_PROGRESS + PROGRESS_PER_MODEL))
     done
 
+    write_status "downloading-models" 59 "All Ollama models downloaded"
     success "✓ All Ollama models ready"
 else
+    write_status "downloading-models" 56 "No Ollama models selected, skipping"
     log "No Ollama models selected, skipping model download"
 fi
 
@@ -349,5 +451,6 @@ echo "  - Ollama Models: ${#MODELS[@]}"
 echo "  - GPU Enabled: ${GPU_ENABLED:-false}"
 echo ""
 
+write_status "preparation-complete" 59 "All dependencies downloaded, ready for ISO build"
 success "✓ Ready for ISO building"
 log "Next step: Run create-custom-iso.sh to build the ISO"
