@@ -92,6 +92,7 @@ All services are defined in `docker compose.yml` and orchestrated together. Serv
 **AI/ML Services:**
 - **Ollama** - LLM runtime with GPU support (via /ollama)
 - **OpenWebUI** - Web interface for Ollama (via /openwebui)
+- **ComfyUI** - Node-based UI for Stable Diffusion and AI image generation (via /comfyui)
 - **LangChain** - LLM application framework (via /langchain)
 - **LangGraph** - Graph-based workflow engine (via /langgraph)
 - **LangFlow** - Visual workflow builder for AI (via /langflow)
@@ -403,6 +404,32 @@ docker volume inspect plex_media
 #   - /path/to/your/media:/media
 ```
 
+### ComfyUI AI Image Generation
+Node-based UI for Stable Diffusion and AI image generation. Access at https://<server-ip>/comfyui
+- Powerful workflow-based interface for AI image generation
+- Supports Stable Diffusion, SDXL, ControlNet, and custom models
+- GPU acceleration strongly recommended (CPU mode is very slow)
+- Download models from Hugging Face or Civitai into the comfyui_models volume
+- Generated images saved to comfyui_output volume
+
+```bash
+# View ComfyUI logs
+docker compose logs -f comfyui
+
+# Access ComfyUI models directory
+docker volume inspect comfyui_models
+
+# Access generated images
+docker volume inspect comfyui_output
+
+# Download models (example: Stable Diffusion 1.5)
+# Place model files in: comfyui_models/checkpoints/
+# ComfyUI will automatically detect them
+```
+
+**GPU Setup:**
+ComfyUI requires GPU for practical use. Enable by uncommenting GPU config in docker compose.yml (see GPU Support section).
+
 ### Nextcloud File Storage
 File sync and collaboration platform. Access at https://<server-ip>/nextcloud
 - First-time setup creates admin account
@@ -436,7 +463,7 @@ The installation automatically configures Pi-Hole to resolve the following domai
 - `nextcloud.home` → File Storage
 - `pihole.home` → Pi-Hole Admin
 - `cockpit.home` → Server Management (port 9090)
-- `ollama.home`, `openwebui.home`, `langchain.home`, `langgraph.home`, `langflow.home`, `n8n.home` → AI Services
+- `ollama.home`, `openwebui.home`, `comfyui.home`, `langchain.home`, `langgraph.home`, `langflow.home`, `n8n.home` → AI Services
 - `portainer.home`, `qdrant.home` → Management Services
 
 **DNS Configuration:**
@@ -563,6 +590,23 @@ Enable GPU for video transcoding:
 3. Restart Plex: `docker compose restart plex`
 4. In Plex settings, enable hardware transcoding
 
+### ComfyUI GPU Acceleration
+Enable GPU for AI image generation (STRONGLY RECOMMENDED):
+1. Ensure NVIDIA drivers installed (script auto-detects and installs nvidia-docker2)
+2. Edit docker compose.yml, uncomment in comfyui service:
+   ```yaml
+   runtime: nvidia
+   deploy:
+     resources:
+       reservations:
+         devices:
+           - driver: nvidia
+             count: 1
+             capabilities: [gpu, compute, utility]
+   ```
+3. Restart ComfyUI: `docker compose restart comfyui`
+4. Note: ComfyUI requires GPU for practical use - CPU-only mode is extremely slow
+
 ## Network Configuration
 
 ### Local DNS Resolution (.home domains)
@@ -582,7 +626,7 @@ The homelab automatically configures Pi-Hole to provide local DNS resolution for
 - `nextcloud.home` - File Storage & Collaboration
 - `pihole.home` - DNS Ad Blocker Admin
 - `cockpit.home:9090` - Server Management
-- `ollama.home`, `openwebui.home` - AI Services
+- `ollama.home`, `openwebui.home`, `comfyui.home` - AI Services
 - `langchain.home`, `langgraph.home`, `langflow.home`, `n8n.home` - AI Workflows
 - `portainer.home` - Container Management
 - `qdrant.home` - Vector Database

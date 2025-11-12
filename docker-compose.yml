@@ -25,6 +25,7 @@ services:
       - homarr
       - hoarder
       - plex
+      - comfyui
       - nextcloud
       - pihole
     networks:
@@ -305,6 +306,43 @@ services:
     networks:
       - homelab_network
 
+  # ComfyUI - Node-based UI for Stable Diffusion and AI image generation
+  comfyui:
+    image: ghcr.io/ai-dock/comfyui:latest
+    container_name: comfyui
+    restart: unless-stopped
+    volumes:
+      - comfyui_data:/data
+      - comfyui_models:/opt/ComfyUI/models
+      - comfyui_output:/opt/ComfyUI/output
+    environment:
+      - TZ=UTC
+      - PUID=1000
+      - PGID=1000
+      # Enable automatic model downloads
+      - AUTO_UPDATE=true
+    # Uncomment the following lines for GPU support (NVIDIA)
+    # IMPORTANT: ComfyUI requires GPU for practical use
+    # runtime: nvidia
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu, compute, utility]
+    # Security: Use 'expose' instead of 'ports' - only accessible via nginx reverse proxy
+    # Access through: https://<server-ip>/comfyui (authenticated)
+    expose:
+      - "8188"
+    networks:
+      - homelab_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8188/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
   # Nextcloud - File storage and collaboration platform
   nextcloud-db:
     image: postgres:16-alpine
@@ -416,6 +454,12 @@ volumes:
   plex_media:
     driver: local
   plex_transcode:
+    driver: local
+  comfyui_data:
+    driver: local
+  comfyui_models:
+    driver: local
+  comfyui_output:
     driver: local
   nextcloud_db:
     driver: local

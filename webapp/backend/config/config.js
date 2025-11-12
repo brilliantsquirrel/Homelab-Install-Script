@@ -132,6 +132,14 @@ module.exports = {
             dependencies: ['ollama'],
             required: false,
         },
+        'comfyui': {
+            display: 'ComfyUI',
+            description: 'Node-based UI for Stable Diffusion and AI image generation',
+            category: 'ai',
+            size_mb: 3072,
+            dependencies: [],
+            required: false,
+        },
         'langflow': {
             display: 'LangFlow',
             description: 'Visual AI workflow builder',
