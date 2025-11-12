@@ -13,6 +13,119 @@ class VMManager {
     }
 
     /**
+     * Retry wrapper for Google Compute Engine API calls with exponential backoff
+     * Handles transient network errors like socket hang up, timeouts, etc.
+     * @param {Function} apiCall - Async function to execute (API call)
+     * @param {Object} context - Logging context
+     * @param {number} maxRetries - Maximum retry attempts (default: 4)
+     * @returns {Promise} Result of the API call
+     */
+    async retryApiCall(apiCall, context = {}, maxRetries = 4) {
+        const delays = [2000, 4000, 8000, 16000]; // Exponential backoff: 2s, 4s, 8s, 16s
+        let lastError;
+
+        for (let attempt = 0; attempt <= maxRetries; attempt++) {
+            try {
+                const result = await apiCall();
+
+                if (attempt > 0) {
+                    // Log successful retry
+                    logger.info('API call succeeded after retry', {
+                        ...context,
+                        attempt: attempt + 1,
+                        totalAttempts: maxRetries + 1
+                    });
+                }
+
+                return result;
+            } catch (error) {
+                lastError = error;
+
+                // Check if error is retryable
+                const isRetryable = this.isRetryableError(error);
+                const isLastAttempt = attempt === maxRetries;
+
+                if (!isRetryable || isLastAttempt) {
+                    // Don't retry - either not retryable or out of retries
+                    if (isRetryable && isLastAttempt) {
+                        logger.error('API call failed after max retries', {
+                            ...context,
+                            attempt: attempt + 1,
+                            totalAttempts: maxRetries + 1,
+                            error: error.message,
+                            errorCode: error.code
+                        });
+                    }
+                    throw error;
+                }
+
+                // Retryable error - wait and try again
+                const delay = delays[attempt];
+                logger.warn('API call failed, retrying', {
+                    ...context,
+                    attempt: attempt + 1,
+                    totalAttempts: maxRetries + 1,
+                    error: error.message,
+                    errorCode: error.code,
+                    retryInMs: delay
+                });
+
+                await new Promise(resolve => setTimeout(resolve, delay));
+            }
+        }
+
+        // This should never be reached due to throw in loop, but just in case
+        throw lastError;
+    }
+
+    /**
+     * Check if an error is retryable (transient network/API error)
+     * @param {Error} error - Error object
+     * @returns {boolean} True if error should be retried
+     */
+    isRetryableError(error) {
+        // Network errors
+        const networkErrors = [
+            'ECONNRESET',      // Connection reset
+            'ETIMEDOUT',       // Connection timeout
+            'ECONNREFUSED',    // Connection refused
+            'EHOSTUNREACH',    // Host unreachable
+            'ENETUNREACH',     // Network unreachable
+            'EAI_AGAIN',       // DNS lookup timeout
+        ];
+
+        if (error.code && networkErrors.includes(error.code)) {
+            return true;
+        }
+
+        // Socket hang up error
+        if (error.message && error.message.toLowerCase().includes('socket hang up')) {
+            return true;
+        }
+
+        // HTTP 503 Service Unavailable (GCP overload)
+        if (error.code === 503) {
+            return true;
+        }
+
+        // HTTP 429 Too Many Requests
+        if (error.code === 429) {
+            return true;
+        }
+
+        // Transient GCP errors
+        if (error.message && (
+            error.message.includes('The service is currently unavailable') ||
+            error.message.includes('backend unavailable') ||
+            error.message.includes('temporarily unavailable')
+        )) {
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
      * Create a VM for ISO building
      * @param {string} buildId - Unique build ID
      * @param {Object} buildConfig - Build configuration
@@ -128,13 +241,16 @@ class VMManager {
                 }
             }
 
-            // Create the VM
+            // Create the VM with retry logic
             vmLogger.info('Submitting VM creation request to GCP');
-            const [operation] = await this.instancesClient.insert({
-                project: this.projectId,
-                zone: this.zone,
-                instanceResource: instance,
-            });
+            const [operation] = await this.retryApiCall(
+                async () => await this.instancesClient.insert({
+                    project: this.projectId,
+                    zone: this.zone,
+                    instanceResource: instance,
+                }),
+                { buildId, vmName, operation: 'createVM' }
+            );
 
             vmLogger.info('VM creation operation initiated', {
                 operationId: operation.name,
@@ -382,11 +498,14 @@ ${config.vm.autoCleanup ? 'log "Auto-cleanup enabled, shutting down VM in 10 sec
      */
     async getVMStatus(vmName) {
         try {
-            const [instance] = await this.instancesClient.get({
-                project: this.projectId,
-                zone: this.zone,
-                instance: vmName,
-            });
+            const [instance] = await this.retryApiCall(
+                async () => await this.instancesClient.get({
+                    project: this.projectId,
+                    zone: this.zone,
+                    instance: vmName,
+                }),
+                { vmName, operation: 'getVMStatus' }
+            );
 
             return {
                 name: instance.name,
@@ -415,11 +534,14 @@ ${config.vm.autoCleanup ? 'log "Auto-cleanup enabled, shutting down VM in 10 sec
 
         try {
             vmLogger.info('Deleting VM');
-            const [operation] = await this.instancesClient.delete({
-                project: this.projectId,
-                zone: this.zone,
-                instance: vmName,
-            });
+            const [operation] = await this.retryApiCall(
+                async () => await this.instancesClient.delete({
+                    project: this.projectId,
+                    zone: this.zone,
+                    instance: vmName,
+                }),
+                { buildId, vmName, operation: 'deleteVM' }
+            );
 
             vmLogger.info('VM deletion operation initiated', {
                 operationId: operation.name
@@ -459,11 +581,16 @@ ${config.vm.autoCleanup ? 'log "Auto-cleanup enabled, shutting down VM in 10 sec
             checkCount++;
 
             try {
-                const [operation] = await this.operationsClient.get({
-                    project: this.projectId,
-                    zone: this.zone,
-                    operation: operationName,
-                });
+                // Wrap API call with retry logic for transient errors
+                const [operation] = await this.retryApiCall(
+                    async () => await this.operationsClient.get({
+                        project: this.projectId,
+                        zone: this.zone,
+                        operation: operationName,
+                    }),
+                    { buildId, operation: 'waitForOperation', operationName },
+                    2 // Fewer retries for polling (2 attempts = 1 retry)
+                );
 
                 const progress = operation.progress || 0;
                 const elapsed = Date.now() - startTime;
