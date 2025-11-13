@@ -378,59 +378,88 @@ fi
 CURRENT_PROGRESS=$PROGRESS_START
 IMAGE_COUNT=0
 
-for image in "${DOCKER_IMAGES[@]}"; do
-    IMAGE_COUNT=$((IMAGE_COUNT + 1))
-    filename=$(echo "$image" | sed 's/[\/:]/_/g')
-    local_file="$DOCKER_DIR/${filename}.tar.gz"
-    gcs_filename="docker-images/${filename}.tar.gz"
+# Install pigz for parallel compression if not available
+if ! command -v pigz &> /dev/null; then
+    log "Installing pigz for faster compression..."
+    sudo apt-get update -qq && sudo apt-get install -y pigz >/dev/null 2>&1
+fi
 
-    # Update progress
-    write_status "downloading-images" $CURRENT_PROGRESS "Downloading Docker image $IMAGE_COUNT/$TOTAL_IMAGES: $image"
+# Function to download a single Docker image
+download_docker_image() {
+    local image="$1"
+    local filename=$(echo "$image" | sed 's/[\/:]/_/g')
+    local local_file="$DOCKER_DIR/${filename}.tar.gz"
+    local gcs_filename="docker-images/${filename}.tar.gz"
 
     # Check if already exists locally
     if [ -f "$local_file" ]; then
-        log "✓ $image (exists locally)"
-        CURRENT_PROGRESS=$((CURRENT_PROGRESS + PROGRESS_PER_IMAGE))
-        continue
+        echo "[INFO] ✓ $image (exists locally)"
+        return 0
     fi
 
     # Check if exists in GCS
     if [ "$GCS_ENABLED" = true ] && gsutil -q stat "$GCS_BUCKET/$gcs_filename" 2>/dev/null; then
-        log "Downloading $image from GCS..."
-        gsutil cp "$GCS_BUCKET/$gcs_filename" "$local_file"
-        success "✓ $image (from GCS)"
-    else
-        log "Pulling $image from Docker Hub..."
-        sudo docker pull "$image"
-
-        log "Saving $image..."
-        if command -v pigz &> /dev/null; then
-            sudo docker save "$image" | pigz -p 4 > "$local_file"
-        else
-            sudo docker save "$image" | gzip > "$local_file"
-        fi
-
-        success "✓ $image (downloaded and saved)"
-
-        # Upload to GCS cache for future builds (run in background)
-        if [ "$GCS_ENABLED" = true ]; then
-            log "Uploading $image to GCS cache for future builds..."
-            (
-                if gsutil cp "$local_file" "$GCS_BUCKET/$gcs_filename" 2>/dev/null; then
-                    echo "[INFO] ✓ Cached $image in GCS for future builds"
-                else
-                    echo "[WARNING] Failed to cache $image in GCS (will retry on next build)"
-                fi
-            ) &
+        echo "[INFO] Downloading $image from GCS..."
+        if gsutil -m cp "$GCS_BUCKET/$gcs_filename" "$local_file" 2>/dev/null; then
+            echo "[SUCCESS] ✓ $image (from GCS)"
+            return 0
         fi
     fi
 
-    # Increment progress
-    CURRENT_PROGRESS=$((CURRENT_PROGRESS + PROGRESS_PER_IMAGE))
-done
+    # Download from Docker Hub
+    echo "[INFO] Pulling $image from Docker Hub..."
+    if sudo docker pull "$image" 2>&1 | grep -q "Downloaded\|up to date"; then
+        echo "[INFO] Saving $image..."
+        # Use pigz with all available cores for maximum speed
+        sudo docker save "$image" | pigz -p $(nproc) > "$local_file"
+        echo "[SUCCESS] ✓ $image (downloaded and saved)"
 
+        # Upload to GCS cache for future builds (run in background)
+        if [ "$GCS_ENABLED" = true ]; then
+            (
+                if gsutil -m cp "$local_file" "$GCS_BUCKET/$gcs_filename" 2>/dev/null; then
+                    echo "[INFO] ✓ Cached $image in GCS for future builds"
+                fi
+            ) &
+        fi
+        return 0
+    else
+        echo "[ERROR] Failed to download $image"
+        return 1
+    fi
+}
+
+export -f download_docker_image
+export DOCKER_DIR
+export GCS_ENABLED
+export GCS_BUCKET
+
+# Parallel download with GNU parallel
+# Automatically adjust based on CPU cores (use 25% of cores, max 12 for optimal network/disk balance)
+PARALLEL_JOBS=$(( $(nproc) / 4 ))
+if [ $PARALLEL_JOBS -lt 4 ]; then
+    PARALLEL_JOBS=4
+fi
+if [ $PARALLEL_JOBS -gt 12 ]; then
+    PARALLEL_JOBS=12
+fi
+log "Using $PARALLEL_JOBS parallel downloads ($(nproc) CPU cores available)"
+
+# Check if GNU parallel is available, install if not
+if ! command -v parallel &> /dev/null; then
+    log "Installing GNU parallel for faster downloads..."
+    sudo apt-get update -qq && sudo apt-get install -y parallel >/dev/null 2>&1
+fi
+
+log "Downloading images in parallel (${PARALLEL_JOBS} concurrent)..."
+write_status "downloading-images" 41 "Downloading ${TOTAL_IMAGES} Docker images in parallel"
+
+# Download all images in parallel, showing progress
+printf "%s\n" "${DOCKER_IMAGES[@]}" | parallel -j "$PARALLEL_JOBS" --line-buffer download_docker_image {}
+
+# Update progress to completion
 write_status "downloading-images" 62 "All Docker images downloaded"
-success "✓ All Docker images ready"
+success "✓ All Docker images ready (downloaded in parallel)"
 
 # ========================================
 # Step 2: Download Ollama Models
@@ -439,90 +468,103 @@ success "✓ All Docker images ready"
 if [ ${#MODELS[@]} -gt 0 ]; then
     header "Step 2: Downloading Selected Ollama Models"
 
-    # Calculate progress increment per model (63-66% range for Ollama models)
     TOTAL_MODELS=${#MODELS[@]}
-    PROGRESS_START=63
-    PROGRESS_END=66
-    if [ $TOTAL_MODELS -gt 0 ]; then
-        PROGRESS_PER_MODEL=$(( (PROGRESS_END - PROGRESS_START) / TOTAL_MODELS ))
-        if [ $PROGRESS_PER_MODEL -lt 1 ]; then
-            PROGRESS_PER_MODEL=1
-        fi
-    else
-        PROGRESS_PER_MODEL=0
-    fi
-    CURRENT_PROGRESS=$PROGRESS_START
-    MODEL_COUNT=0
 
-    for model in "${MODELS[@]}"; do
-        MODEL_COUNT=$((MODEL_COUNT + 1))
-        model_filename=$(echo "$model" | sed 's/[\/:]/_/g')
-        model_tar_file="$MODELS_DIR/${model_filename}.tar.gz"
-        model_gcs_filename="ollama-models/${model_filename}.tar.gz"
-
-        # Update progress
-        write_status "downloading-models" $CURRENT_PROGRESS "Downloading Ollama model $MODEL_COUNT/$TOTAL_MODELS: $model"
+    # Function to download a single Ollama model
+    download_ollama_model() {
+        local model="$1"
+        local model_filename=$(echo "$model" | sed 's/[\/:]/_/g')
+        local model_tar_file="$MODELS_DIR/${model_filename}.tar.gz"
+        local model_gcs_filename="ollama-models/${model_filename}.tar.gz"
 
         # Check if already exists
         if [ -f "$model_tar_file" ]; then
-            log "✓ $model (exists locally)"
-            CURRENT_PROGRESS=$((CURRENT_PROGRESS + PROGRESS_PER_MODEL))
-            continue
+            echo "[INFO] ✓ $model (exists locally)"
+            return 0
         fi
 
         # Check if exists in GCS
         if [ "$GCS_ENABLED" = true ] && gsutil -q stat "$GCS_BUCKET/$model_gcs_filename" 2>/dev/null; then
-            log "Downloading $model from GCS..."
-            gsutil cp "$GCS_BUCKET/$model_gcs_filename" "$model_tar_file"
-            success "✓ $model (from GCS)"
-            CURRENT_PROGRESS=$((CURRENT_PROGRESS + PROGRESS_PER_MODEL))
-            continue
+            echo "[INFO] Downloading $model from GCS..."
+            if gsutil -m cp "$GCS_BUCKET/$model_gcs_filename" "$model_tar_file" 2>/dev/null; then
+                echo "[SUCCESS] ✓ $model (from GCS)"
+                return 0
+            fi
         fi
 
         # Download model
-        log "Downloading Ollama model: $model (this may take a while)"
+        echo "[INFO] Downloading Ollama model: $model (this may take a while)"
 
-        container_name="ollama-temp-${model_filename}"
-        volume_name="ollama-temp-${model_filename}"
+        local container_name="ollama-temp-${model_filename}-$$"
+        local volume_name="ollama-temp-${model_filename}-$$"
 
-        sudo docker run -d --name "$container_name" -v "$volume_name":/root/.ollama ollama/ollama:0.12.9
-        sleep 5
+        # Run Ollama container
+        if sudo docker run -d --name "$container_name" -v "$volume_name":/root/.ollama ollama/ollama:0.12.9 >/dev/null 2>&1; then
+            sleep 5
 
-        if sudo docker exec "$container_name" ollama pull "$model"; then
-            success "✓ Downloaded: $model"
+            if sudo docker exec "$container_name" ollama pull "$model" 2>&1 | tail -5; then
+                echo "[SUCCESS] ✓ Downloaded: $model"
 
-            log "Exporting model to tar file..."
-            sudo docker run --rm -v "$volume_name":/models alpine \
-                sh -c "cd /models && tar czf - ." > "$model_tar_file"
+                echo "[INFO] Exporting model to tar file..."
+                # Use pigz for faster compression
+                sudo docker run --rm -v "$volume_name":/models alpine \
+                    sh -c "cd /models && tar cf - ." | pigz -p $(nproc) > "$model_tar_file"
 
-            success "✓ Exported: $model"
+                echo "[SUCCESS] ✓ Exported: $model"
 
-            # Upload to GCS cache for future builds (run in background)
-            if [ "$GCS_ENABLED" = true ] && [ -f "$model_tar_file" ]; then
-                log "Uploading $model to GCS cache for future builds..."
-                (
-                    if gsutil cp "$model_tar_file" "$GCS_BUCKET/$model_gcs_filename" 2>/dev/null; then
-                        echo "[INFO] ✓ Cached $model in GCS for future builds"
-                    else
-                        echo "[WARNING] Failed to cache $model in GCS (will retry on next build)"
-                    fi
-                ) &
+                # Upload to GCS cache for future builds (run in background)
+                if [ "$GCS_ENABLED" = true ] && [ -f "$model_tar_file" ]; then
+                    (
+                        if gsutil -m cp "$model_tar_file" "$GCS_BUCKET/$model_gcs_filename" 2>/dev/null; then
+                            echo "[INFO] ✓ Cached $model in GCS for future builds"
+                        fi
+                    ) &
+                fi
+
+                # Cleanup
+                sudo docker stop "$container_name" >/dev/null 2>&1 || true
+                sudo docker rm "$container_name" >/dev/null 2>&1 || true
+                sudo docker volume rm "$volume_name" >/dev/null 2>&1 || true
+                return 0
+            else
+                echo "[ERROR] Failed to download: $model"
+                # Cleanup
+                sudo docker stop "$container_name" >/dev/null 2>&1 || true
+                sudo docker rm "$container_name" >/dev/null 2>&1 || true
+                sudo docker volume rm "$volume_name" >/dev/null 2>&1 || true
+                return 1
             fi
         else
-            warning "Failed to download: $model, skipping"
+            echo "[ERROR] Failed to start container for: $model"
+            return 1
         fi
+    }
 
-        # Cleanup
-        sudo docker stop "$container_name" 2>/dev/null || true
-        sudo docker rm "$container_name" 2>/dev/null || true
-        sudo docker volume rm "$volume_name" 2>/dev/null || true
+    export -f download_ollama_model
+    export MODELS_DIR
 
-        # Increment progress
-        CURRENT_PROGRESS=$((CURRENT_PROGRESS + PROGRESS_PER_MODEL))
-    done
+    # Download models in parallel
+    # Ollama models are very large, so we use fewer parallel jobs (2-4 concurrent)
+    # Adjust based on number of models and available CPU
+    if [ $TOTAL_MODELS -eq 1 ]; then
+        MODEL_PARALLEL_JOBS=1
+    elif [ $TOTAL_MODELS -eq 2 ]; then
+        MODEL_PARALLEL_JOBS=2
+    elif [ $(nproc) -ge 32 ]; then
+        # High-CPU VMs can handle 4 concurrent model downloads
+        MODEL_PARALLEL_JOBS=4
+    else
+        MODEL_PARALLEL_JOBS=3
+    fi
+
+    log "Downloading Ollama models in parallel (${MODEL_PARALLEL_JOBS} concurrent)..."
+    write_status "downloading-models" 63 "Downloading ${TOTAL_MODELS} Ollama models in parallel"
+
+    # Download all models in parallel
+    printf "%s\n" "${MODELS[@]}" | parallel -j "$MODEL_PARALLEL_JOBS" --line-buffer download_ollama_model {}
 
     write_status "downloading-models" 66 "All Ollama models downloaded"
-    success "✓ All Ollama models ready"
+    success "✓ All Ollama models ready (downloaded in parallel)"
 else
     write_status "downloading-models" 63 "No Ollama models selected, skipping"
     log "No Ollama models selected, skipping model download"
