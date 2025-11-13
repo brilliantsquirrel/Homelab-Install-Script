@@ -401,19 +401,105 @@
                         </div>
                     </div>
 
-                    <button class="btn btn-download" onclick="app.downloadISO()">
-                        📥 Download ISO
-                    </button>
+                    <div class="download-options">
+                        <h3>What would you like to do?</h3>
 
-                    <p class="download-note">
-                        Download link is valid for 7 days. The ISO will be automatically deleted after this period.
-                    </p>
+                        <div class="option-cards">
+                            <div class="option-card" onclick="app.showDownloadOption()">
+                                <div class="option-icon">📥</div>
+                                <h4>Download ISO</h4>
+                                <p>Download the ISO file to your computer</p>
+                                <button class="btn btn-primary">Download</button>
+                            </div>
+
+                            <div class="option-card" onclick="app.showFlashOption()">
+                                <div class="option-icon">💾</div>
+                                <h4>Flash to USB Drive</h4>
+                                <p>Create a bootable USB drive directly</p>
+                                <button class="btn btn-primary">Flash USB</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Download Option Details (hidden by default) -->
+                    <div id="download-details" class="option-details" style="display: none;">
+                        <h4>📥 Download ISO File</h4>
+                        <button class="btn btn-download btn-lg" onclick="app.downloadISO()">
+                            📥 Download ISO
+                        </button>
+                        <p class="download-note">
+                            Download link is valid for 7 days. The ISO will be automatically deleted after this period.
+                        </p>
+                    </div>
+
+                    <!-- Flash Option Details (hidden by default) -->
+                    <div id="flash-details" class="option-details" style="display: none;">
+                        <h4>💾 Flash to USB Drive</h4>
+                        <p class="flash-intro">
+                            Use our cross-platform CLI tool to create a bootable USB drive directly from this ISO.
+                        </p>
+
+                        <div class="flash-steps">
+                            <div class="flash-step">
+                                <div class="step-number">1</div>
+                                <div class="step-content">
+                                    <h5>Install Node.js</h5>
+                                    <p>Required to run the USB flasher tool. Download from <a href="https://nodejs.org" target="_blank">nodejs.org</a></p>
+                                </div>
+                            </div>
+
+                            <div class="flash-step">
+                                <div class="step-number">2</div>
+                                <div class="step-content">
+                                    <h5>Run the Flasher Tool</h5>
+                                    <p>Open your terminal and run this command:</p>
+                                    <div class="code-block">
+                                        <code id="flasher-command">npx homelab-iso-flasher --url="<span id="iso-url-placeholder">LOADING...</span>"</code>
+                                        <button class="btn-copy" onclick="app.copyFlasherCommand()" title="Copy command">
+                                            📋
+                                        </button>
+                                    </div>
+                                    <p class="code-note">The tool will guide you through selecting your USB drive</p>
+                                </div>
+                            </div>
+
+                            <div class="flash-step">
+                                <div class="step-number">3</div>
+                                <div class="step-content">
+                                    <h5>Follow the Interactive Prompts</h5>
+                                    <p>The tool will:</p>
+                                    <ul>
+                                        <li>Download the ISO automatically</li>
+                                        <li>Detect all connected USB drives</li>
+                                        <li>Let you select the target drive</li>
+                                        <li>Show progress during the write operation</li>
+                                        <li>Verify the write and safely eject</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="flash-warning">
+                            <strong>⚠️ Warning:</strong> Flashing will erase ALL data on the selected USB drive. Make sure to back up any important files first!
+                        </div>
+
+                        <div class="flash-alternatives">
+                            <h5>Alternative Tools</h5>
+                            <p>You can also use these popular tools to flash the ISO:</p>
+                            <ul>
+                                <li><strong>balenaEtcher</strong> (Windows, macOS, Linux): <a href="https://www.balena.io/etcher/" target="_blank">balena.io/etcher</a></li>
+                                <li><strong>Rufus</strong> (Windows): <a href="https://rufus.ie/" target="_blank">rufus.ie</a></li>
+                                <li><strong>dd command</strong> (Linux/macOS): <code>sudo dd if=file.iso of=/dev/sdX bs=4M status=progress</code></li>
+                            </ul>
+                        </div>
+
+                        <button class="btn btn-secondary" onclick="app.hideOptionDetails()">← Back to Options</button>
+                    </div>
                 </div>
 
                 <div class="next-steps">
-                    <h3>Next Steps</h3>
+                    <h3>After Creating Your Bootable USB</h3>
                     <ol>
-                        <li>Write the ISO to a USB drive using dd or Rufus</li>
                         <li>Boot your server from the USB drive</li>
                         <li>Install Ubuntu normally</li>
                         <li>After first boot, run: <code>cd /opt/homelab && ./post-install.sh</code></li>

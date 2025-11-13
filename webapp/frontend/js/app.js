@@ -353,6 +353,65 @@ class HomeLabISOBuilder {
         }
     }
 
+    async showDownloadOption() {
+        // Hide option cards
+        document.querySelector('.option-cards').style.display = 'none';
+
+        // Show download details
+        document.getElementById('download-details').style.display = 'block';
+    }
+
+    async showFlashOption() {
+        // Hide option cards
+        document.querySelector('.option-cards').style.display = 'none';
+
+        // Get download URL and update the flasher command
+        try {
+            const response = await window.api.getDownloadURL(this.buildId);
+            const downloadUrl = response.download_url || response.redirect_url;
+
+            if (downloadUrl) {
+                const urlPlaceholder = document.getElementById('iso-url-placeholder');
+                if (urlPlaceholder) {
+                    urlPlaceholder.textContent = downloadUrl;
+                }
+            }
+        } catch (error) {
+            console.error('Failed to get download URL:', error);
+        }
+
+        // Show flash details
+        document.getElementById('flash-details').style.display = 'block';
+    }
+
+    hideOptionDetails() {
+        // Hide both option details
+        document.getElementById('download-details').style.display = 'none';
+        document.getElementById('flash-details').style.display = 'none';
+
+        // Show option cards again
+        document.querySelector('.option-cards').style.display = 'grid';
+    }
+
+    async copyFlasherCommand() {
+        const command = document.getElementById('flasher-command').textContent;
+
+        try {
+            await navigator.clipboard.writeText(command);
+
+            // Visual feedback
+            const btn = event.target;
+            const originalText = btn.textContent;
+            btn.textContent = '✓';
+            setTimeout(() => {
+                btn.textContent = originalText;
+            }, 2000);
+        } catch (error) {
+            console.error('Failed to copy command:', error);
+            alert('Failed to copy command to clipboard. Please copy it manually.');
+        }
+    }
+
     updateProgress(percentage, stage) {
         // Update overall progress
         const overallProgress = document.getElementById('overall-progress');

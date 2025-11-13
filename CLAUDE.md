@@ -711,7 +711,7 @@ The ISO Builder Webapp transforms the manual ISO building process (iso-prepare.s
 2. Choose Ollama AI models to pre-download
 3. Configure build settings (GPU support, email, ISO name)
 4. Monitor real-time build progress
-5. Download the completed custom ISO
+5. Download the completed custom ISO OR flash directly to USB drive
 
 The webapp orchestrates Google Cloud Compute Engine VMs to perform the actual ISO builds, with results stored in Google Cloud Storage.
 
@@ -756,6 +756,32 @@ The webapp orchestrates Google Cloud Compute Engine VMs to perform the actual IS
 - `cleanup.sh` - Complete resource removal script
 - `deployment/app.yaml` - App Engine configuration (alternative deployment)
 - `deployment/cloudbuild.yaml` - CI/CD pipeline for Cloud Build
+
+**USB Flasher Tool:**
+- **Location:** `webapp/flasher/`
+- **Technology:** Node.js CLI application with cross-platform support
+- **Purpose:** Creates bootable USB drives directly from ISO download URLs
+- **Features:**
+  - Cross-platform USB drive detection (Windows, macOS, Linux)
+  - Integrated ISO download with progress tracking
+  - Interactive drive selection with safety confirmations
+  - Automatic unmounting and safe ejection
+  - Progress indicators during write operations
+  - Temporary file cleanup
+- **Usage:**
+  ```bash
+  # Run directly with npx (no installation required)
+  npx homelab-iso-flasher --url="<iso-download-url>"
+
+  # Or install globally
+  npm install -g homelab-iso-flasher
+  homelab-iso-flasher --url="<iso-download-url>"
+  ```
+- **Platform Support:**
+  - **Linux**: Full automated flashing support (requires sudo)
+  - **macOS**: Full automated flashing support (requires admin password)
+  - **Windows**: Downloads ISO and provides instructions for Rufus/balenaEtcher (automated flashing coming soon)
+- **Documentation:** See `webapp/flasher/README.md` for detailed usage instructions
 
 ### Deployment
 
@@ -1005,6 +1031,31 @@ gsutil ls gs://PROJECT_ID-downloads/
 gsutil iam get gs://PROJECT_ID-downloads
 
 # Check signed URL expiration (default: 1 hour)
+```
+
+**USB flasher issues:**
+```bash
+# No USB drives detected
+# - Ensure USB drive is inserted and recognized by system
+# - Check with: lsblk (Linux) or diskutil list (macOS)
+# - Try re-inserting the USB drive
+
+# Permission denied errors
+# - Linux/macOS: Run with sudo when prompted
+# - Windows: Run terminal as Administrator
+
+# Download failed
+# - Verify URL is not expired (signed URLs valid for 1 hour)
+# - Generate new download URL from webapp
+# - Check internet connection and disk space
+
+# Write failed
+# - Try different USB drive
+# - Ensure USB drive has 8GB+ capacity
+# - Check drive is not write-protected
+# - Verify with: sudo badblocks -sv /dev/sdX (Linux)
+
+# For detailed troubleshooting, see webapp/flasher/README.md
 ```
 
 **Cost monitoring:**
