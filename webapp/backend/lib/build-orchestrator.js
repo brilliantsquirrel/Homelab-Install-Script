@@ -300,7 +300,7 @@ class BuildOrchestrator {
             await new Promise(resolve => setTimeout(resolve, config.build.pollIntervalMs));
         }
 
-        throw new Error('Build timeout exceeded (8 hours)');
+        throw new Error(`Build timeout exceeded (${config.vm.buildTimeout} hours)`);
     }
 
     /**

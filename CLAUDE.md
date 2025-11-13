@@ -838,7 +838,7 @@ The deployment script handles:
 6. **Complete** (100%) - ISO ready for download via signed URL (1 hour expiration)
 7. **Cleanup** - VM automatically terminated, temporary files removed
 
-**Build time:** 15-30 minutes depending on selections and cache hits (optimized from previous 30-90 minutes)
+**Build time:** 45-90 minutes depending on selections and cache hits (optimized from previous 2-4 hours)
 
 ### Performance Optimizations
 
@@ -856,9 +856,10 @@ The ISO builder has been highly optimized for speed:
 - **Impact:** Docker image downloads 6-12x faster, model downloads 2-4x faster
 
 **Compression Optimization:**
-- **Tool:** pigz (parallel gzip) using all available CPU cores
-- **Previous:** Single-threaded gzip
-- **Impact:** Compression 8-10x faster on 44-core VM
+- **Docker images:** pigz (parallel gzip) for tar files using all CPU cores
+- **Squashfs ISO:** gzip with parallel processors instead of xz (3-5x faster)
+- **Previous:** Single-threaded gzip for tarballs, xz for squashfs (very slow)
+- **Impact:** Compression 3-10x faster on 44-core VM
 
 **GCS Transfer Optimization:**
 - **Method:** gsutil -m (parallel composite uploads/downloads)
@@ -873,13 +874,14 @@ The ISO builder has been highly optimized for speed:
 
 **Artifact Caching:**
 - **GCS cache:** All downloaded Docker images and Ollama models cached automatically
-- **Cache hits:** Subsequent builds with same selections can complete in 10-15 minutes
+- **Cache hits:** Subsequent builds with same selections skip downloads entirely
 - **Background uploads:** Cache uploads run in background without blocking builds
 
 **Overall Performance Improvement:**
-- **First build:** 15-30 minutes (down from 30-90 minutes) = **2-3x faster**
-- **Cached builds:** 10-15 minutes (down from 20-30 minutes) = **2x faster**
-- **Timeout:** Reduced from 8 hours to 4 hours (builds complete much faster now)
+- **Download phase:** 10-20 minutes (down from 40-90 minutes) = **3-6x faster**
+- **ISO creation phase:** 30-70 minutes (down from 80-150 minutes) = **2-3x faster**
+- **Total build time:** 45-90 minutes (down from 2-4 hours) = **2-3x faster**
+- **Timeout:** Set to 6 hours (builds complete well within this window)
 
 ### Security Features
 

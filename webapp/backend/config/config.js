@@ -33,7 +33,7 @@ module.exports = {
         imageFamily: 'ubuntu-2204-lts',
         imageProject: 'ubuntu-os-cloud',
         maxConcurrentBuilds: parseInt(process.env.MAX_CONCURRENT_BUILDS) || 3,
-        buildTimeout: parseInt(process.env.BUILD_TIMEOUT_HOURS) || 4, // Reduced from 8 to 4 hours with performance optimizations
+        buildTimeout: parseInt(process.env.BUILD_TIMEOUT_HOURS) || 6, // Builds complete in 45-90 min with optimizations, 6hr allows safety margin
         autoCleanup: process.env.VM_AUTO_CLEANUP !== 'false',
     },
 
