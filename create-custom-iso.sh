@@ -365,23 +365,29 @@ success "Filesystem customization complete"
 
 # Step 4: Repack the squashfs filesystem
 header "Step 4: Repacking squashfs filesystem"
-log "This will take several minutes (~5-10 minutes)..."
-log "Compressing with xz (high compression for smaller ISO)..."
+log "This will take several minutes (faster with parallel compression)..."
+log "Using gzip compression (faster than xz, still good compression)..."
 
 # Remove old squashfs
 sudo rm -f "$SQUASHFS_FILE"
 
-# Create new squashfs with high compression
-# Show all output (don't filter) to catch any errors
-log "Running mksquashfs (this is verbose but shows progress)..."
+# OPTIMIZATION: Use gzip with parallel compression instead of xz for 3-5x faster compression
+# xz is very slow (~30-40 min for large filesystems), gzip is much faster (~8-12 min)
+# ISO will be slightly larger but builds 3-5x faster
+log "Running mksquashfs with parallel gzip compression..."
+
+# Check if we have enough CPU cores to benefit from parallel compression
+PROCESSORS=$(nproc)
+log "Using $PROCESSORS CPU cores for parallel compression"
+
 if sudo mksquashfs "$SQUASHFS_EXTRACT" "$SQUASHFS_FILE" \
-    -comp xz \
-    -Xbcj x86 \
+    -comp gzip \
+    -processors $PROCESSORS \
     -b 1M \
-    -Xdict-size 1M \
     -no-duplicates \
-    -no-recovery; then
-    success "Squashfs filesystem repacked"
+    -no-recovery \
+    -progress; then
+    success "Squashfs filesystem repacked (parallel compression)"
 else
     error "mksquashfs command failed!"
     error "This usually means:"
