@@ -334,31 +334,54 @@ EOF
 log "Starting ISO build for build ID: $BUILD_ID"
 write_status "initializing" 20 "Starting VM initialization"
 
-# Update system
-log "Updating system packages..."
-write_status "initializing" 24 "Updating system packages"
+# OPTIMIZATION: Skip system upgrade to save 5-10 minutes
+# Fresh VMs from GCP are already up-to-date
+log "Updating package lists..."
+write_status "initializing" 22 "Updating package lists"
 export DEBIAN_FRONTEND=noninteractive
-apt-get update
-apt-get upgrade -y
+apt-get update -qq
 
-# Install dependencies (includes jq for JSON parsing)
-log "Installing build dependencies..."
+# OPTIMIZATION: Install Docker repository and gcsfuse repository in parallel
+log "Adding Docker and gcsfuse repositories..."
+write_status "initializing" 24 "Adding software repositories"
+
+# Add Docker repository
+(
+    install -m 0755 -d /etc/apt/keyrings
+    curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+    chmod a+r /etc/apt/keyrings/docker.asc
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
+) &
+DOCKER_REPO_PID=$!
+
+# Add gcsfuse repository
+(
+    export GCSFUSE_REPO=gcsfuse-$(lsb_release -c -s)
+    echo "deb https://packages.cloud.google.com/apt $GCSFUSE_REPO main" | tee /etc/apt/sources.list.d/gcsfuse.list
+    curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | apt-key add -
+) &
+GCSFUSE_REPO_PID=$!
+
+# Wait for both repositories to be added
+wait $DOCKER_REPO_PID
+wait $GCSFUSE_REPO_PID
+
+# Update package lists with new repositories
+apt-get update -qq
+
+# OPTIMIZATION: Install all packages in one command for faster installation
+log "Installing build dependencies, Docker, and gcsfuse..."
 write_status "initializing" 28 "Installing build dependencies"
-apt-get install -y \\
+apt-get install -y --no-install-recommends \\
     git rsync curl wget gnupg lsb-release ca-certificates \\
-    software-properties-common fuse pigz pv xorriso squashfs-tools jq bc
+    software-properties-common fuse pigz pv xorriso squashfs-tools jq bc \\
+    parallel \\
+    docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin \\
+    gcsfuse
 
-# Install gcsfuse
-log "Installing gcsfuse..."
-export GCSFUSE_REPO=gcsfuse-$(lsb_release -c -s)
-echo "deb https://packages.cloud.google.com/apt $GCSFUSE_REPO main" | tee /etc/apt/sources.list.d/gcsfuse.list
-curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | apt-key add -
-apt-get update
-apt-get install -y gcsfuse
-
-# Install Docker
-log "Installing Docker..."
-curl -fsSL https://get.docker.com | sh
+# Start Docker service
+systemctl enable docker
+systemctl start docker
 
 # Mount local SSDs if available
 if ls /dev/disk/by-id/google-local-ssd-* &> /dev/null; then
