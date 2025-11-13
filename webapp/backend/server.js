@@ -232,7 +232,7 @@ app.use((err, req, res, next) => {
 // Start server
 const PORT = config.port;
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
     logger.info(`Homelab ISO Builder server started`);
     logger.info(`Environment: ${config.env}`);
     logger.info(`Port: ${PORT}`);
@@ -244,7 +244,7 @@ app.listen(PORT, () => {
 // Graceful shutdown
 process.on('SIGTERM', () => {
     logger.info('SIGTERM signal received: closing HTTP server');
-    app.close(() => {
+    server.close(() => {
         logger.info('HTTP server closed');
         process.exit(0);
     });
@@ -252,7 +252,10 @@ process.on('SIGTERM', () => {
 
 process.on('SIGINT', () => {
     logger.info('SIGINT signal received: closing HTTP server');
-    process.exit(0);
+    server.close(() => {
+        logger.info('HTTP server closed');
+        process.exit(0);
+    });
 });
 
 module.exports = app;
