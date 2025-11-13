@@ -9,6 +9,17 @@ class HomeLabISOBuilder {
         this.buildStartTime = null;
         this.pollingInterval = null;
 
+        // Task-specific progress tracking
+        this.taskProgress = {
+            'vm-creation': { current: 0, total: 1, percentage: 0 },
+            'cache-check': { current: 0, total: 1, percentage: 0 },
+            'docker-images': { current: 0, total: 0, percentage: 0 },
+            'ollama-models': { current: 0, total: 0, percentage: 0 },
+            'iso-build': { current: 0, total: 1, percentage: 0 },
+            'iso-upload': { current: 0, total: 1, percentage: 0 },
+            'cache-populate': { current: 0, total: 1, percentage: 0 }
+        };
+
         // Service dependencies map
         this.serviceDependencies = {
             'openwebui': ['ollama'],
@@ -239,6 +250,7 @@ class HomeLabISOBuilder {
             document.getElementById('vm-name').textContent = 'Creating...';
             document.getElementById('estimated-completion').textContent = 'Calculating...';
             this.clearLogs();
+            this.resetChecklist();
             this.addLog('Submitting build request...', 'progress');
 
             // Start build
@@ -301,6 +313,8 @@ class HomeLabISOBuilder {
             status.logs.forEach(log => {
                 if (!this.hasLog(log)) {
                     this.addLog(log);
+                    // Also use log messages to update checklist for more granular tracking
+                    this.updateChecklistFromLog(log, status.progress || 0);
                 }
             });
         }
@@ -315,8 +329,105 @@ class HomeLabISOBuilder {
         }
     }
 
+    updateChecklistFromLog(logMessage, percentage) {
+        // Parse log messages to update checklist with more granularity
+        const lowerLog = logMessage.toLowerCase();
+
+        // Parse progress patterns like "X/Y" from logs
+        const progressMatch = logMessage.match(/(\d+)\/(\d+)/);
+
+        if (lowerLog.includes('vm created') || lowerLog.includes('created successfully')) {
+            this.setTaskProgress('vm-creation', 1, 1);
+            this.updateChecklistItem('vm-creation', 'completed');
+        } else if (lowerLog.includes('creating vm') || lowerLog.includes('initializing')) {
+            this.setTaskProgress('vm-creation', 0, 1);
+            this.updateChecklistItem('vm-creation', 'in-progress');
+            this.markPreviousTasksComplete('vm-creation');
+        } else if (lowerLog.includes('downloading docker image') || lowerLog.includes('pulling') && progressMatch) {
+            // Extract "3/5" from "Downloading Docker image 3/5: nginx"
+            const current = parseInt(progressMatch[1]);
+            const total = parseInt(progressMatch[2]);
+            this.setTaskProgress('docker-images', current, total);
+            this.updateChecklistItem('docker-images', 'in-progress');
+            this.markPreviousTasksComplete('docker-images');
+        } else if (lowerLog.includes('all docker images')) {
+            const progress = this.taskProgress['docker-images'];
+            this.setTaskProgress('docker-images', progress.total, progress.total);
+            this.updateChecklistItem('docker-images', 'completed');
+        } else if (lowerLog.includes('downloading ollama model') && progressMatch) {
+            // Extract "2/4" from "Downloading Ollama model 2/4: qwen3:8b"
+            const current = parseInt(progressMatch[1]);
+            const total = parseInt(progressMatch[2]);
+            this.setTaskProgress('ollama-models', current, total);
+            this.updateChecklistItem('ollama-models', 'in-progress');
+            this.markPreviousTasksComplete('ollama-models');
+        } else if (lowerLog.includes('all ollama models')) {
+            const progress = this.taskProgress['ollama-models'];
+            this.setTaskProgress('ollama-models', progress.total, progress.total);
+            this.updateChecklistItem('ollama-models', 'completed');
+        } else if (lowerLog.includes('no ollama models selected')) {
+            this.setTaskProgress('ollama-models', 1, 1);
+            this.updateChecklistItem('ollama-models', 'completed');
+        } else if (lowerLog.includes('building iso') || lowerLog.includes('running create-custom-iso')) {
+            this.setTaskProgress('iso-build', 0, 1);
+            this.updateChecklistItem('iso-build', 'in-progress');
+            this.markPreviousTasksComplete('iso-build');
+        } else if (lowerLog.includes('uploading iso') || lowerLog.includes('upload attempt')) {
+            // Parse upload attempts "Upload attempt 1/3"
+            if (progressMatch) {
+                const current = parseInt(progressMatch[1]) - 1; // 0-based for in-progress
+                const total = parseInt(progressMatch[2]);
+                this.setTaskProgress('iso-upload', current, total);
+            } else {
+                this.setTaskProgress('iso-upload', 0, 1);
+            }
+            this.updateChecklistItem('iso-upload', 'in-progress');
+            this.markPreviousTasksComplete('iso-upload');
+        } else if (lowerLog.includes('iso uploaded') || lowerLog.includes('upload verification successful')) {
+            this.setTaskProgress('iso-upload', 1, 1);
+            this.updateChecklistItem('iso-upload', 'completed');
+        } else if (lowerLog.includes('waiting for') && lowerLog.includes('cache upload')) {
+            // Extract number of background jobs "Waiting for 5 background cache upload(s)"
+            const jobsMatch = logMessage.match(/waiting for (\d+) background/i);
+            if (jobsMatch) {
+                const totalJobs = parseInt(jobsMatch[1]);
+                this.setTaskProgress('cache-populate', 0, totalJobs);
+            }
+            this.updateChecklistItem('cache-populate', 'in-progress');
+            this.markPreviousTasksComplete('cache-populate');
+        } else if (lowerLog.includes('all cache uploads completed') || lowerLog.includes('preparation complete')) {
+            this.setTaskProgress('cache-populate', 1, 1);
+            this.updateChecklistItem('cache-populate', 'completed');
+        } else if (lowerLog.includes('cached') && lowerLog.includes('in gcs')) {
+            // Individual cache upload completed - increment progress
+            const progress = this.taskProgress['cache-populate'];
+            if (progress.total > 0 && progress.current < progress.total) {
+                this.setTaskProgress('cache-populate', progress.current + 1, progress.total);
+                this.updateChecklistItem('cache-populate', 'in-progress');
+            }
+        }
+    }
+
+    setTaskProgress(taskId, current, total) {
+        // Update task-specific progress
+        if (this.taskProgress[taskId]) {
+            this.taskProgress[taskId].current = current;
+            this.taskProgress[taskId].total = total;
+            this.taskProgress[taskId].percentage = total > 0 ? Math.round((current / total) * 100) : 0;
+        }
+    }
+
     handleBuildComplete(status) {
         const buildDuration = Math.floor((Date.now() - this.buildStartTime) / 1000);
+
+        // Mark all checklist items as complete
+        const taskIds = ['vm-creation', 'cache-check', 'docker-images', 'ollama-models', 'iso-build', 'iso-upload', 'cache-populate'];
+        taskIds.forEach(taskId => {
+            this.updateChecklistItem(taskId, 'completed');
+        });
+
+        // Update progress to 100%
+        this.updateProgress(100, 'Complete');
 
         // Show completion step
         const currentSection = document.querySelector('.step.active');
@@ -430,31 +541,46 @@ class HomeLabISOBuilder {
     }
 
     updateChecklist(stageName, percentage) {
-        // Map stage names and messages to checklist tasks
-        const taskMapping = {
-            'vm': 'vm-creation',
-            'creating': 'vm-creation',
-            'cache': 'cache-check',
-            'docker': 'docker-images',
-            'image': 'docker-images',
-            'ollama': 'ollama-models',
-            'model': 'ollama-models',
-            'building': 'iso-build',
-            'uploading': 'iso-upload',
-            'populating': 'cache-populate'
-        };
-
+        // Determine which task is active based on stage name and percentage
         const lowerStage = stageName.toLowerCase();
+        let activeTask = null;
 
-        // Determine which task is active
-        for (const [key, taskId] of Object.entries(taskMapping)) {
-            if (lowerStage.includes(key)) {
-                this.updateChecklistItem(taskId, 'in-progress', percentage);
+        // Map stages to tasks with priority (more specific matches first)
+        if (lowerStage.includes('downloading-images') || lowerStage.includes('docker image')) {
+            activeTask = 'docker-images';
+        } else if (lowerStage.includes('downloading-models') || lowerStage.includes('ollama model')) {
+            activeTask = 'ollama-models';
+        } else if (lowerStage.includes('uploading') || lowerStage.includes('upload')) {
+            activeTask = 'iso-upload';
+        } else if (lowerStage.includes('building') || lowerStage.includes('build')) {
+            activeTask = 'iso-build';
+        } else if (lowerStage.includes('populating') || lowerStage.includes('cache upload') || lowerStage.includes('preparation-complete')) {
+            activeTask = 'cache-populate';
+        } else if (lowerStage.includes('cloning') || lowerStage.includes('downloading') || lowerStage.includes('checking cache')) {
+            activeTask = 'cache-check';
+        } else if (lowerStage.includes('creating vm') || lowerStage.includes('initializing') || lowerStage.includes('creating_vm')) {
+            activeTask = 'vm-creation';
+        } else if (percentage >= 95) {
+            activeTask = 'cache-populate';
+        } else if (percentage >= 80) {
+            activeTask = 'iso-upload';
+        } else if (percentage >= 60) {
+            activeTask = 'iso-build';
+        } else if (percentage >= 40) {
+            activeTask = 'ollama-models';
+        } else if (percentage >= 20) {
+            activeTask = 'docker-images';
+        } else if (percentage >= 10) {
+            activeTask = 'cache-check';
+        } else if (percentage >= 5) {
+            activeTask = 'vm-creation';
+        }
 
-                // Mark previous tasks as complete
-                this.markPreviousTasksComplete(taskId);
-                break;
-            }
+        // Update the active task
+        if (activeTask) {
+            this.updateChecklistItem(activeTask, 'in-progress', percentage);
+            // Mark previous tasks as complete
+            this.markPreviousTasksComplete(activeTask);
         }
     }
 
@@ -474,10 +600,13 @@ class HomeLabISOBuilder {
         } else if (status === 'in-progress') {
             item.classList.add('in-progress');
             checkbox.textContent = '⏳';
-            if (percentage !== null) {
-                // Calculate sub-task percentage (within the stage range)
-                const taskPercentage = this.calculateTaskPercentage(taskId, percentage);
-                progressEl.textContent = `${taskPercentage}%`;
+
+            // Use task-specific progress instead of overall build percentage
+            const taskProgress = this.taskProgress[taskId];
+            if (taskProgress && taskProgress.total > 0) {
+                progressEl.textContent = `${taskProgress.percentage}%`;
+            } else {
+                progressEl.textContent = '';
             }
         } else {
             item.classList.add('pending');
@@ -516,6 +645,25 @@ class HomeLabISOBuilder {
         for (let i = 0; i < currentIndex; i++) {
             this.updateChecklistItem(taskOrder[i], 'completed');
         }
+    }
+
+    resetChecklist() {
+        // Reset all checklist items to pending state
+        const taskIds = ['vm-creation', 'cache-check', 'docker-images', 'ollama-models', 'iso-build', 'iso-upload', 'cache-populate'];
+        taskIds.forEach(taskId => {
+            this.updateChecklistItem(taskId, 'pending');
+        });
+
+        // Reset task progress tracker
+        this.taskProgress = {
+            'vm-creation': { current: 0, total: 1, percentage: 0 },
+            'cache-check': { current: 0, total: 1, percentage: 0 },
+            'docker-images': { current: 0, total: 0, percentage: 0 },
+            'ollama-models': { current: 0, total: 0, percentage: 0 },
+            'iso-build': { current: 0, total: 1, percentage: 0 },
+            'iso-upload': { current: 0, total: 1, percentage: 0 },
+            'cache-populate': { current: 0, total: 1, percentage: 0 }
+        };
     }
 
     detectLogType(message) {
