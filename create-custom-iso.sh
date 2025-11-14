@@ -44,6 +44,66 @@ success() {
     echo -e "${GREEN}[SUCCESS]${NC} $1"
 }
 
+# Time tracking
+STEP_START_TIME=0
+start_timer() {
+    STEP_START_TIME=$(date +%s)
+}
+
+end_timer() {
+    local step_name="$1"
+    local end_time=$(date +%s)
+    local duration=$((end_time - STEP_START_TIME))
+    local minutes=$((duration / 60))
+    local seconds=$((duration % 60))
+    log "⏱  $step_name completed in ${minutes}m ${seconds}s"
+}
+
+# Progress tracking for webapp builds
+# Get BUILD_ID from metadata if not set
+if [ -z "${BUILD_ID:-}" ] && command -v curl &> /dev/null; then
+    BUILD_ID=$(curl -s -f -H "Metadata-Flavor: Google" \
+        "http://metadata.google.internal/computeMetadata/v1/instance/attributes/build-id" 2>/dev/null || echo "")
+fi
+
+# Get DOWNLOADS_BUCKET from metadata if not set
+if [ -z "${DOWNLOADS_BUCKET:-}" ] && command -v curl &> /dev/null; then
+    DOWNLOADS_BUCKET=$(curl -s -f -H "Metadata-Flavor: Google" \
+        "http://metadata.google.internal/computeMetadata/v1/instance/attributes/downloads-bucket" 2>/dev/null || echo "")
+fi
+
+# Function to write build status to GCS for real-time progress tracking
+write_status() {
+    local stage="$1"
+    local progress="$2"
+    local message="$3"
+
+    # Only write status if BUILD_ID and DOWNLOADS_BUCKET are set
+    if [ -z "${BUILD_ID:-}" ] || [ -z "${DOWNLOADS_BUCKET:-}" ]; then
+        return 0
+    fi
+
+    local BUILD_ID_SHORT="${BUILD_ID:0:8}"
+    local STATUS_FILE="gs://$DOWNLOADS_BUCKET/build-status-${BUILD_ID_SHORT}.json"
+
+    cat > /tmp/build-status.json <<EOF
+{
+  "stage": "$stage",
+  "progress": $progress,
+  "message": "$message",
+  "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+}
+EOF
+
+    # Upload status file (retry up to 3 times, silently)
+    for i in {1..3}; do
+        if gsutil cp /tmp/build-status.json "$STATUS_FILE" 2>/dev/null; then
+            break
+        fi
+        sleep 1
+    done
+}
+
 # Check if running as root
 if [ "$EUID" -eq 0 ]; then
     error "Please run as regular user with sudo privileges, not as root"
@@ -54,6 +114,9 @@ fi
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 header "Custom Ubuntu ISO Builder - Homelab Edition"
+
+# Start overall timer
+SCRIPT_START_TIME=$(date +%s)
 
 # Configuration
 UBUNTU_VERSION="24.04.3"
@@ -121,6 +184,8 @@ mkdir -p "$WORK_DIR"
 
 # Step 1: Extract the ISO
 header "Step 1: Extracting Ubuntu ISO"
+write_status "extracting-iso" 67 "Extracting Ubuntu ISO"
+start_timer
 log "This may take a few minutes..."
 mkdir -p "$ISO_EXTRACT"
 
@@ -129,6 +194,8 @@ xorriso -osirrox on -indev "$ISO_INPUT" -extract / "$ISO_EXTRACT" 2>&1 | grep -v
 # Make extracted files writable
 chmod -R u+w "$ISO_EXTRACT"
 success "ISO extracted to $ISO_EXTRACT"
+end_timer "ISO extraction"
+write_status "extracting-iso" 69 "ISO extracted successfully"
 
 # Detect ISO type and locate squashfs filesystem
 log "Detecting ISO type..."
@@ -180,6 +247,8 @@ success "Using squashfs: $(basename "$SQUASHFS_FILE")"
 
 # Step 2: Extract the squashfs filesystem
 header "Step 2: Extracting squashfs filesystem"
+write_status "extracting-squashfs" 70 "Extracting squashfs filesystem"
+start_timer
 log "This will take several minutes (~5-10 minutes)..."
 
 if [ ! -f "$SQUASHFS_FILE" ]; then
@@ -187,8 +256,13 @@ if [ ! -f "$SQUASHFS_FILE" ]; then
     exit 1
 fi
 
+SQUASHFS_SIZE=$(du -h "$SQUASHFS_FILE" | cut -f1)
+log "Squashfs file size: $SQUASHFS_SIZE"
+
 unsquashfs -no-xattrs -f -d "$SQUASHFS_EXTRACT" "$SQUASHFS_FILE"
 success "Squashfs extracted to $SQUASHFS_EXTRACT"
+end_timer "Squashfs extraction"
+write_status "extracting-squashfs" 73 "Squashfs filesystem extracted"
 
 # Step 3: Customize the filesystem
 header "Step 3: Customizing the filesystem"
@@ -236,7 +310,14 @@ success "Homelab scripts copied to /opt/homelab (excluded large data directories
 
 # Copy Docker images if available
 if [ -d "$DOCKER_DIR" ] && [ "$(ls -A "$DOCKER_DIR" 2>/dev/null)" ]; then
-    log "Copying Docker images (~20-30GB, may take 10-15 minutes)..."
+    write_status "copying-docker-images" 74 "Copying Docker images to ISO"
+    start_timer
+
+    # Calculate total size
+    DOCKER_SIZE=$(du -sh "$DOCKER_DIR" 2>/dev/null | cut -f1 || echo "unknown")
+    DOCKER_COUNT=$(ls -1 "$DOCKER_DIR" 2>/dev/null | wc -l)
+    log "Copying Docker images: $DOCKER_COUNT files, $DOCKER_SIZE total (~10-20 minutes)..."
+
     sudo mkdir -p "$SQUASHFS_EXTRACT/opt/homelab-data/docker-images"
 
     # Copy from GCS bucket mount or local directory
@@ -248,18 +329,32 @@ if [ -d "$DOCKER_DIR" ] && [ "$(ls -A "$DOCKER_DIR" 2>/dev/null)" ]; then
             warning "Failed to copy Docker images, continuing..."
         }
     else
-        sudo cp -r "$DOCKER_DIR"/* "$SQUASHFS_EXTRACT/opt/homelab-data/docker-images/" 2>/dev/null || {
+        log "Copying Docker images from local storage..."
+        sudo rsync -rlh --info=progress2 "$DOCKER_DIR/" "$SQUASHFS_EXTRACT/opt/homelab-data/docker-images/" || {
             warning "Docker images not found, skipping"
         }
     fi
-    success "Docker images copied"
+
+    # Verify copy
+    COPIED_COUNT=$(ls -1 "$SQUASHFS_EXTRACT/opt/homelab-data/docker-images" 2>/dev/null | wc -l)
+    success "Docker images copied: $COPIED_COUNT/$DOCKER_COUNT files"
+    end_timer "Docker image copy"
+    write_status "copying-docker-images" 77 "Docker images copied to ISO"
 else
     warning "Docker images directory not found or empty, skipping"
+    write_status "copying-docker-images" 77 "No Docker images to copy"
 fi
 
 # Copy Ollama models if available
 if [ -d "$MODELS_DIR" ] && [ "$(ls -A "$MODELS_DIR" 2>/dev/null)" ]; then
-    log "Copying Ollama models (~50-80GB, may take 20-30 minutes)..."
+    write_status "copying-ollama-models" 78 "Copying Ollama models to ISO"
+    start_timer
+
+    # Calculate total size
+    MODELS_SIZE=$(du -sh "$MODELS_DIR" 2>/dev/null | cut -f1 || echo "unknown")
+    MODELS_COUNT=$(ls -1 "$MODELS_DIR" 2>/dev/null | wc -l)
+    log "Copying Ollama models: $MODELS_COUNT files, $MODELS_SIZE total (~15-30 minutes)..."
+
     sudo mkdir -p "$SQUASHFS_EXTRACT/opt/homelab-data/ollama-models"
 
     if mountpoint -q "$REPO_DIR/iso-artifacts" 2>/dev/null; then
@@ -269,13 +364,20 @@ if [ -d "$MODELS_DIR" ] && [ "$(ls -A "$MODELS_DIR" 2>/dev/null)" ]; then
             warning "Failed to copy Ollama models, continuing..."
         }
     else
-        sudo cp -r "$MODELS_DIR"/* "$SQUASHFS_EXTRACT/opt/homelab-data/ollama-models/" 2>/dev/null || {
+        log "Copying Ollama models from local storage..."
+        sudo rsync -rlh --info=progress2 "$MODELS_DIR/" "$SQUASHFS_EXTRACT/opt/homelab-data/ollama-models/" || {
             warning "Ollama models not found, skipping"
         }
     fi
-    success "Ollama models copied"
+
+    # Verify copy
+    COPIED_MODELS=$(ls -1 "$SQUASHFS_EXTRACT/opt/homelab-data/ollama-models" 2>/dev/null | wc -l)
+    success "Ollama models copied: $COPIED_MODELS/$MODELS_COUNT files"
+    end_timer "Ollama models copy"
+    write_status "copying-ollama-models" 80 "Ollama models copied to ISO"
 else
     warning "Ollama models directory not found or empty, skipping"
+    write_status "copying-ollama-models" 80 "No Ollama models to copy"
 fi
 
 # Create first-boot setup script
@@ -365,8 +467,14 @@ success "Filesystem customization complete"
 
 # Step 4: Repack the squashfs filesystem
 header "Step 4: Repacking squashfs filesystem"
+write_status "repacking-squashfs" 81 "Repacking squashfs filesystem with compression"
+start_timer
 log "This will take several minutes (faster with parallel compression)..."
 log "Using gzip compression (faster than xz, still good compression)..."
+
+# Calculate source size
+SQUASHFS_SOURCE_SIZE=$(du -sh "$SQUASHFS_EXTRACT" 2>/dev/null | cut -f1 || echo "unknown")
+log "Source filesystem size: $SQUASHFS_SOURCE_SIZE"
 
 # Remove old squashfs
 sudo rm -f "$SQUASHFS_FILE"
@@ -387,7 +495,13 @@ if sudo mksquashfs "$SQUASHFS_EXTRACT" "$SQUASHFS_FILE" \
     -no-duplicates \
     -no-recovery \
     -progress; then
+
+    # Show compressed size
+    COMPRESSED_SIZE=$(du -h "$SQUASHFS_FILE" | cut -f1)
+    log "Compressed squashfs size: $COMPRESSED_SIZE (from $SQUASHFS_SOURCE_SIZE)"
     success "Squashfs filesystem repacked (parallel compression)"
+    end_timer "Squashfs repacking"
+    write_status "repacking-squashfs" 85 "Squashfs filesystem repacked"
 else
     error "mksquashfs command failed!"
     error "This usually means:"
@@ -422,6 +536,8 @@ success "ISO metadata updated"
 
 # Step 6: Create the new ISO
 header "Step 6: Creating new bootable ISO"
+write_status "creating-iso" 90 "Creating bootable ISO file"
+start_timer
 log "Building ISO image..."
 
 xorriso -as mkisofs \
@@ -442,6 +558,8 @@ xorriso -as mkisofs \
     "$ISO_EXTRACT" 2>&1 | grep -v "^xorriso" || true
 
 success "Custom ISO created: $ISO_OUTPUT"
+end_timer "ISO creation"
+write_status "creating-iso" 95 "Bootable ISO created"
 
 # Step 7: Make ISO hybrid bootable
 log "Making ISO hybrid bootable..."
@@ -479,12 +597,22 @@ success "Build directory cleaned up"
 
 # Final summary
 header "ISO Creation Complete!"
+write_status "complete" 100 "ISO build complete"
+
+# Calculate total build time
+SCRIPT_END_TIME=$(date +%s)
+TOTAL_DURATION=$((SCRIPT_END_TIME - SCRIPT_START_TIME))
+TOTAL_MINUTES=$((TOTAL_DURATION / 60))
+TOTAL_SECONDS=$((TOTAL_DURATION % 60))
+
 echo ""
 success "Custom Ubuntu ISO created successfully!"
 echo ""
 echo "  Input ISO:  $ISO_INPUT"
 echo "  Output ISO: $ISO_OUTPUT"
 echo "  ISO Size:   ${ISO_SIZE_MB}MB (~${ISO_SIZE_GB}GB)"
+echo ""
+echo "  Total Build Time: ${TOTAL_MINUTES}m ${TOTAL_SECONDS}s"
 echo ""
 echo "What's included in this ISO:"
 echo "  - Ubuntu Server 24.04.3 LTS"
