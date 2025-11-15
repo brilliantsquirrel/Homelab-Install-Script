@@ -25,11 +25,12 @@ module.exports = {
     // VM configuration for ISO builds
     vm: {
         namePrefix: 'iso-build',
-        // c3-highcpu-44: 44 vCPUs, 88GB RAM, 23 Gbps network - optimized for parallel downloads and compression
-        // Previously n2-standard-16 (16 vCPUs, 64GB RAM, 10 Gbps) - upgrade provides ~3x faster builds
-        machineType: process.env.VM_MACHINE_TYPE || 'c3-highcpu-44',
+        // c2d-highcpu-32: 32 vCPUs, 64GB RAM - optimized for parallel downloads and compression
+        // Previously n2-standard-16 (16 vCPUs, 64GB RAM) - upgrade provides ~2x faster builds
+        // Note: Fits within default 32 vCPU quota; c2d-highcpu-56 requires quota increase
+        machineType: process.env.VM_MACHINE_TYPE || 'c2d-highcpu-32',
         bootDiskSize: process.env.VM_BOOT_DISK_SIZE || '500',
-        localSsdCount: parseInt(process.env.VM_LOCAL_SSD_COUNT) || 2,
+        localSsdCount: parseInt(process.env.VM_LOCAL_SSD_COUNT) || 4, // c2d machines support 0, 4, or 8 SSDs
         imageFamily: 'ubuntu-2204-lts',
         imageProject: 'ubuntu-os-cloud',
         maxConcurrentBuilds: parseInt(process.env.MAX_CONCURRENT_BUILDS) || 3,

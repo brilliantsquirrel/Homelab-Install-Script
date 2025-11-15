@@ -309,12 +309,12 @@ if [ -f "$UBUNTU_ISO_FILE" ]; then
     log "Ubuntu Server ISO already downloaded"
     write_status "downloading-ubuntu" 40 "Ubuntu Server ISO already available"
 elif [ "$GCS_ENABLED" = true ] && gsutil -q stat "$GCS_BUCKET/$UBUNTU_ISO_GCS" 2>/dev/null; then
-    log "Downloading Ubuntu ISO from GCS..."
+    log "Downloading Ubuntu ISO from GCS cache..."
     gsutil cp "$GCS_BUCKET/$UBUNTU_ISO_GCS" "$UBUNTU_ISO_FILE"
-    success "✓ Downloaded from GCS"
+    success "✓ Downloaded from GCS cache"
     write_status "downloading-ubuntu" 40 "Ubuntu Server ISO downloaded from cache"
 else
-    log "Downloading Ubuntu Server ISO from official source..."
+    log "Downloading Ubuntu Server ISO from official source (this will be cached for future builds)..."
     wget -O "$UBUNTU_ISO_FILE" "$UBUNTU_ISO_URL" || {
         error "Failed to download Ubuntu ISO"
         write_status "failed" 0 "Failed to download Ubuntu Server ISO"
@@ -322,6 +322,16 @@ else
     }
     success "✓ Downloaded Ubuntu ISO"
     write_status "downloading-ubuntu" 40 "Ubuntu Server ISO downloaded"
+
+    # Upload to GCS cache for future builds (run in background)
+    if [ "$GCS_ENABLED" = true ] && [ -f "$UBUNTU_ISO_FILE" ]; then
+        log "Caching Ubuntu ISO to GCS for future builds..."
+        (
+            if gsutil -m cp "$UBUNTU_ISO_FILE" "$GCS_BUCKET/$UBUNTU_ISO_GCS" 2>/dev/null; then
+                echo "[INFO] ✓ Cached Ubuntu ISO in GCS for future builds"
+            fi
+        ) &
+    fi
 fi
 
 # ========================================
