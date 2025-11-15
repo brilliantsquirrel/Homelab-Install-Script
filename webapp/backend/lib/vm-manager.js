@@ -548,14 +548,115 @@ ${config.vm.autoCleanup ? 'log "Auto-cleanup enabled, shutting down VM in 10 sec
     }
 
     /**
-     * Delete VM
+     * Export VM logs to GCS before deletion
      * @param {string} vmName - VM name
-     * @param {string} buildId - Optional build ID for logging context
+     * @param {string} buildId - Build ID for logging context
+     * @returns {string|null} GCS path to exported logs
      */
-    async deleteVM(vmName, buildId = 'unknown') {
+    async exportVMLogs(vmName, buildId = 'unknown') {
         const vmLogger = logger.withContext({ buildId, component: 'VMManager', vmName });
 
         try {
+            vmLogger.info('Exporting VM logs to GCS');
+
+            // Get serial port output (console logs)
+            vmLogger.debug('Fetching serial port output');
+            const [serialPortOutput] = await this.retryApiCall(
+                async () => await this.instancesClient.getSerialPortOutput({
+                    project: this.projectId,
+                    zone: this.zone,
+                    instance: vmName,
+                    port: 1,
+                }),
+                { buildId, vmName, operation: 'getSerialPortOutput' },
+                2 // Fewer retries for log export
+            );
+
+            const serialLogs = serialPortOutput.contents || 'No serial port output available';
+            vmLogger.debug('Serial port output fetched', { size: serialLogs.length });
+
+            // Get build log file from VM if available (via metadata)
+            // Note: This would require SSH access, which we'll skip for now
+            // The serial port output contains the main build logs
+
+            // Prepare log bundle
+            const buildIdShort = buildId.length >= 8 ? buildId.substring(0, 8) : buildId;
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+            const logFilename = `build-logs-${buildIdShort}-${timestamp}.txt`;
+
+            // Format logs with metadata
+            const logContent = `
+================================================================================
+Build ID: ${buildId}
+VM Name: ${vmName}
+Zone: ${this.zone}
+Export Time: ${new Date().toISOString()}
+================================================================================
+
+SERIAL PORT OUTPUT (Console Logs):
+================================================================================
+${serialLogs}
+
+================================================================================
+END OF LOGS
+================================================================================
+`;
+
+            // Upload to GCS downloads bucket
+            const { Storage } = require('@google-cloud/storage');
+            const storage = new Storage({ projectId: this.projectId });
+            const bucket = storage.bucket(config.gcs.downloadsBucket);
+            const file = bucket.file(`logs/${logFilename}`);
+
+            vmLogger.info('Uploading logs to GCS', { filename: logFilename });
+            await file.save(logContent, {
+                metadata: {
+                    contentType: 'text/plain',
+                    metadata: {
+                        buildId: buildId,
+                        vmName: vmName,
+                        exportTime: new Date().toISOString(),
+                    }
+                }
+            });
+
+            const gcsPath = `gs://${config.gcs.downloadsBucket}/logs/${logFilename}`;
+            vmLogger.info('VM logs exported successfully', {
+                gcsPath,
+                logSize: logContent.length
+            });
+
+            return gcsPath;
+
+        } catch (error) {
+            vmLogger.errorWithContext('Error exporting VM logs', error, { vmName });
+            // Don't throw - log export failure shouldn't prevent VM deletion
+            return null;
+        }
+    }
+
+    /**
+     * Delete VM
+     * @param {string} vmName - VM name
+     * @param {string} buildId - Optional build ID for logging context
+     * @param {boolean} exportLogs - Whether to export logs before deletion (default: true)
+     * @returns {string|null} GCS path to exported logs (if exported)
+     */
+    async deleteVM(vmName, buildId = 'unknown', exportLogs = true) {
+        const vmLogger = logger.withContext({ buildId, component: 'VMManager', vmName });
+        let logPath = null;
+
+        try {
+            // Export logs before deletion if requested
+            if (exportLogs) {
+                logPath = await this.exportVMLogs(vmName, buildId);
+                if (logPath) {
+                    vmLogger.info('Logs exported before VM deletion', { logPath });
+                } else {
+                    vmLogger.warn('Failed to export logs, proceeding with deletion');
+                }
+            }
+
             vmLogger.info('Deleting VM');
             const [operation] = await this.retryApiCall(
                 async () => await this.instancesClient.delete({
@@ -572,10 +673,12 @@ ${config.vm.autoCleanup ? 'log "Auto-cleanup enabled, shutting down VM in 10 sec
 
             await this.waitForOperation(operation.name, buildId);
             vmLogger.info('VM deleted successfully');
+
+            return logPath;
         } catch (error) {
             if (error.code === 404) {
                 vmLogger.info('VM already deleted');
-                return;
+                return logPath;
             }
             vmLogger.errorWithContext('Error deleting VM', error, { vmName });
             throw error;

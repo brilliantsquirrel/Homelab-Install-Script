@@ -33,8 +33,9 @@ module.exports = {
         imageFamily: 'ubuntu-2204-lts',
         imageProject: 'ubuntu-os-cloud',
         maxConcurrentBuilds: parseInt(process.env.MAX_CONCURRENT_BUILDS) || 3,
-        buildTimeout: parseInt(process.env.BUILD_TIMEOUT_HOURS) || 6, // Builds complete in 45-90 min with optimizations, 6hr allows safety margin
+        buildTimeout: parseInt(process.env.BUILD_TIMEOUT_HOURS) || 6, // Increased from 4 to 6 hours
         autoCleanup: process.env.VM_AUTO_CLEANUP !== 'false',
+        stalledProgressMinutes: parseInt(process.env.STALLED_PROGRESS_MINUTES) || 30, // Fail if no progress for 30 minutes
     },
 
     // Build configuration
@@ -190,6 +191,14 @@ module.exports = {
             category: 'ai',
             size_mb: 614,
             dependencies: ['ollama'],
+            required: false,
+        },
+        'huggingface': {
+            display: 'HuggingFace TGI',
+            description: 'Text Generation Inference server for HuggingFace models',
+            category: 'ai',
+            size_mb: 4096,
+            dependencies: [],
             required: false,
         },
         // Homelab Services

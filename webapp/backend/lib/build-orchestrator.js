@@ -54,6 +54,7 @@ class BuildOrchestrator {
             stage: 'queued',
             vmName: null,
             isoFilename: null,
+            vmLogsPath: null,
             logs: [],
             created: new Date().toISOString(),
             updated: new Date().toISOString(),
@@ -129,10 +130,17 @@ class BuildOrchestrator {
                 logs: [...build.logs, `ERROR: ${error.message}`],
             });
 
-            // Cleanup VM on failure
+            // Cleanup VM on failure (with log export)
             if (build.vmName) {
                 try {
-                    await vmManager.deleteVM(build.vmName);
+                    const logPath = await vmManager.exportVMLogs(build.vmName, buildId);
+                    if (logPath) {
+                        this.updateBuildStatus(buildId, {
+                            vmLogsPath: logPath,
+                            logs: [...build.logs, `VM logs exported to: ${logPath}`],
+                        });
+                    }
+                    await vmManager.deleteVM(build.vmName, buildId, false); // Logs already exported
                 } catch (cleanupError) {
                     logger.error(`Failed to cleanup VM ${build.vmName}:`, cleanupError);
                 }
@@ -151,6 +159,9 @@ class BuildOrchestrator {
         const timeoutMs = config.vm.buildTimeout * 60 * 60 * 1000; // hours to ms
         const buildIdShort = buildId.length >= 8 ? buildId.substring(0, 8) : buildId;
         const statusFile = `build-status-${buildIdShort}.json`;
+        let lastLoggedProgress = -1; // Track last logged progress to avoid spam
+        let lastProgressUpdateTime = Date.now(); // Track when progress last changed
+        let lastProgress = 0; // Track last progress value
 
         while (Date.now() - startTime < timeoutMs) {
             // Check VM status
@@ -180,7 +191,11 @@ class BuildOrchestrator {
                             });
                         }
 
-                        logger.debug(`Build ${buildIdShort} status from GCS: ${progress}% - ${stage}`);
+                        // Only log progress if it changed by 1% or more
+                        if (Math.abs(progress - lastLoggedProgress) >= 1) {
+                            logger.info(`[build:${buildIdShort}] Progress: ${progress}% - ${stage}`);
+                            lastLoggedProgress = progress;
+                        }
                     }
                 }
             } catch (error) {
@@ -208,11 +223,20 @@ class BuildOrchestrator {
                         logs: [...build.logs, 'ISO build completed and uploaded successfully!'],
                     });
 
-                    // Cleanup VM
+                    // Cleanup VM (with log export)
                     if (config.vm.autoCleanup) {
                         try {
-                            await vmManager.deleteVM(vmName, buildId);
+                            // Export logs before deletion (enabled by default)
+                            const vmLogsPath = await vmManager.deleteVM(vmName, buildId, true);
                             logger.info(`Cleaned up VM ${vmName}`);
+
+                            // Update build status with log path if exported
+                            if (vmLogsPath) {
+                                this.updateBuildStatus(buildId, {
+                                    vmLogsPath,
+                                    logs: [...build.logs, `VM logs saved to: ${vmLogsPath}`],
+                                });
+                            }
                         } catch (error) {
                             logger.warn(`Failed to cleanup VM ${vmName}: ${error.message}`);
                         }
@@ -244,7 +268,13 @@ class BuildOrchestrator {
                         });
 
                         if (config.vm.autoCleanup) {
-                            await vmManager.deleteVM(vmName, buildId);
+                            const vmLogsPath = await vmManager.deleteVM(vmName, buildId, true);
+                            if (vmLogsPath) {
+                                this.updateBuildStatus(buildId, {
+                                    vmLogsPath,
+                                    logs: [...build.logs, `VM logs saved to: ${vmLogsPath}`],
+                                });
+                            }
                         }
 
                         try {
@@ -277,6 +307,21 @@ class BuildOrchestrator {
                         logs: [...build.logs, 'ISO build completed successfully!'],
                     });
 
+                    // Export logs even though VM is stopped
+                    if (config.vm.autoCleanup) {
+                        try {
+                            const vmLogsPath = await vmManager.exportVMLogs(vmName, buildId);
+                            if (vmLogsPath) {
+                                this.updateBuildStatus(buildId, {
+                                    vmLogsPath,
+                                    logs: [...build.logs, `VM logs saved to: ${vmLogsPath}`],
+                                });
+                            }
+                        } catch (error) {
+                            logger.warn(`Failed to export VM logs: ${error.message}`);
+                        }
+                    }
+
                     try {
                         await gcsManager.deleteFile(statusFile);
                     } catch (error) {
@@ -290,11 +335,31 @@ class BuildOrchestrator {
                 }
             }
 
-            // Update progress
-            this.updateBuildStatus(buildId, {
-                progress,
-                stage,
-            });
+            // Update progress only if it changed by 1% or more
+            // Always update stage in case there are stage changes without progress changes
+            const progressChanged = Math.abs(progress - build.progress) >= 1;
+            const stageChanged = stage !== build.stage;
+
+            if (progressChanged || stageChanged) {
+                this.updateBuildStatus(buildId, {
+                    progress,
+                    stage,
+                });
+            }
+
+            // Check for stalled progress - if progress hasn't changed in stalledProgressMinutes
+            if (progress !== lastProgress) {
+                lastProgress = progress;
+                lastProgressUpdateTime = Date.now();
+            } else {
+                const stalledMinutes = (Date.now() - lastProgressUpdateTime) / 60000;
+                const stalledThreshold = config.vm.stalledProgressMinutes || 30;
+
+                if (stalledMinutes > stalledThreshold && progress < 95) {
+                    logger.error(`Build ${buildIdShort} stalled: no progress for ${Math.floor(stalledMinutes)} minutes at ${progress}%`);
+                    throw new Error(`Build stalled: no progress for ${Math.floor(stalledMinutes)} minutes at ${progress}%. Last stage: ${stage}`);
+                }
+            }
 
             // Wait before next poll
             await new Promise(resolve => setTimeout(resolve, config.build.pollIntervalMs));
@@ -321,6 +386,7 @@ class BuildOrchestrator {
             stage: build.stage,
             vm_name: build.vmName,
             iso_filename: build.isoFilename,
+            vm_logs_path: build.vmLogsPath,
             logs: build.logs,
             created: build.created,
             updated: build.updated,

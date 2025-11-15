@@ -234,15 +234,12 @@ API_SECRET=$(openssl rand -hex 32)
 log "Building Docker image..."
 IMAGE_URL="gcr.io/$PROJECT_ID/iso-builder"
 
-# Change to parent directory to include Dockerfile at repo root
-cd ..
-
+# Build from webapp directory using cloudbuild.yaml
 gcloud builds submit \
-    --tag $IMAGE_URL \
+    --config=cloudbuild.yaml \
+    --substitutions=_IMAGE_URL=$IMAGE_URL \
     --timeout=20m \
     --quiet
-
-cd webapp
 
 success "✓ Docker image built: $IMAGE_URL"
 
@@ -258,7 +255,7 @@ gcloud run deploy iso-builder \
     --timeout 3600 \
     --max-instances 10 \
     --min-instances 0 \
-    --set-env-vars="NODE_ENV=production,GCP_PROJECT_ID=$PROJECT_ID,GCP_ZONE=$ZONE,GCP_REGION=$REGION,GCS_ARTIFACTS_BUCKET=$ARTIFACTS_BUCKET,GCS_DOWNLOADS_BUCKET=$DOWNLOADS_BUCKET,VM_MACHINE_TYPE=n2-standard-16,VM_BOOT_DISK_SIZE=500,VM_LOCAL_SSD_COUNT=2,MAX_CONCURRENT_BUILDS=3,BUILD_TIMEOUT_HOURS=4,VM_AUTO_CLEANUP=true,API_SECRET_KEY=$API_SECRET,LOG_LEVEL=info" \
+    --set-env-vars="NODE_ENV=production,GCP_PROJECT_ID=$PROJECT_ID,GCP_ZONE=$ZONE,GCP_REGION=$REGION,GCS_ARTIFACTS_BUCKET=$ARTIFACTS_BUCKET,GCS_DOWNLOADS_BUCKET=$DOWNLOADS_BUCKET,VM_MACHINE_TYPE=c3-highcpu-44,VM_BOOT_DISK_SIZE=500,VM_LOCAL_SSD_COUNT=2,MAX_CONCURRENT_BUILDS=3,BUILD_TIMEOUT_HOURS=6,STALLED_PROGRESS_MINUTES=30,VM_AUTO_CLEANUP=true,API_SECRET_KEY=$API_SECRET,LOG_LEVEL=info" \
     --service-account="${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
     --quiet
 

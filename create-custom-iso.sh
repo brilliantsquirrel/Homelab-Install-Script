@@ -44,10 +44,15 @@ success() {
     echo -e "${GREEN}[SUCCESS]${NC} $1"
 }
 
-# Check if running as root
+# Set SUDO prefix based on whether we're running as root
+# When running in VM startup scripts (as root), we don't need sudo
+# When running manually (as regular user), we need $SUDO for privileged operations
 if [ "$EUID" -eq 0 ]; then
-    error "Please run as regular user with sudo privileges, not as root"
-    exit 1
+    SUDO=""
+    log "Running as root (VM startup script mode)"
+else
+    SUDO="sudo"
+    log "Running as regular user with sudo"
 fi
 
 # Get the repository root directory
@@ -90,8 +95,8 @@ done
 
 if [ ${#MISSING_PACKAGES[@]} -gt 0 ]; then
     log "Installing required packages: ${MISSING_PACKAGES[*]}"
-    sudo apt-get update
-    sudo apt-get install -y "${MISSING_PACKAGES[@]}"
+    $SUDO apt-get update
+    $SUDO apt-get install -y "${MISSING_PACKAGES[@]}"
 fi
 
 # Check if input ISO exists
@@ -109,12 +114,12 @@ log "Working directory: $WORK_DIR"
 if [ -d "$WORK_DIR" ]; then
     warning "Removing old build directory..."
     # Unmount any lingering mounts
-    sudo umount "$SQUASHFS_EXTRACT/dev" 2>/dev/null || true
-    sudo umount "$SQUASHFS_EXTRACT/proc" 2>/dev/null || true
-    sudo umount "$SQUASHFS_EXTRACT/sys" 2>/dev/null || true
-    sudo umount "$SQUASHFS_EXTRACT" 2>/dev/null || true
-    # Use sudo because previous build may have created root-owned files
-    sudo rm -rf "$WORK_DIR"
+    $SUDO umount "$SQUASHFS_EXTRACT/dev" 2>/dev/null || true
+    $SUDO umount "$SQUASHFS_EXTRACT/proc" 2>/dev/null || true
+    $SUDO umount "$SQUASHFS_EXTRACT/sys" 2>/dev/null || true
+    $SUDO umount "$SQUASHFS_EXTRACT" 2>/dev/null || true
+    # Use $SUDO because previous build may have created root-owned files
+    $SUDO rm -rf "$WORK_DIR"
 fi
 
 mkdir -p "$WORK_DIR"
@@ -194,11 +199,11 @@ success "Squashfs extracted to $SQUASHFS_EXTRACT"
 header "Step 3: Customizing the filesystem"
 
 # Check if REPO_DIR is on a gcsfuse mount and copy to local disk if needed
-# This is necessary because sudo rsync can't access user-mounted FUSE filesystems
+# This is necessary because $SUDO rsync can't access user-mounted FUSE filesystems
 HOMELAB_SOURCE="$REPO_DIR"
 if mountpoint -q "$REPO_DIR" 2>/dev/null || df -T "$REPO_DIR" 2>/dev/null | grep -q "fuse"; then
     warning "Repository is on a FUSE/gcsfuse filesystem - copying to local disk first"
-    log "This avoids permission issues with sudo rsync accessing user-mounted FUSE"
+    log "This avoids permission issues with $SUDO rsync accessing user-mounted FUSE"
 
     HOMELAB_SOURCE="$WORK_DIR/homelab-source"
     mkdir -p "$HOMELAB_SOURCE"
@@ -218,12 +223,12 @@ if mountpoint -q "$REPO_DIR" 2>/dev/null || df -T "$REPO_DIR" 2>/dev/null | grep
 fi
 
 log "Copying homelab scripts..."
-sudo mkdir -p "$SQUASHFS_EXTRACT/opt/homelab"
+$SUDO mkdir -p "$SQUASHFS_EXTRACT/opt/homelab"
 
 # Copy only necessary files, exclude large directories
 # Use rsync to exclude iso-artifacts, iso-build, and .git
 # Note: --no-times for compatibility with gcsfuse-mounted source directories
-sudo rsync -rl --no-times \
+$SUDO rsync -rl --no-times \
     --exclude='iso-artifacts' \
     --exclude='iso-build' \
     --exclude='.git' \
@@ -237,18 +242,18 @@ success "Homelab scripts copied to /opt/homelab (excluded large data directories
 # Copy Docker images if available
 if [ -d "$DOCKER_DIR" ] && [ "$(ls -A "$DOCKER_DIR" 2>/dev/null)" ]; then
     log "Copying Docker images (~20-30GB, may take 10-15 minutes)..."
-    sudo mkdir -p "$SQUASHFS_EXTRACT/opt/homelab-data/docker-images"
+    $SUDO mkdir -p "$SQUASHFS_EXTRACT/opt/homelab-data/docker-images"
 
     # Copy from GCS bucket mount or local directory
     if mountpoint -q "$REPO_DIR/iso-artifacts" 2>/dev/null; then
         # Files are in GCS bucket, copy them
         log "Copying Docker images from GCS bucket..."
         # Note: --no-times for compatibility with gcsfuse filesystem
-        sudo rsync -rlh --no-times --info=progress2 "$DOCKER_DIR/" "$SQUASHFS_EXTRACT/opt/homelab-data/docker-images/" || {
+        $SUDO rsync -rlh --no-times --info=progress2 "$DOCKER_DIR/" "$SQUASHFS_EXTRACT/opt/homelab-data/docker-images/" || {
             warning "Failed to copy Docker images, continuing..."
         }
     else
-        sudo cp -r "$DOCKER_DIR"/* "$SQUASHFS_EXTRACT/opt/homelab-data/docker-images/" 2>/dev/null || {
+        $SUDO cp -r "$DOCKER_DIR"/* "$SQUASHFS_EXTRACT/opt/homelab-data/docker-images/" 2>/dev/null || {
             warning "Docker images not found, skipping"
         }
     fi
@@ -260,16 +265,16 @@ fi
 # Copy Ollama models if available
 if [ -d "$MODELS_DIR" ] && [ "$(ls -A "$MODELS_DIR" 2>/dev/null)" ]; then
     log "Copying Ollama models (~50-80GB, may take 20-30 minutes)..."
-    sudo mkdir -p "$SQUASHFS_EXTRACT/opt/homelab-data/ollama-models"
+    $SUDO mkdir -p "$SQUASHFS_EXTRACT/opt/homelab-data/ollama-models"
 
     if mountpoint -q "$REPO_DIR/iso-artifacts" 2>/dev/null; then
         log "Copying Ollama models from GCS bucket..."
         # Note: --no-times for compatibility with gcsfuse filesystem
-        sudo rsync -rlh --no-times --info=progress2 "$MODELS_DIR/" "$SQUASHFS_EXTRACT/opt/homelab-data/ollama-models/" || {
+        $SUDO rsync -rlh --no-times --info=progress2 "$MODELS_DIR/" "$SQUASHFS_EXTRACT/opt/homelab-data/ollama-models/" || {
             warning "Failed to copy Ollama models, continuing..."
         }
     else
-        sudo cp -r "$MODELS_DIR"/* "$SQUASHFS_EXTRACT/opt/homelab-data/ollama-models/" 2>/dev/null || {
+        $SUDO cp -r "$MODELS_DIR"/* "$SQUASHFS_EXTRACT/opt/homelab-data/ollama-models/" 2>/dev/null || {
             warning "Ollama models not found, skipping"
         }
     fi
@@ -280,7 +285,7 @@ fi
 
 # Create first-boot setup script
 log "Creating first-boot setup script..."
-sudo tee "$SQUASHFS_EXTRACT/opt/homelab-setup.sh" > /dev/null << 'FIRST_BOOT_EOF'
+$SUDO tee "$SQUASHFS_EXTRACT/opt/homelab-setup.sh" > /dev/null << 'FIRST_BOOT_EOF'
 #!/bin/bash
 # First boot setup script - runs once on first system boot
 
@@ -333,11 +338,11 @@ LOG_FILE="/var/log/homelab-first-boot.log"
 } >> "$LOG_FILE" 2>&1
 FIRST_BOOT_EOF
 
-sudo chmod +x "$SQUASHFS_EXTRACT/opt/homelab-setup.sh"
+$SUDO chmod +x "$SQUASHFS_EXTRACT/opt/homelab-setup.sh"
 
 # Create systemd service for first boot
 log "Creating systemd service for first boot..."
-sudo tee "$SQUASHFS_EXTRACT/etc/systemd/system/homelab-first-boot.service" > /dev/null << 'SERVICE_EOF'
+$SUDO tee "$SQUASHFS_EXTRACT/etc/systemd/system/homelab-first-boot.service" > /dev/null << 'SERVICE_EOF'
 [Unit]
 Description=Homelab First Boot Setup
 After=docker.service
@@ -354,10 +359,10 @@ SERVICE_EOF
 
 # Enable the service (will run on first boot)
 log "Enabling first-boot service in chroot..."
-sudo chroot "$SQUASHFS_EXTRACT" /bin/bash -c "systemctl enable homelab-first-boot.service" 2>/dev/null || {
+$SUDO chroot "$SQUASHFS_EXTRACT" /bin/bash -c "systemctl enable homelab-first-boot.service" 2>/dev/null || {
     warning "Could not enable service via chroot, will enable manually"
-    sudo mkdir -p "$SQUASHFS_EXTRACT/etc/systemd/system/multi-user.target.wants"
-    sudo ln -sf "/etc/systemd/system/homelab-first-boot.service" \
+    $SUDO mkdir -p "$SQUASHFS_EXTRACT/etc/systemd/system/multi-user.target.wants"
+    $SUDO ln -sf "/etc/systemd/system/homelab-first-boot.service" \
         "$SQUASHFS_EXTRACT/etc/systemd/system/multi-user.target.wants/homelab-first-boot.service"
 }
 
@@ -369,7 +374,7 @@ log "This will take several minutes (faster with parallel compression)..."
 log "Using gzip compression (faster than xz, still good compression)..."
 
 # Remove old squashfs
-sudo rm -f "$SQUASHFS_FILE"
+$SUDO rm -f "$SQUASHFS_FILE"
 
 # OPTIMIZATION: Use gzip with parallel compression instead of xz for 3-5x faster compression
 # xz is very slow (~30-40 min for large filesystems), gzip is much faster (~8-12 min)
@@ -380,7 +385,7 @@ log "Running mksquashfs with parallel gzip compression..."
 PROCESSORS=$(nproc)
 log "Using $PROCESSORS CPU cores for parallel compression"
 
-if sudo mksquashfs "$SQUASHFS_EXTRACT" "$SQUASHFS_FILE" \
+if $SUDO mksquashfs "$SQUASHFS_EXTRACT" "$SQUASHFS_FILE" \
     -comp gzip \
     -processors $PROCESSORS \
     -b 1M \
@@ -402,7 +407,7 @@ fi
 # Update filesystem size
 log "Updating filesystem size..."
 SQUASHFS_SIZE=$(du -b "$SQUASHFS_FILE" | cut -f1)
-echo "$SQUASHFS_SIZE" | sudo tee "$ISO_EXTRACT/casper/filesystem.size" > /dev/null
+echo "$SQUASHFS_SIZE" | $SUDO tee "$ISO_EXTRACT/casper/filesystem.size" > /dev/null
 
 # Step 5: Update ISO metadata
 header "Step 5: Updating ISO metadata"
@@ -413,9 +418,9 @@ VOLUME_ID="Ubuntu 24.04 Homelab"
 # Regenerate md5sum
 log "Regenerating md5sum.txt..."
 cd "$ISO_EXTRACT"
-sudo rm -f md5sum.txt
-sudo find . -type f -not -name md5sum.txt -not -path "./isolinux/*" -exec md5sum {} \; | \
-    sudo tee md5sum.txt > /dev/null
+$SUDO rm -f md5sum.txt
+$SUDO find . -type f -not -name md5sum.txt -not -path "./isolinux/*" -exec md5sum {} \; | \
+    $SUDO tee md5sum.txt > /dev/null
 cd "$REPO_DIR"
 
 success "ISO metadata updated"
@@ -471,10 +476,10 @@ fi
 # Cleanup
 header "Cleanup"
 log "Removing build directory..."
-sudo umount "$SQUASHFS_EXTRACT/dev" 2>/dev/null || true
-sudo umount "$SQUASHFS_EXTRACT/proc" 2>/dev/null || true
-sudo umount "$SQUASHFS_EXTRACT/sys" 2>/dev/null || true
-sudo rm -rf "$WORK_DIR"
+$SUDO umount "$SQUASHFS_EXTRACT/dev" 2>/dev/null || true
+$SUDO umount "$SQUASHFS_EXTRACT/proc" 2>/dev/null || true
+$SUDO umount "$SQUASHFS_EXTRACT/sys" 2>/dev/null || true
+$SUDO rm -rf "$WORK_DIR"
 success "Build directory cleaned up"
 
 # Final summary

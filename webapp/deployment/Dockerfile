@@ -22,7 +22,7 @@ RUN npm ci --only=production
 # Copy application code
 COPY backend/ ./backend/
 COPY frontend/ ./frontend/
-COPY webapp/scripts/ ./webapp/scripts/
+COPY scripts/ ./scripts/
 
 # Set environment variables
 ENV NODE_ENV=production
