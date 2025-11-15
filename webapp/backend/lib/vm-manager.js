@@ -439,13 +439,27 @@ write_status "uploading" 87 "Uploading ISO to storage"
 log "Uploading ISO to downloads bucket..."
 ISO_FILE="iso-artifacts/ubuntu-24.04.3-homelab-amd64.iso"
 
+# Wait for ISO file to become visible (gcsfuse sync delay)
+log "Waiting for ISO file to become visible..."
+MAX_WAIT=60  # Wait up to 60 seconds
+WAIT_COUNT=0
+while [ ! -f "$ISO_FILE" ] && [ $WAIT_COUNT -lt $MAX_WAIT ]; do
+    sleep 1
+    WAIT_COUNT=$((WAIT_COUNT + 1))
+    if [ $((WAIT_COUNT % 10)) -eq 0 ]; then
+        log "Still waiting for ISO file... ($WAIT_COUNT seconds)"
+    fi
+done
+
 if [ ! -f "$ISO_FILE" ]; then
-    log "ERROR: ISO file not found!"
+    log "ERROR: ISO file not found after waiting $WAIT_COUNT seconds!"
     write_status "failed" 0 "ISO file not found after build"
     echo "failed" > /tmp/build-status
     echo "ISO file not found" > /tmp/build-error
     exit 1
 fi
+
+log "ISO file found after $WAIT_COUNT seconds"
 
 # Get ISO size for verification
 ISO_SIZE=$(stat -c%s "$ISO_FILE")
