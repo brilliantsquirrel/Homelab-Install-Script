@@ -2,12 +2,14 @@
 
 class HomeLabISOBuilder {
     constructor() {
-        this.currentStep = 1;
+        this.currentStep = 'setup'; // Changed to 'setup', 'progress', 'flash'
         this.selectedServices = new Set();
         this.selectedModels = new Set();
         this.buildId = null;
         this.buildStartTime = null;
         this.pollingInterval = null;
+        this.selectedUSBDevice = null;
+        this.isoDownloadUrl = null;
 
         // Task-specific progress tracking
         this.taskProgress = {
@@ -58,17 +60,17 @@ class HomeLabISOBuilder {
     }
 
     init() {
-        // Initialize event listeners
-        this.setupServiceListeners();
-        this.setupModelListeners();
+        // Initialize event listeners for new checklist-based UI
+        this.setupChecklistListeners();
         this.updateSummary();
 
         // Check for Ollama selection to enable/disable models
         this.checkOllamaSelected();
     }
 
-    setupServiceListeners() {
-        const serviceCheckboxes = document.querySelectorAll('input[name="service"]');
+    setupChecklistListeners() {
+        // Service checklist items - work with both old card-based and new checklist UI
+        const serviceCheckboxes = document.querySelectorAll('.service-checklist input[type="checkbox"], input[name="service"]');
         serviceCheckboxes.forEach(checkbox => {
             checkbox.addEventListener('change', (e) => {
                 const serviceName = e.target.value;
@@ -87,10 +89,9 @@ class HomeLabISOBuilder {
                 this.checkOllamaSelected();
             });
         });
-    }
 
-    setupModelListeners() {
-        const modelCheckboxes = document.querySelectorAll('input[name="model"]');
+        // Model checklist items - work with both old card-based and new checklist UI
+        const modelCheckboxes = document.querySelectorAll('.model-checklist input[type="checkbox"], input[name="model"]');
         modelCheckboxes.forEach(checkbox => {
             checkbox.addEventListener('change', (e) => {
                 const modelName = e.target.value;
@@ -159,13 +160,17 @@ class HomeLabISOBuilder {
     updateSummary() {
         // Update service count
         const serviceCount = this.selectedServices.size;
-        document.getElementById('summary-services').textContent =
-            `${serviceCount} service${serviceCount !== 1 ? 's' : ''}`;
+        const servicesEl = document.getElementById('summary-services');
+        if (servicesEl) {
+            servicesEl.textContent = `${serviceCount} selected`;
+        }
 
         // Update model count
         const modelCount = this.selectedModels.size;
-        document.getElementById('summary-models').textContent =
-            `${modelCount} model${modelCount !== 1 ? 's' : ''}`;
+        const modelsEl = document.getElementById('summary-models');
+        if (modelsEl) {
+            modelsEl.textContent = `${modelCount} selected`;
+        }
 
         // Calculate total service size
         let serviceSizeGB = 0;
@@ -176,7 +181,7 @@ class HomeLabISOBuilder {
         // Calculate total model size
         let modelSizeGB = 0;
         this.selectedModels.forEach(modelName => {
-            const checkbox = document.querySelector(`input[name="model"][value="${modelName}"]`);
+            const checkbox = document.querySelector(`.model-checklist input[value="${modelName}"]`);
             if (checkbox) {
                 const sizeStr = checkbox.dataset.size;
                 modelSizeGB += parseFloat(sizeStr) || 0;
@@ -185,40 +190,32 @@ class HomeLabISOBuilder {
 
         // Calculate estimated ISO size
         const totalSize = window.api.estimateISOSize(serviceCount, serviceSizeGB, modelSizeGB);
-        document.getElementById('summary-size').textContent = `~${totalSize}GB`;
+        const sizeEl = document.getElementById('summary-size');
+        if (sizeEl) {
+            sizeEl.textContent = `~${totalSize}GB`;
+        }
 
         // Calculate estimated build time
         const buildTime = window.api.estimateBuildTime(serviceCount, modelCount, modelSizeGB);
-        document.getElementById('summary-time').textContent = `~${buildTime} minutes`;
+        const timeEl = document.getElementById('summary-time');
+        if (timeEl) {
+            timeEl.textContent = `~${buildTime} min`;
+        }
     }
 
-    nextStep() {
-        const currentSection = document.querySelector('.step.active');
-        currentSection.classList.remove('active');
+    navigateToStep(stepName) {
+        // Hide all steps
+        document.querySelectorAll('.step').forEach(step => {
+            step.classList.remove('active');
+        });
 
-        this.currentStep++;
-        const nextSection = document.getElementById(this.getStepId(this.currentStep));
-        nextSection.classList.add('active');
-
-        // Scroll to top
-        window.scrollTo(0, 0);
-    }
-
-    prevStep() {
-        const currentSection = document.querySelector('.step.active');
-        currentSection.classList.remove('active');
-
-        this.currentStep--;
-        const prevSection = document.getElementById(this.getStepId(this.currentStep));
-        prevSection.classList.add('active');
-
-        // Scroll to top
-        window.scrollTo(0, 0);
-    }
-
-    getStepId(step) {
-        const steps = ['step-services', 'step-models', 'step-config', 'step-progress', 'step-complete'];
-        return steps[step - 1];
+        // Show requested step
+        const targetStep = document.getElementById(`step-${stepName}`);
+        if (targetStep) {
+            targetStep.classList.add('active');
+            this.currentStep = stepName;
+            window.scrollTo(0, 0);
+        }
     }
 
     async startBuild() {
@@ -229,9 +226,9 @@ class HomeLabISOBuilder {
         }
 
         // Get configuration
-        const gpuEnabled = document.getElementById('gpu-enabled').checked;
-        const email = document.getElementById('email').value;
-        const isoName = document.getElementById('iso-name').value || 'ubuntu-24.04.3-homelab-custom';
+        const gpuEnabled = document.getElementById('gpu-enabled')?.checked || false;
+        const email = document.getElementById('email')?.value || '';
+        const isoName = document.getElementById('iso-name')?.value || 'ubuntu-24.04.3-homelab-custom';
 
         // Prepare build request
         const buildConfig = {
@@ -243,8 +240,8 @@ class HomeLabISOBuilder {
         };
 
         try {
-            // Show progress step
-            this.nextStep();
+            // Navigate directly to progress step
+            this.navigateToStep('progress');
 
             // Reset progress
             this.updateProgress(0, 'Initializing build...');
@@ -431,20 +428,36 @@ class HomeLabISOBuilder {
         // Update progress to 100%
         this.updateProgress(100, 'Complete');
 
-        // Show completion step
-        const currentSection = document.querySelector('.step.active');
-        currentSection.classList.remove('active');
-        document.getElementById('step-complete').classList.add('active');
+        // Store ISO download URL for flashing step
+        if (status.download_url) {
+            this.isoDownloadUrl = status.download_url;
+        }
 
-        // Update completion info
-        document.getElementById('complete-build-id').textContent = this.buildId;
-        document.getElementById('complete-size').textContent =
-            status.iso_size ? window.api.formatBytes(status.iso_size) : 'Unknown';
-        document.getElementById('complete-time').textContent =
-            window.api.formatDuration(buildDuration);
+        // Add completion log
+        this.addLog('Build completed successfully!', 'success');
+        this.addLog(`Total time: ${window.api.formatDuration(buildDuration)}`, 'info');
 
-        // Scroll to top
-        window.scrollTo(0, 0);
+        // Navigate to flash step
+        this.navigateToStep('flash');
+
+        // Update flash step with build info
+        const buildIdEl = document.getElementById('flash-build-id');
+        if (buildIdEl) {
+            buildIdEl.textContent = this.buildId;
+        }
+
+        const buildSizeEl = document.getElementById('flash-build-size');
+        if (buildSizeEl) {
+            buildSizeEl.textContent = status.iso_size ? window.api.formatBytes(status.iso_size) : 'Unknown';
+        }
+
+        const buildTimeEl = document.getElementById('flash-build-time');
+        if (buildTimeEl) {
+            buildTimeEl.textContent = window.api.formatDuration(buildDuration);
+        }
+
+        // Auto-refresh USB devices
+        this.refreshUSBDevices();
     }
 
     async downloadISO() {
@@ -844,11 +857,13 @@ class HomeLabISOBuilder {
 
     reset() {
         // Reset state
-        this.currentStep = 1;
+        this.currentStep = 'setup';
         this.selectedServices.clear();
         this.selectedModels.clear();
         this.buildId = null;
         this.buildStartTime = null;
+        this.selectedUSBDevice = null;
+        this.isoDownloadUrl = null;
         this.stopStatusPolling();
 
         // Reset UI
@@ -858,18 +873,243 @@ class HomeLabISOBuilder {
             }
         });
 
-        document.getElementById('email').value = '';
-        document.getElementById('iso-name').value = 'ubuntu-24.04.3-homelab-custom';
-        document.getElementById('gpu-enabled').checked = false;
+        const emailEl = document.getElementById('email');
+        const isoNameEl = document.getElementById('iso-name');
+        const gpuEl = document.getElementById('gpu-enabled');
+
+        if (emailEl) emailEl.value = '';
+        if (isoNameEl) isoNameEl.value = 'ubuntu-24.04.3-homelab-custom';
+        if (gpuEl) gpuEl.checked = false;
 
         this.updateSummary();
 
         // Show first step
         document.querySelectorAll('.step').forEach(step => step.classList.remove('active'));
-        document.getElementById('step-services').classList.add('active');
+        const setupStep = document.getElementById('step-setup') || document.getElementById('step-services');
+        if (setupStep) setupStep.classList.add('active');
 
         // Scroll to top
         window.scrollTo(0, 0);
+    }
+
+    // USB Device Management
+    async refreshUSBDevices() {
+        try {
+            const devicesList = document.getElementById('usb-devices-list');
+            if (!devicesList) return;
+
+            // Show loading state
+            devicesList.innerHTML = '<div class="loading">Scanning for USB devices...</div>';
+
+            const response = await fetch('/api/usb/devices');
+            const data = await response.json();
+
+            if (!data.success) {
+                throw new Error(data.error || 'Failed to scan USB devices');
+            }
+
+            // Clear loading and populate devices
+            devicesList.innerHTML = '';
+
+            if (data.devices.length === 0) {
+                devicesList.innerHTML = '<div class="no-devices">No USB devices detected. Please insert a USB drive.</div>';
+                return;
+            }
+
+            data.devices.forEach(device => {
+                const deviceCard = document.createElement('div');
+                deviceCard.className = 'usb-device';
+                deviceCard.dataset.devicePath = device.path;
+
+                deviceCard.innerHTML = `
+                    <div class="device-icon">💾</div>
+                    <div class="device-info">
+                        <div class="device-name">${device.displayName}</div>
+                        <div class="device-path">${device.path}</div>
+                    </div>
+                    <div class="device-size">${device.size}</div>
+                `;
+
+                deviceCard.addEventListener('click', () => {
+                    // Deselect all devices
+                    document.querySelectorAll('.usb-device').forEach(d => d.classList.remove('selected'));
+                    // Select this device
+                    deviceCard.classList.add('selected');
+                    this.selectedUSBDevice = device.path;
+                });
+
+                devicesList.appendChild(deviceCard);
+            });
+
+        } catch (error) {
+            console.error('Failed to refresh USB devices:', error);
+            const devicesList = document.getElementById('usb-devices-list');
+            if (devicesList) {
+                devicesList.innerHTML = `<div class="error">Error: ${error.message}</div>`;
+            }
+        }
+    }
+
+    async startFlash() {
+        if (!this.selectedUSBDevice) {
+            alert('Please select a USB device first.');
+            return;
+        }
+
+        if (!this.buildId) {
+            alert('No build ID available. Please complete a build first.');
+            return;
+        }
+
+        // Confirm destructive operation
+        const confirmed = confirm(
+            `⚠️ WARNING: This will erase all data on ${this.selectedUSBDevice}!\n\n` +
+            'All existing data will be permanently deleted.\n\n' +
+            'Are you sure you want to continue?'
+        );
+
+        if (!confirmed) return;
+
+        try {
+            // Get ISO download URL
+            let isoUrl = this.isoDownloadUrl;
+            if (!isoUrl) {
+                const urlResponse = await window.api.getDownloadURL(this.buildId);
+                isoUrl = urlResponse.download_url || urlResponse.redirect_url;
+            }
+
+            if (!isoUrl) {
+                throw new Error('Could not get ISO download URL');
+            }
+
+            // Hide device selection, show progress
+            document.getElementById('usb-devices-section').style.display = 'none';
+            document.getElementById('flash-progress-section').style.display = 'block';
+            document.getElementById('flash-actions').style.display = 'none';
+
+            // Start flashing with SSE
+            const response = await fetch('/api/usb/flash', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    device: this.selectedUSBDevice,
+                    isoUrl: isoUrl
+                })
+            });
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                const text = decoder.decode(value);
+                const lines = text.split('\n');
+
+                for (const line of lines) {
+                    if (line.startsWith('data: ')) {
+                        const data = JSON.parse(line.slice(6));
+                        this.updateFlashProgress(data);
+                    }
+                }
+            }
+
+        } catch (error) {
+            console.error('Flash failed:', error);
+            alert(`Failed to flash USB: ${error.message}`);
+            // Reset UI
+            document.getElementById('usb-devices-section').style.display = 'block';
+            document.getElementById('flash-actions').style.display = 'flex';
+            document.getElementById('flash-progress-section').style.display = 'none';
+        }
+    }
+
+    updateFlashProgress(data) {
+        const { stage, progress, message, error } = data;
+
+        if (error) {
+            alert(`Flash failed: ${error}`);
+            return;
+        }
+
+        if (stage === 'complete') {
+            // Mark all stages complete
+            ['download', 'unmount', 'write', 'verify', 'eject'].forEach(s => {
+                this.updateFlashStage(s, 100, 'completed');
+            });
+
+            // Show success message
+            setTimeout(() => {
+                alert('✅ USB flash drive created successfully!\n\nYou can now safely remove the drive and use it to boot your server.');
+                // Show completion actions
+                document.getElementById('flash-complete-actions').style.display = 'flex';
+            }, 500);
+
+            return;
+        }
+
+        // Update specific stage
+        this.updateFlashStage(stage, progress, progress === 100 ? 'completed' : 'active');
+    }
+
+    updateFlashStage(stageName, progress, status) {
+        const stageEl = document.querySelector(`.flash-stage[data-stage="${stageName}"]`);
+        if (!stageEl) return;
+
+        const statusIcon = stageEl.querySelector('.stage-status');
+        const progressFill = stageEl.querySelector('.progress-fill');
+        const progressText = stageEl.querySelector('.stage-message');
+
+        // Update status icon
+        if (status === 'completed') {
+            statusIcon.textContent = '✅';
+            stageEl.classList.add('completed');
+            stageEl.classList.remove('active');
+        } else if (status === 'active') {
+            statusIcon.textContent = '⏳';
+            stageEl.classList.add('active');
+            stageEl.classList.remove('completed');
+        }
+
+        // Update progress bar
+        if (progressFill) {
+            progressFill.style.width = `${progress}%`;
+        }
+
+        // Update progress text
+        if (progressText) {
+            progressText.textContent = `${progress}%`;
+        }
+    }
+
+    async skipFlash() {
+        // Show download option instead
+        try {
+            const response = await window.api.getDownloadURL(this.buildId);
+            const downloadUrl = response.download_url || response.redirect_url;
+
+            if (downloadUrl) {
+                const result = confirm(
+                    'Skip USB flashing and download ISO instead?\n\n' +
+                    'The ISO will be downloaded to your computer.'
+                );
+
+                if (result) {
+                    window.open(downloadUrl, '_blank');
+                }
+            }
+        } catch (error) {
+            console.error('Failed to get download URL:', error);
+            alert('Failed to get download URL. Please try again.');
+        }
+    }
+
+    async createNewBuild() {
+        // Reset and go back to setup
+        this.reset();
     }
 }
 
