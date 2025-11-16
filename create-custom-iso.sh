@@ -564,7 +564,16 @@ xorriso -as mkisofs \
     -isohybrid-gpt-basdat \
     -isohybrid-apm-hfsplus \
     -isohybrid-mbr /usr/lib/ISOLINUX/isohdpfx.bin \
-    "$ISO_EXTRACT" 2>&1 | grep -v "^xorriso" || true
+    "$ISO_EXTRACT" 2>&1 | grep -v "^xorriso : UPDATE :" || {
+    error "xorriso failed to create ISO"
+    exit 1
+}
+
+# Verify ISO was actually created
+if [ ! -f "$ISO_OUTPUT" ]; then
+    error "ISO file was not created at $ISO_OUTPUT"
+    exit 1
+fi
 
 success "Custom ISO created: $ISO_OUTPUT"
 end_timer "ISO creation"
