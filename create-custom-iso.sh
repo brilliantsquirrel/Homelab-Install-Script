@@ -553,6 +553,7 @@ xorriso -as mkisofs \
     -r -V "$VOLUME_ID" \
     -o "$ISO_OUTPUT" \
     -J -joliet-long \
+    -iso-level 3 \
     -b boot/grub/i386-pc/eltorito.img \
     -no-emul-boot \
     -boot-load-size 4 \
