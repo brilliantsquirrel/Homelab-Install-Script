@@ -437,7 +437,7 @@ bash create-custom-iso.sh
 # Upload ISO to downloads bucket with verification
 write_status "uploading" 87 "Uploading ISO to storage"
 log "Uploading ISO to downloads bucket..."
-ISO_FILE="iso-artifacts/ubuntu-24.04.3-homelab-amd64.iso"
+ISO_FILE="/root/Homelab-Install-Script/iso-artifacts/ubuntu-24.04.3-homelab-amd64.iso"
 
 # Wait for ISO file to become visible (gcsfuse sync delay)
 log "Waiting for ISO file to become visible..."
