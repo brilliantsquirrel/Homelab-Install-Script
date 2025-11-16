@@ -15,6 +15,7 @@ const requestLogger = require('./middleware/request-logger');
 // Import routes
 const buildRoutes = require('./routes/build');
 const servicesRoutes = require('./routes/services');
+const usbRoutes = require('./routes/usb');
 
 // Initialize Express app
 const app = express();
@@ -186,6 +187,7 @@ app.get('/health', (req, res) => {
 
 // API routes
 app.use('/api/build', buildRoutes);
+app.use('/api/usb', usbRoutes);
 app.use('/api', servicesRoutes);
 
 // Serve static frontend files (rate limiting applied earlier if enabled)

@@ -14,267 +14,271 @@
         </header>
 
         <div id="app">
-            <!-- Step 1: Service Selection -->
-            <section id="step-services" class="step active">
-                <h2>Step 1: Select Services</h2>
-                <p class="step-description">Choose which services to include in your homelab ISO</p>
+            <!-- Step 1: Service & Model Selection -->
+            <section id="step-setup" class="step active">
+                <h2>Step 1: Setup - Select Services & Models</h2>
+                <p class="step-description">Choose which services and AI models to include in your homelab ISO</p>
 
-                <div class="service-categories">
-                    <div class="category" id="ai-services">
-                        <h3>🤖 AI & Machine Learning</h3>
-                        <div class="service-list">
-                            <label class="service-item">
-                                <input type="checkbox" name="service" value="ollama" data-category="ai" data-deps="">
-                                <div class="service-card">
-                                    <div class="service-name">Ollama</div>
-                                    <div class="service-description">Local LLM runtime with GPU support</div>
-                                    <div class="service-size">~2GB</div>
+                <!-- Services Section -->
+                <div class="setup-section">
+                    <h3>📦 Docker Services</h3>
+
+                    <div class="category-group">
+                        <h4>🤖 AI & Machine Learning</h4>
+                        <div class="service-checklist">
+                            <label class="checklist-item">
+                                <input type="checkbox" name="service" value="ollama" data-category="ai" data-size="2">
+                                <span class="checkbox-custom"></span>
+                                <div class="item-content">
+                                    <span class="item-name">Ollama</span>
+                                    <span class="item-description">Local LLM runtime with GPU support</span>
                                 </div>
+                                <span class="item-size">~2GB</span>
                             </label>
-                            <label class="service-item">
-                                <input type="checkbox" name="service" value="openwebui" data-category="ai" data-deps="ollama">
-                                <div class="service-card">
-                                    <div class="service-name">OpenWebUI</div>
-                                    <div class="service-description">Web interface for Ollama</div>
-                                    <div class="service-size">~500MB</div>
+                            <label class="checklist-item">
+                                <input type="checkbox" name="service" value="openwebui" data-category="ai" data-deps="ollama" data-size="0.5">
+                                <span class="checkbox-custom"></span>
+                                <div class="item-content">
+                                    <span class="item-name">OpenWebUI</span>
+                                    <span class="item-description">Web interface for Ollama</span>
                                 </div>
+                                <span class="item-size">~500MB</span>
                             </label>
-                            <label class="service-item">
-                                <input type="checkbox" name="service" value="langflow" data-category="ai" data-deps="ollama">
-                                <div class="service-card">
-                                    <div class="service-name">LangFlow</div>
-                                    <div class="service-description">Visual AI workflow builder</div>
-                                    <div class="service-size">~1.5GB</div>
+                            <label class="checklist-item">
+                                <input type="checkbox" name="service" value="langflow" data-category="ai" data-deps="ollama" data-size="1.5">
+                                <span class="checkbox-custom"></span>
+                                <div class="item-content">
+                                    <span class="item-name">LangFlow</span>
+                                    <span class="item-description">Visual AI workflow builder</span>
                                 </div>
+                                <span class="item-size">~1.5GB</span>
                             </label>
-                            <label class="service-item">
-                                <input type="checkbox" name="service" value="langgraph" data-category="ai" data-deps="ollama,langgraph-redis,langgraph-db">
-                                <div class="service-card">
-                                    <div class="service-name">LangGraph</div>
-                                    <div class="service-description">Stateful agent workflow engine</div>
-                                    <div class="service-size">~800MB</div>
+                            <label class="checklist-item">
+                                <input type="checkbox" name="service" value="langgraph" data-category="ai" data-deps="ollama,langgraph-redis,langgraph-db" data-size="0.8">
+                                <span class="checkbox-custom"></span>
+                                <div class="item-content">
+                                    <span class="item-name">LangGraph</span>
+                                    <span class="item-description">Stateful agent workflow engine</span>
                                 </div>
+                                <span class="item-size">~800MB</span>
                             </label>
-                            <label class="service-item">
-                                <input type="checkbox" name="service" value="qdrant" data-category="ai" data-deps="">
-                                <div class="service-card">
-                                    <div class="service-name">Qdrant</div>
-                                    <div class="service-description">Vector database for embeddings</div>
-                                    <div class="service-size">~300MB</div>
+                            <label class="checklist-item">
+                                <input type="checkbox" name="service" value="qdrant" data-category="ai" data-size="0.3">
+                                <span class="checkbox-custom"></span>
+                                <div class="item-content">
+                                    <span class="item-name">Qdrant</span>
+                                    <span class="item-description">Vector database for embeddings</span>
                                 </div>
+                                <span class="item-size">~300MB</span>
                             </label>
-                            <label class="service-item">
-                                <input type="checkbox" name="service" value="n8n" data-category="ai" data-deps="ollama">
-                                <div class="service-card">
-                                    <div class="service-name">n8n</div>
-                                    <div class="service-description">Workflow automation platform</div>
-                                    <div class="service-size">~600MB</div>
+                            <label class="checklist-item">
+                                <input type="checkbox" name="service" value="n8n" data-category="ai" data-deps="ollama" data-size="0.6">
+                                <span class="checkbox-custom"></span>
+                                <div class="item-content">
+                                    <span class="item-name">n8n</span>
+                                    <span class="item-description">Workflow automation platform</span>
                                 </div>
+                                <span class="item-size">~600MB</span>
                             </label>
-                            <label class="service-item">
-                                <input type="checkbox" name="service" value="comfyui" data-category="ai" data-deps="">
-                                <div class="service-card">
-                                    <div class="service-name">ComfyUI</div>
-                                    <div class="service-description">Node-based UI for Stable Diffusion and AI image generation</div>
-                                    <div class="service-size">~3GB</div>
+                            <label class="checklist-item">
+                                <input type="checkbox" name="service" value="comfyui" data-category="ai" data-size="3">
+                                <span class="checkbox-custom"></span>
+                                <div class="item-content">
+                                    <span class="item-name">ComfyUI</span>
+                                    <span class="item-description">Node-based UI for Stable Diffusion</span>
                                 </div>
+                                <span class="item-size">~3GB</span>
                             </label>
-                            <label class="service-item">
-                                <input type="checkbox" name="service" value="huggingface" data-category="ai" data-deps="">
-                                <div class="service-card">
-                                    <div class="service-name">HuggingFace TGI</div>
-                                    <div class="service-description">Text Generation Inference server for HuggingFace models</div>
-                                    <div class="service-size">~4GB</div>
+                            <label class="checklist-item">
+                                <input type="checkbox" name="service" value="huggingface" data-category="ai" data-size="4">
+                                <span class="checkbox-custom"></span>
+                                <div class="item-content">
+                                    <span class="item-name">HuggingFace TGI</span>
+                                    <span class="item-description">Text Generation Inference server</span>
                                 </div>
+                                <span class="item-size">~4GB</span>
                             </label>
                         </div>
                     </div>
 
-                    <div class="category" id="homelab-services">
-                        <h3>🏡 Homelab Services</h3>
-                        <div class="service-list">
-                            <label class="service-item">
-                                <input type="checkbox" name="service" value="nextcloud" data-category="homelab" data-deps="nextcloud-db,nextcloud-redis">
-                                <div class="service-card">
-                                    <div class="service-name">Nextcloud</div>
-                                    <div class="service-description">File storage & collaboration</div>
-                                    <div class="service-size">~1.2GB</div>
+                    <div class="category-group">
+                        <h4>🏡 Homelab Services</h4>
+                        <div class="service-checklist">
+                            <label class="checklist-item">
+                                <input type="checkbox" name="service" value="nextcloud" data-category="homelab" data-deps="nextcloud-db,nextcloud-redis" data-size="1.2">
+                                <span class="checkbox-custom"></span>
+                                <div class="item-content">
+                                    <span class="item-name">Nextcloud</span>
+                                    <span class="item-description">File storage & collaboration</span>
                                 </div>
+                                <span class="item-size">~1.2GB</span>
                             </label>
-                            <label class="service-item">
-                                <input type="checkbox" name="service" value="plex" data-category="homelab" data-deps="">
-                                <div class="service-card">
-                                    <div class="service-name">Plex</div>
-                                    <div class="service-description">Media server with transcoding</div>
-                                    <div class="service-size">~800MB</div>
+                            <label class="checklist-item">
+                                <input type="checkbox" name="service" value="plex" data-category="homelab" data-size="0.8">
+                                <span class="checkbox-custom"></span>
+                                <div class="item-content">
+                                    <span class="item-name">Plex</span>
+                                    <span class="item-description">Media server with transcoding</span>
                                 </div>
+                                <span class="item-size">~800MB</span>
                             </label>
-                            <label class="service-item">
-                                <input type="checkbox" name="service" value="pihole" data-category="homelab" data-deps="">
-                                <div class="service-card">
-                                    <div class="service-name">Pi-hole</div>
-                                    <div class="service-description">Network-wide ad blocking</div>
-                                    <div class="service-size">~200MB</div>
+                            <label class="checklist-item">
+                                <input type="checkbox" name="service" value="pihole" data-category="homelab" data-size="0.2">
+                                <span class="checkbox-custom"></span>
+                                <div class="item-content">
+                                    <span class="item-name">Pi-hole</span>
+                                    <span class="item-description">Network-wide ad blocking</span>
                                 </div>
+                                <span class="item-size">~200MB</span>
                             </label>
-                            <label class="service-item">
-                                <input type="checkbox" name="service" value="homarr" data-category="homelab" data-deps="">
-                                <div class="service-card">
-                                    <div class="service-name">Homarr</div>
-                                    <div class="service-description">Homelab dashboard</div>
-                                    <div class="service-size">~150MB</div>
+                            <label class="checklist-item">
+                                <input type="checkbox" name="service" value="homarr" data-category="homelab" data-size="0.15">
+                                <span class="checkbox-custom"></span>
+                                <div class="item-content">
+                                    <span class="item-name">Homarr</span>
+                                    <span class="item-description">Homelab dashboard</span>
                                 </div>
+                                <span class="item-size">~150MB</span>
                             </label>
-                            <label class="service-item">
-                                <input type="checkbox" name="service" value="hoarder" data-category="homelab" data-deps="">
-                                <div class="service-card">
-                                    <div class="service-name">Hoarder</div>
-                                    <div class="service-description">Bookmark manager</div>
-                                    <div class="service-size">~100MB</div>
+                            <label class="checklist-item">
+                                <input type="checkbox" name="service" value="hoarder" data-category="homelab" data-size="0.1">
+                                <span class="checkbox-custom"></span>
+                                <div class="item-content">
+                                    <span class="item-name">Hoarder</span>
+                                    <span class="item-description">Bookmark manager</span>
                                 </div>
-                            </label>
-                        </div>
-                    </div>
-
-                    <div class="category" id="infrastructure-services">
-                        <h3>🔧 Infrastructure</h3>
-                        <div class="service-list">
-                            <label class="service-item">
-                                <input type="checkbox" name="service" value="portainer" data-category="infrastructure" data-deps="docker-socket-proxy" checked>
-                                <div class="service-card">
-                                    <div class="service-name">Portainer</div>
-                                    <div class="service-description">Container management UI</div>
-                                    <div class="service-size">~300MB</div>
-                                </div>
-                            </label>
-                            <label class="service-item">
-                                <input type="checkbox" name="service" value="nginx" data-category="infrastructure" data-deps="" checked disabled>
-                                <div class="service-card">
-                                    <div class="service-name">Nginx (Required)</div>
-                                    <div class="service-description">Reverse proxy with SSL</div>
-                                    <div class="service-size">~50MB</div>
-                                </div>
+                                <span class="item-size">~100MB</span>
                             </label>
                         </div>
                     </div>
-                </div>
 
-                <div class="step-actions">
-                    <button class="btn btn-primary" onclick="app.nextStep()">Next: Select AI Models →</button>
-                </div>
-            </section>
-
-            <!-- Step 2: AI Model Selection -->
-            <section id="step-models" class="step">
-                <h2>Step 2: Select AI Models</h2>
-                <p class="step-description">Choose Ollama models to pre-download (requires Ollama service)</p>
-
-                <div id="models-disabled-notice" class="notice notice-warning" style="display:none;">
-                    <strong>Note:</strong> AI model selection requires the Ollama service. Please go back and select Ollama in Step 1.
-                </div>
-
-                <div class="model-list">
-                    <label class="model-item">
-                        <input type="checkbox" name="model" value="qwen3:8b" data-size="4.7GB">
-                        <div class="model-card">
-                            <div class="model-name">Qwen3 8B</div>
-                            <div class="model-description">Fast general-purpose model (8B parameters)</div>
-                            <div class="model-size">~4.7GB</div>
+                    <div class="category-group">
+                        <h4>🔧 Infrastructure (Required)</h4>
+                        <div class="service-checklist">
+                            <label class="checklist-item">
+                                <input type="checkbox" name="service" value="portainer" data-category="infrastructure" data-deps="docker-socket-proxy" data-size="0.3" checked>
+                                <span class="checkbox-custom"></span>
+                                <div class="item-content">
+                                    <span class="item-name">Portainer</span>
+                                    <span class="item-description">Container management UI</span>
+                                </div>
+                                <span class="item-size">~300MB</span>
+                            </label>
+                            <label class="checklist-item disabled">
+                                <input type="checkbox" name="service" value="nginx" data-category="infrastructure" data-size="0.05" checked disabled>
+                                <span class="checkbox-custom"></span>
+                                <div class="item-content">
+                                    <span class="item-name">Nginx (Required)</span>
+                                    <span class="item-description">Reverse proxy with SSL</span>
+                                </div>
+                                <span class="item-size">~50MB</span>
+                            </label>
                         </div>
-                    </label>
-                    <label class="model-item">
-                        <input type="checkbox" name="model" value="qwen3-coder:30b" data-size="17GB">
-                        <div class="model-card">
-                            <div class="model-name">Qwen3 Coder 30B</div>
-                            <div class="model-description">Code-specialized model (30B parameters)</div>
-                            <div class="model-size">~17GB</div>
-                        </div>
-                    </label>
-                    <label class="model-item">
-                        <input type="checkbox" name="model" value="qwen3-vl:8b" data-size="5.5GB">
-                        <div class="model-card">
-                            <div class="model-name">Qwen3 VL 8B</div>
-                            <div class="model-description">Vision-language multimodal model</div>
-                            <div class="model-size">~5.5GB</div>
-                        </div>
-                    </label>
-                    <label class="model-item">
-                        <input type="checkbox" name="model" value="gpt-oss:20b" data-size="12GB">
-                        <div class="model-card">
-                            <div class="model-name">GPT-OSS 20B</div>
-                            <div class="model-description">Open-source GPT-style model (20B parameters)</div>
-                            <div class="model-size">~12GB</div>
-                        </div>
-                    </label>
+                    </div>
                 </div>
 
-                <div class="step-actions">
-                    <button class="btn btn-secondary" onclick="app.prevStep()">← Back</button>
-                    <button class="btn btn-primary" onclick="app.nextStep()">Next: Configuration →</button>
-                </div>
-            </section>
+                <!-- AI Models Section -->
+                <div class="setup-section">
+                    <h3>🧠 AI Models (Ollama)</h3>
+                    <div id="models-disabled-notice" class="notice notice-warning" style="display:none;">
+                        <strong>Note:</strong> AI model selection requires the Ollama service. Please select Ollama above to enable this section.
+                    </div>
 
-            <!-- Step 3: Configuration -->
-            <section id="step-config" class="step">
-                <h2>Step 3: Build Configuration</h2>
-                <p class="step-description">Configure your ISO build options</p>
-
-                <div class="config-form">
-                    <div class="form-group">
-                        <label>
-                            <input type="checkbox" id="gpu-enabled" name="gpu_enabled">
-                            Enable GPU Support (NVIDIA CUDA)
+                    <div class="model-checklist">
+                        <label class="checklist-item">
+                            <input type="checkbox" name="model" value="qwen2.5:7b" data-size="4.7">
+                            <span class="checkbox-custom"></span>
+                            <div class="item-content">
+                                <span class="item-name">Qwen2.5 7B</span>
+                                <span class="item-description">Fast general-purpose model (7B parameters)</span>
+                            </div>
+                            <span class="item-size">~4.7GB</span>
                         </label>
-                        <p class="help-text">Enables GPU acceleration for Ollama and Plex transcoding</p>
-                    </div>
-
-                    <div class="form-group">
-                        <label for="email">Email (optional)</label>
-                        <input type="email" id="email" name="email" placeholder="your@email.com">
-                        <p class="help-text">Receive a notification when your ISO is ready</p>
-                    </div>
-
-                    <div class="form-group">
-                        <label for="iso-name">ISO Name</label>
-                        <input type="text" id="iso-name" name="iso_name" value="ubuntu-24.04.3-homelab-custom" placeholder="ubuntu-24.04.3-homelab-custom">
-                        <p class="help-text">Custom name for your ISO file</p>
+                        <label class="checklist-item">
+                            <input type="checkbox" name="model" value="qwen2.5-coder:32b" data-size="19">
+                            <span class="checkbox-custom"></span>
+                            <div class="item-content">
+                                <span class="item-name">Qwen2.5 Coder 32B</span>
+                                <span class="item-description">Code-specialized model (32B parameters)</span>
+                            </div>
+                            <span class="item-size">~19GB</span>
+                        </label>
+                        <label class="checklist-item">
+                            <input type="checkbox" name="model" value="llama3.2-vision:11b" data-size="7.9">
+                            <span class="checkbox-custom"></span>
+                            <div class="item-content">
+                                <span class="item-name">Llama 3.2 Vision 11B</span>
+                                <span class="item-description">Vision-language multimodal model</span>
+                            </div>
+                            <span class="item-size">~7.9GB</span>
+                        </label>
+                        <label class="checklist-item">
+                            <input type="checkbox" name="model" value="deepseek-r1:14b" data-size="9">
+                            <span class="checkbox-custom"></span>
+                            <div class="item-content">
+                                <span class="item-name">DeepSeek R1 14B</span>
+                                <span class="item-description">Advanced reasoning model (14B parameters)</span>
+                            </div>
+                            <span class="item-size">~9GB</span>
+                        </label>
                     </div>
                 </div>
 
+                <!-- Build Configuration -->
+                <div class="setup-section">
+                    <h3>⚙️ Configuration</h3>
+                    <div class="config-form">
+                        <div class="form-group">
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="gpu-enabled" name="gpu_enabled">
+                                <span class="checkbox-custom"></span>
+                                <span>Enable GPU Support (NVIDIA CUDA)</span>
+                            </label>
+                            <p class="help-text">Enables GPU acceleration for Ollama and Plex transcoding</p>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="email">Email (optional)</label>
+                            <input type="email" id="email" name="email" placeholder="your@email.com">
+                            <p class="help-text">Receive a notification when your ISO is ready</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Build Summary -->
                 <div class="build-summary">
-                    <h3>Build Summary</h3>
-                    <div class="summary-content">
+                    <h3>📊 Build Summary</h3>
+                    <div class="summary-grid">
                         <div class="summary-item">
-                            <strong>Services:</strong>
-                            <span id="summary-services">0 selected</span>
+                            <div class="summary-label">Services</div>
+                            <div class="summary-value" id="summary-services">0 selected</div>
                         </div>
                         <div class="summary-item">
-                            <strong>AI Models:</strong>
-                            <span id="summary-models">0 selected</span>
+                            <div class="summary-label">AI Models</div>
+                            <div class="summary-value" id="summary-models">0 selected</div>
                         </div>
                         <div class="summary-item">
-                            <strong>Estimated ISO Size:</strong>
-                            <span id="summary-size">~3.5GB</span>
+                            <div class="summary-label">Estimated Size</div>
+                            <div class="summary-value" id="summary-size">~3.5GB</div>
                         </div>
                         <div class="summary-item">
-                            <strong>Estimated Build Time:</strong>
-                            <span id="summary-time">~45 minutes</span>
+                            <div class="summary-label">Build Time</div>
+                            <div class="summary-value" id="summary-time">~45 min</div>
                         </div>
                     </div>
                 </div>
 
                 <div class="step-actions">
-                    <button class="btn btn-secondary" onclick="app.prevStep()">← Back</button>
-                    <button class="btn btn-success" onclick="app.startBuild()">🚀 Start Build</button>
+                    <button class="btn btn-success btn-lg" onclick="app.startBuild()">🚀 Start Build</button>
                 </div>
             </section>
 
-            <!-- Step 4: Build Progress -->
+            <!-- Step 2: Build Progress -->
             <section id="step-progress" class="step">
-                <h2>Building Your Custom ISO</h2>
+                <h2>Step 2: Building Your Custom ISO</h2>
                 <p class="step-description">This may take 45-90 minutes depending on selected components</p>
 
-                <!-- Sectioned Progress Bar (Domino's-style) -->
+                <!-- Pipeline Progress -->
                 <div class="pipeline-progress">
                     <div class="pipeline-stage" data-stage="queued">
                         <div class="stage-icon">📋</div>
@@ -389,142 +393,143 @@
                 </div>
             </section>
 
-            <!-- Step 5: Complete -->
-            <section id="step-complete" class="step">
+            <!-- Step 3: Flash to USB Drive -->
+            <section id="step-flash" class="step">
+                <h2>Step 3: Create Bootable USB Drive</h2>
+                <p class="step-description">Write the ISO directly to a USB flash drive</p>
+
                 <div class="completion-message">
                     <div class="completion-icon">✅</div>
-                    <h2>Your ISO is Ready!</h2>
-                    <p>Your custom homelab ISO has been built successfully.</p>
+                    <h3>Your ISO is Ready!</h3>
+                    <p>Build ID: <strong id="flash-build-id">-</strong></p>
+                    <p>Size: <strong id="flash-iso-size">-</strong></p>
                 </div>
 
-                <div class="download-section">
-                    <div class="download-info">
-                        <div class="info-row">
-                            <strong>Build ID:</strong>
-                            <span id="complete-build-id">-</span>
-                        </div>
-                        <div class="info-row">
-                            <strong>ISO Size:</strong>
-                            <span id="complete-size">-</span>
-                        </div>
-                        <div class="info-row">
-                            <strong>Build Time:</strong>
-                            <span id="complete-time">-</span>
-                        </div>
-                        <div class="info-row">
-                            <strong>Download Link Valid:</strong>
-                            <span>7 days</span>
-                        </div>
-                    </div>
-
-                    <div class="download-options">
-                        <h3>What would you like to do?</h3>
-
-                        <div class="option-cards">
-                            <div class="option-card" onclick="app.showDownloadOption()">
-                                <div class="option-icon">📥</div>
-                                <h4>Download ISO</h4>
-                                <p>Download the ISO file to your computer</p>
-                                <button class="btn btn-primary">Download</button>
-                            </div>
-
-                            <div class="option-card" onclick="app.showFlashOption()">
-                                <div class="option-icon">💾</div>
-                                <h4>Flash to USB Drive</h4>
-                                <p>Create a bootable USB drive directly</p>
-                                <button class="btn btn-primary">Flash USB</button>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Download Option Details (hidden by default) -->
-                    <div id="download-details" class="option-details" style="display: none;">
-                        <h4>📥 Download ISO File</h4>
-                        <button class="btn btn-download btn-lg" onclick="app.downloadISO()">
-                            📥 Download ISO
+                <!-- USB Device Detection -->
+                <div class="usb-section">
+                    <div class="section-header">
+                        <h3>💾 Select USB Drive</h3>
+                        <button class="btn btn-small btn-secondary" onclick="app.refreshUSBDevices()">
+                            🔄 Refresh Devices
                         </button>
-                        <p class="download-note">
-                            Download link is valid for 7 days. The ISO will be automatically deleted after this period.
-                        </p>
                     </div>
 
-                    <!-- Flash Option Details (hidden by default) -->
-                    <div id="flash-details" class="option-details" style="display: none;">
-                        <h4>💾 Flash to USB Drive</h4>
-                        <p class="flash-intro">
-                            Use our cross-platform CLI tool to create a bootable USB drive directly from this ISO.
-                        </p>
+                    <div id="usb-scanning" class="notice notice-info" style="display:none;">
+                        <strong>Scanning for USB devices...</strong>
+                    </div>
 
-                        <div class="flash-steps">
-                            <div class="flash-step">
-                                <div class="step-number">1</div>
-                                <div class="step-content">
-                                    <h5>Install Node.js</h5>
-                                    <p>Required to run the USB flasher tool. Download from <a href="https://nodejs.org" target="_blank">nodejs.org</a></p>
-                                </div>
-                            </div>
-
-                            <div class="flash-step">
-                                <div class="step-number">2</div>
-                                <div class="step-content">
-                                    <h5>Run the Flasher Tool</h5>
-                                    <p>Open your terminal and run this command:</p>
-                                    <div class="code-block">
-                                        <code id="flasher-command">npx homelab-iso-flasher --url="<span id="iso-url-placeholder">LOADING...</span>"</code>
-                                        <button class="btn-copy" onclick="app.copyFlasherCommand()" title="Copy command">
-                                            📋
-                                        </button>
-                                    </div>
-                                    <p class="code-note">The tool will guide you through selecting your USB drive</p>
-                                </div>
-                            </div>
-
-                            <div class="flash-step">
-                                <div class="step-number">3</div>
-                                <div class="step-content">
-                                    <h5>Follow the Interactive Prompts</h5>
-                                    <p>The tool will:</p>
-                                    <ul>
-                                        <li>Download the ISO automatically</li>
-                                        <li>Detect all connected USB drives</li>
-                                        <li>Let you select the target drive</li>
-                                        <li>Show progress during the write operation</li>
-                                        <li>Verify the write and safely eject</li>
-                                    </ul>
-                                </div>
-                            </div>
+                    <div id="usb-devices-list" class="usb-devices-list">
+                        <div class="notice notice-warning">
+                            <strong>No USB devices detected.</strong> Please insert a USB drive and click "Refresh Devices".
                         </div>
+                    </div>
 
-                        <div class="flash-warning">
-                            <strong>⚠️ Warning:</strong> Flashing will erase ALL data on the selected USB drive. Make sure to back up any important files first!
-                        </div>
-
-                        <div class="flash-alternatives">
-                            <h5>Alternative Tools</h5>
-                            <p>You can also use these popular tools to flash the ISO:</p>
-                            <ul>
-                                <li><strong>balenaEtcher</strong> (Windows, macOS, Linux): <a href="https://www.balena.io/etcher/" target="_blank">balena.io/etcher</a></li>
-                                <li><strong>Rufus</strong> (Windows): <a href="https://rufus.ie/" target="_blank">rufus.ie</a></li>
-                                <li><strong>dd command</strong> (Linux/macOS): <code>sudo dd if=file.iso of=/dev/sdX bs=4M status=progress</code></li>
-                            </ul>
-                        </div>
-
-                        <button class="btn btn-secondary" onclick="app.hideOptionDetails()">← Back to Options</button>
+                    <div class="usb-requirements">
+                        <h4>Requirements</h4>
+                        <ul>
+                            <li>USB drive capacity: <strong id="required-capacity">64GB+</strong> (ISO size: <span id="iso-size-display">-</span>)</li>
+                            <li>All data on the selected drive will be erased</li>
+                            <li>Drive will be formatted and made bootable</li>
+                        </ul>
                     </div>
                 </div>
 
-                <div class="next-steps">
-                    <h3>After Creating Your Bootable USB</h3>
-                    <ol>
-                        <li>Boot your server from the USB drive</li>
-                        <li>Install Ubuntu normally</li>
-                        <li>After first boot, run: <code>cd /opt/homelab && ./post-install.sh</code></li>
-                        <li>All services and models are pre-loaded and ready!</li>
-                    </ol>
+                <!-- Flash Progress -->
+                <div id="flash-progress-section" class="flash-progress-section" style="display:none;">
+                    <h3>⚡ Flashing Progress</h3>
+
+                    <div class="flash-stages">
+                        <div class="flash-stage" data-stage="download">
+                            <div class="stage-status">⏳</div>
+                            <div class="stage-info">
+                                <div class="stage-name">Downloading ISO</div>
+                                <div class="stage-progress">
+                                    <div class="progress-bar">
+                                        <div class="progress-fill" id="download-progress" style="width: 0%"></div>
+                                    </div>
+                                    <div class="progress-text" id="download-text">Waiting...</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="flash-stage" data-stage="unmount">
+                            <div class="stage-status">⏳</div>
+                            <div class="stage-info">
+                                <div class="stage-name">Unmounting Drive</div>
+                                <div class="stage-progress">
+                                    <div class="progress-text" id="unmount-text">Waiting...</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="flash-stage" data-stage="write">
+                            <div class="stage-status">⏳</div>
+                            <div class="stage-info">
+                                <div class="stage-name">Writing ISO to USB</div>
+                                <div class="stage-progress">
+                                    <div class="progress-bar">
+                                        <div class="progress-fill" id="write-progress" style="width: 0%"></div>
+                                    </div>
+                                    <div class="progress-text" id="write-text">Waiting...</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="flash-stage" data-stage="verify">
+                            <div class="stage-status">⏳</div>
+                            <div class="stage-info">
+                                <div class="stage-name">Verifying Write</div>
+                                <div class="stage-progress">
+                                    <div class="progress-bar">
+                                        <div class="progress-fill" id="verify-progress" style="width: 0%"></div>
+                                    </div>
+                                    <div class="progress-text" id="verify-text">Waiting...</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="flash-stage" data-stage="eject">
+                            <div class="stage-status">⏳</div>
+                            <div class="stage-info">
+                                <div class="stage-name">Ejecting Drive</div>
+                                <div class="stage-progress">
+                                    <div class="progress-text" id="eject-text">Waiting...</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="flash-log">
+                        <h4>Flash Log</h4>
+                        <div id="flash-log-container" class="log-container"></div>
+                    </div>
+                </div>
+
+                <!-- Flash Complete -->
+                <div id="flash-complete-section" class="flash-complete-section" style="display:none;">
+                    <div class="success-message">
+                        <div class="success-icon">✅</div>
+                        <h3>USB Drive Ready!</h3>
+                        <p>Your bootable USB drive has been created successfully.</p>
+                    </div>
+
+                    <div class="next-steps">
+                        <h4>Next Steps</h4>
+                        <ol>
+                            <li>Safely remove the USB drive from your computer</li>
+                            <li>Insert it into your target server (Dell R630)</li>
+                            <li>Boot from the USB drive (press F11 or F12 during startup)</li>
+                            <li>Follow the Ubuntu installation wizard</li>
+                            <li>After first boot, your homelab services will auto-start!</li>
+                        </ol>
+                    </div>
                 </div>
 
                 <div class="step-actions">
-                    <button class="btn btn-secondary" onclick="app.reset()">← Build Another ISO</button>
+                    <button class="btn btn-secondary" onclick="app.skipFlash()">⏭️ Skip - Download ISO Instead</button>
+                    <button id="start-flash-btn" class="btn btn-primary" onclick="app.startFlash()" disabled>
+                        ⚡ Flash to USB Drive
+                    </button>
                 </div>
             </section>
 
@@ -550,8 +555,7 @@
         <footer>
             <p>
                 <a href="https://github.com/brilliantsquirrel/Homelab-Install-Script" target="_blank">GitHub</a> |
-                <a href="/api/docs" target="_blank">API Documentation</a> |
-                <a href="https://docs.claude.com" target="_blank">Help</a>
+                <a href="/api/docs" target="_blank">API Documentation</a>
             </p>
             <p class="footer-note">
                 Built with ❤️ for the homelab community
