@@ -24,7 +24,10 @@
                     <h3>📦 Docker Services</h3>
 
                     <div class="category-group">
-                        <h4>🤖 AI & Machine Learning</h4>
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                            <h4 style="margin: 0;">🤖 AI & Machine Learning</h4>
+                            <button class="btn btn-small btn-secondary" onclick="app.selectAllInCategory('ai')">Select All</button>
+                        </div>
                         <div class="service-checklist">
                             <label class="checklist-item">
                                 <input type="checkbox" name="service" value="ollama" data-category="ai" data-size="2">
@@ -102,7 +105,10 @@
                     </div>
 
                     <div class="category-group">
-                        <h4>🏡 Homelab Services</h4>
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                            <h4 style="margin: 0;">🏡 Homelab Services</h4>
+                            <button class="btn btn-small btn-secondary" onclick="app.selectAllInCategory('homelab')">Select All</button>
+                        </div>
                         <div class="service-checklist">
                             <label class="checklist-item">
                                 <input type="checkbox" name="service" value="nextcloud" data-category="homelab" data-deps="nextcloud-db,nextcloud-redis" data-size="1.2">
@@ -153,7 +159,10 @@
                     </div>
 
                     <div class="category-group">
-                        <h4>🔧 Infrastructure (Required)</h4>
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                            <h4 style="margin: 0;">🔧 Infrastructure (Required)</h4>
+                            <button class="btn btn-small btn-secondary" onclick="app.selectAllInCategory('infrastructure')">Select All</button>
+                        </div>
                         <div class="service-checklist">
                             <label class="checklist-item">
                                 <input type="checkbox" name="service" value="portainer" data-category="infrastructure" data-deps="docker-socket-proxy" data-size="0.3" checked>
@@ -229,7 +238,7 @@
                     <h3>⚙️ Configuration</h3>
                     <div class="config-form">
                         <div class="form-group">
-                            <label class="checkbox-label">
+                            <label class="checkbox-label" for="gpu-enabled">
                                 <input type="checkbox" id="gpu-enabled" name="gpu_enabled">
                                 <span class="checkbox-custom"></span>
                                 <span>Enable GPU Support (NVIDIA CUDA)</span>

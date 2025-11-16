@@ -1432,11 +1432,24 @@ footer a:hover {
 .checkbox-label input[type="checkbox"] {
     position: absolute;
     opacity: 0;
+    pointer-events: none;
 }
 
 .checkbox-label .checkbox-custom {
     width: 20px;
     height: 20px;
+}
+
+.checkbox-label input[type="checkbox"]:checked ~ .checkbox-custom {
+    background: var(--primary);
+    border-color: var(--primary);
+}
+
+.checkbox-label input[type="checkbox"]:checked ~ .checkbox-custom::after {
+    content: "✓";
+    color: white;
+    font-weight: bold;
+    font-size: 14px;
 }
 
 /* ============================================

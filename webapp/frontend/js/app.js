@@ -1111,6 +1111,20 @@ class HomeLabISOBuilder {
         // Reset and go back to setup
         this.reset();
     }
+
+    selectAllInCategory(category) {
+        // Select all services in a specific category
+        const checkboxes = document.querySelectorAll(`.service-checklist input[data-category="${category}"]`);
+
+        checkboxes.forEach(checkbox => {
+            if (!checkbox.disabled && !checkbox.checked) {
+                checkbox.checked = true;
+                // Trigger change event to update state
+                const event = new Event('change', { bubbles: true });
+                checkbox.dispatchEvent(event);
+            }
+        });
+    }
 }
 
 // Initialize app when DOM is ready
