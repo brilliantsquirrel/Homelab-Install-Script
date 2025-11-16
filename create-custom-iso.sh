@@ -553,8 +553,7 @@ xorriso -as mkisofs \
     -r -V "$VOLUME_ID" \
     -o "$ISO_OUTPUT" \
     -J -joliet-long \
-    -b isolinux/isolinux.bin \
-    -c isolinux/boot.cat \
+    -b boot/grub/i386-pc/eltorito.img \
     -no-emul-boot \
     -boot-load-size 4 \
     -boot-info-table \
@@ -562,8 +561,6 @@ xorriso -as mkisofs \
     -e boot/grub/efi.img \
     -no-emul-boot \
     -isohybrid-gpt-basdat \
-    -isohybrid-apm-hfsplus \
-    -isohybrid-mbr /usr/lib/ISOLINUX/isohdpfx.bin \
     "$ISO_EXTRACT" 2>&1 | grep -v "^xorriso : UPDATE :" || {
     error "xorriso failed to create ISO"
     exit 1
