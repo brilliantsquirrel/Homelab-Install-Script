@@ -188,7 +188,10 @@
 
                 <!-- AI Models Section -->
                 <div class="setup-section">
-                    <h3>🧠 AI Models (Ollama)</h3>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                        <h3 style="margin: 0;">🧠 AI Models (Ollama)</h3>
+                        <button class="btn btn-small btn-secondary" onclick="app.selectAllModels()">Select All Models</button>
+                    </div>
                     <div id="models-disabled-notice" class="notice notice-warning" style="display:none;">
                         <strong>Note:</strong> AI model selection requires the Ollama service. Please select Ollama above to enable this section.
                     </div>

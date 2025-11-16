@@ -1125,6 +1125,20 @@ class HomeLabISOBuilder {
             }
         });
     }
+
+    selectAllModels() {
+        // Select all AI models
+        const checkboxes = document.querySelectorAll('.model-checklist input[type="checkbox"]');
+
+        checkboxes.forEach(checkbox => {
+            if (!checkbox.disabled && !checkbox.checked) {
+                checkbox.checked = true;
+                // Trigger change event to update state
+                const event = new Event('change', { bubbles: true });
+                checkbox.dispatchEvent(event);
+            }
+        });
+    }
 }
 
 // Initialize app when DOM is ready
