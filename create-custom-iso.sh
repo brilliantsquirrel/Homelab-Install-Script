@@ -549,19 +549,39 @@ write_status "creating-iso" 90 "Creating bootable ISO file"
 start_timer
 log "Building ISO image..."
 
+# Extract MBR and EFI partition from source ISO for hybrid boot support
+MBR_TEMPLATE="$WORK_DIR/isohdpfx.bin"
+EFI_IMG="$WORK_DIR/efi-partition.img"
+
+log "Extracting MBR from source ISO for USB boot support..."
+dd if="$ISO_INPUT" bs=1 count=432 of="$MBR_TEMPLATE" 2>/dev/null || {
+    error "Failed to extract MBR from source ISO"
+    exit 1
+}
+
+log "Extracting EFI partition from source ISO..."
+# EFI partition starts at sector 6441216, size is 10160 sectors (5MB)
+dd if="$ISO_INPUT" bs=512 skip=6441216 count=10160 of="$EFI_IMG" 2>/dev/null || {
+    error "Failed to extract EFI partition from source ISO"
+    exit 1
+}
+
 xorriso -as mkisofs \
     -r -V "$VOLUME_ID" \
     -o "$ISO_OUTPUT" \
     -J -joliet-long \
     -iso-level 3 \
     -b boot/grub/i386-pc/eltorito.img \
+    -c boot.catalog \
     -no-emul-boot \
     -boot-load-size 4 \
     -boot-info-table \
     -eltorito-alt-boot \
-    -e EFI/boot/grubx64.efi \
+    -e --interval:appended_partition_2:all:: \
     -no-emul-boot \
+    -isohybrid-mbr "$MBR_TEMPLATE" \
     -isohybrid-gpt-basdat \
+    -append_partition 2 0xef "$EFI_IMG" \
     "$ISO_EXTRACT" 2>&1 | grep -v "^xorriso : UPDATE :" || {
     error "xorriso failed to create ISO"
     exit 1
