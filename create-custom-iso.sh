@@ -125,6 +125,10 @@ SCRIPT_START_TIME=$(date +%s)
 
 # Configuration
 UBUNTU_VERSION="24.04.3"
+
+# Ensure iso-artifacts directory exists
+mkdir -p "$REPO_DIR/iso-artifacts"
+
 ISO_INPUT="$REPO_DIR/iso-artifacts/ubuntu-${UBUNTU_VERSION}-live-server-amd64.iso"
 ISO_OUTPUT="$REPO_DIR/iso-artifacts/ubuntu-${UBUNTU_VERSION}-homelab-amd64.iso"
 
