@@ -558,7 +558,7 @@ xorriso -as mkisofs \
     -boot-load-size 4 \
     -boot-info-table \
     -eltorito-alt-boot \
-    -e boot/grub/efiboot.img \
+    -e EFI/boot/grubx64.efi \
     -no-emul-boot \
     -isohybrid-gpt-basdat \
     "$ISO_EXTRACT" 2>&1 | grep -v "^xorriso : UPDATE :" || {
