@@ -1237,3 +1237,551 @@ footer a:hover {
         font-size: 0.75rem;
     }
 }
+/* ============================================
+   NEW CHECKLIST-STYLE UI
+   ============================================ */
+
+/* Setup Section */
+.setup-section {
+    background: var(--card-bg);
+    border-radius: 12px;
+    padding: 2rem;
+    margin-bottom: 2rem;
+    box-shadow: 0 2px 8px var(--shadow);
+}
+
+.setup-section h3 {
+    color: var(--primary);
+    margin-bottom: 1.5rem;
+    font-size: 1.5rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.category-group {
+    margin-bottom: 2rem;
+}
+
+.category-group:last-child {
+    margin-bottom: 0;
+}
+
+.category-group h4 {
+    color: var(--text);
+    margin-bottom: 1rem;
+    font-size: 1.2rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 2px solid var(--border);
+}
+
+/* Checklist Items */
+.service-checklist,
+.model-checklist {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.checklist-item {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1rem;
+    background: var(--bg);
+    border: 2px solid var(--border);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    position: relative;
+}
+
+.checklist-item:hover {
+    border-color: var(--primary);
+    box-shadow: 0 2px 8px var(--shadow);
+    transform: translateX(4px);
+}
+
+.checklist-item.disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.checklist-item.disabled:hover {
+    transform: none;
+    border-color: var(--border);
+}
+
+/* Custom Checkbox */
+.checklist-item input[type="checkbox"] {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.checkbox-custom {
+    width: 24px;
+    height: 24px;
+    border: 2px solid var(--border);
+    border-radius: 6px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+    position: relative;
+}
+
+.checklist-item input[type="checkbox"]:checked ~ .checkbox-custom {
+    background: var(--primary);
+    border-color: var(--primary);
+}
+
+.checklist-item input[type="checkbox"]:checked ~ .checkbox-custom::after {
+    content: "✓";
+    color: white;
+    font-weight: bold;
+    font-size: 16px;
+}
+
+.checklist-item input[type="checkbox"]:disabled ~ .checkbox-custom {
+    background: var(--border);
+    border-color: var(--border);
+}
+
+.checklist-item input[type="checkbox"]:checked {
+    border-color: var(--primary);
+}
+
+.checklist-item:has(input:checked) {
+    background: #e0f2fe;
+    border-color: var(--primary);
+}
+
+.checklist-item:has(input:disabled) {
+    background: #f1f5f9;
+}
+
+/* Item Content */
+.item-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.item-name {
+    font-weight: 600;
+    color: var(--text);
+    font-size: 1rem;
+}
+
+.item-description {
+    color: var(--text-light);
+    font-size: 0.85rem;
+}
+
+.item-size {
+    color: var(--primary);
+    font-weight: 600;
+    font-size: 0.9rem;
+    flex-shrink: 0;
+    min-width: 70px;
+    text-align: right;
+}
+
+/* Summary Grid */
+.summary-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1.5rem;
+}
+
+.summary-item {
+    background: var(--bg);
+    padding: 1.5rem;
+    border-radius: 8px;
+    border-left: 4px solid var(--primary);
+    text-align: center;
+}
+
+.summary-label {
+    font-size: 0.85rem;
+    color: var(--text-light);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 0.5rem;
+}
+
+.summary-value {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--primary);
+}
+
+/* Checkbox Label for Config */
+.checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    cursor: pointer;
+    font-weight: 600;
+    color: var(--text);
+}
+
+.checkbox-label input[type="checkbox"] {
+    position: absolute;
+    opacity: 0;
+}
+
+.checkbox-label .checkbox-custom {
+    width: 20px;
+    height: 20px;
+}
+
+/* ============================================
+   USB FLASHING UI
+   ============================================ */
+
+.completion-message {
+    text-align: center;
+    padding: 2rem 0;
+}
+
+.completion-icon {
+    font-size: 4rem;
+    margin-bottom: 1rem;
+}
+
+.completion-message h3 {
+    color: var(--text);
+    font-size: 1.8rem;
+    margin-bottom: 1rem;
+}
+
+.completion-message p {
+    color: var(--text-light);
+    font-size: 1rem;
+}
+
+/* USB Section */
+.usb-section {
+    background: var(--card-bg);
+    border-radius: 12px;
+    padding: 2rem;
+    margin: 2rem 0;
+    box-shadow: 0 2px 8px var(--shadow);
+}
+
+.section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.5rem;
+}
+
+.section-header h3 {
+    color: var(--text);
+    font-size: 1.3rem;
+    margin: 0;
+}
+
+/* USB Devices List */
+.usb-devices-list {
+    margin: 1.5rem 0;
+    min-height: 100px;
+}
+
+.usb-device {
+    background: var(--bg);
+    border: 2px solid var(--border);
+    border-radius: 8px;
+    padding: 1.25rem;
+    margin-bottom: 1rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.usb-device:hover {
+    border-color: var(--primary);
+    box-shadow: 0 2px 8px var(--shadow);
+    transform: translateX(4px);
+}
+
+.usb-device.selected {
+    background: #e0f2fe;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+.usb-device-icon {
+    font-size: 2rem;
+    flex-shrink: 0;
+}
+
+.usb-device-info {
+    flex: 1;
+}
+
+.usb-device-name {
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 0.25rem;
+}
+
+.usb-device-details {
+    font-size: 0.85rem;
+    color: var(--text-light);
+}
+
+.usb-device-size {
+    font-weight: 600;
+    color: var(--primary);
+    font-size: 1rem;
+}
+
+.usb-device-warning {
+    color: var(--warning);
+    font-size: 0.75rem;
+    margin-top: 0.25rem;
+    font-style: italic;
+}
+
+/* USB Requirements */
+.usb-requirements {
+    background: var(--bg);
+    border-radius: 8px;
+    padding: 1.5rem;
+    margin-top: 1.5rem;
+}
+
+.usb-requirements h4 {
+    color: var(--text);
+    margin-bottom: 0.75rem;
+    font-size: 1.1rem;
+}
+
+.usb-requirements ul {
+    margin-left: 1.5rem;
+    color: var(--text-light);
+}
+
+.usb-requirements li {
+    margin-bottom: 0.5rem;
+}
+
+/* Flash Progress Section */
+.flash-progress-section {
+    background: var(--card-bg);
+    border-radius: 12px;
+    padding: 2rem;
+    margin: 2rem 0;
+    box-shadow: 0 2px 8px var(--shadow);
+}
+
+.flash-progress-section h3 {
+    color: var(--text);
+    margin-bottom: 1.5rem;
+    font-size: 1.5rem;
+}
+
+.flash-stages {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    margin-bottom: 2rem;
+}
+
+.flash-stage {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1rem;
+    background: var(--bg);
+    border-radius: 8px;
+    border-left: 4px solid var(--border);
+    transition: all 0.3s ease;
+}
+
+.flash-stage[data-stage].active {
+    background: #e0f2fe;
+    border-left-color: var(--primary);
+}
+
+.flash-stage[data-stage].completed {
+    background: #d1fae5;
+    border-left-color: var(--success);
+}
+
+.flash-stage .stage-status {
+    font-size: 1.5rem;
+    width: 32px;
+    text-align: center;
+}
+
+.flash-stage.active .stage-status {
+    animation: pulse 1.5s ease-in-out infinite;
+}
+
+.flash-stage.completed .stage-status::before {
+    content: "✅";
+}
+
+.flash-stage.error .stage-status::before {
+    content: "❌";
+}
+
+.stage-info {
+    flex: 1;
+}
+
+.stage-name {
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 0.5rem;
+}
+
+.stage-progress {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.stage-progress .progress-bar {
+    height: 8px;
+    background: var(--border);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.stage-progress .progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--primary), var(--success));
+    transition: width 0.3s ease;
+}
+
+.stage-progress .progress-text {
+    font-size: 0.85rem;
+    color: var(--text-light);
+}
+
+/* Flash Log */
+.flash-log {
+    margin-top: 2rem;
+}
+
+.flash-log h4 {
+    color: var(--text);
+    margin-bottom: 0.75rem;
+}
+
+.flash-log .log-container {
+    max-height: 300px;
+    background: #1e293b;
+    color: #94a3b8;
+    padding: 1rem;
+    border-radius: 8px;
+    overflow-y: auto;
+    font-family: 'Courier New', monospace;
+    font-size: 0.85rem;
+}
+
+/* Flash Complete Section */
+.flash-complete-section {
+    background: var(--card-bg);
+    border-radius: 12px;
+    padding: 2rem;
+    margin: 2rem 0;
+    box-shadow: 0 2px 8px var(--shadow);
+}
+
+.success-message {
+    text-align: center;
+    padding: 2rem 0;
+}
+
+.success-icon {
+    font-size: 4rem;
+    margin-bottom: 1rem;
+}
+
+.success-message h3 {
+    color: var(--success);
+    font-size: 1.8rem;
+    margin-bottom: 0.5rem;
+}
+
+.success-message p {
+    color: var(--text-light);
+}
+
+/* Notice Styles */
+.notice {
+    padding: 1rem;
+    border-radius: 8px;
+    margin: 1rem 0;
+    border-left: 4px solid;
+}
+
+.notice-info {
+    background: #dbeafe;
+    border-color: var(--primary);
+    color: #1e40af;
+}
+
+.notice-warning {
+    background: #fef3c7;
+    border-color: var(--warning);
+    color: #78350f;
+}
+
+.notice strong {
+    font-weight: 600;
+}
+
+/* Responsive Design for New Elements */
+@media (max-width: 768px) {
+    .section-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 1rem;
+    }
+
+    .section-header .btn {
+        width: 100%;
+    }
+
+    .summary-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .checklist-item {
+        padding: 0.75rem;
+    }
+
+    .item-name {
+        font-size: 0.9rem;
+    }
+
+    .item-description {
+        font-size: 0.8rem;
+    }
+
+    .item-size {
+        font-size: 0.85rem;
+        min-width: 60px;
+    }
+
+    .usb-device {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .flash-stage {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+}
