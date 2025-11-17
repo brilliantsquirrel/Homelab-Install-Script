@@ -911,8 +911,32 @@ class HomeLabISOBuilder {
             // Clear loading and populate devices
             devicesList.innerHTML = '';
 
+            // Check if running in Cloud Run (no USB access)
+            if (data.cloudRun) {
+                devicesList.innerHTML = `
+                    <div class="notice notice-warning">
+                        <strong>USB Flashing Not Available</strong>
+                        <p>${data.message}</p>
+                        <p style="margin-top: 1rem;"><strong>Recommended Tools:</strong></p>
+                        <ul style="margin-left: 1.5rem; margin-top: 0.5rem;">
+                            <li><strong>Windows:</strong> <a href="https://rufus.ie" target="_blank">Rufus</a> or <a href="https://www.balena.io/etcher" target="_blank">balenaEtcher</a></li>
+                            <li><strong>macOS:</strong> <a href="https://www.balena.io/etcher" target="_blank">balenaEtcher</a> or <code>dd</code> command</li>
+                            <li><strong>Linux:</strong> <code>dd</code> command or <a href="https://www.balena.io/etcher" target="_blank">balenaEtcher</a></li>
+                        </ul>
+                    </div>
+                `;
+
+                // Disable flash button and show skip button prominently
+                const flashBtn = document.getElementById('start-flash-btn');
+                if (flashBtn) {
+                    flashBtn.disabled = true;
+                    flashBtn.style.display = 'none';
+                }
+                return;
+            }
+
             if (data.devices.length === 0) {
-                devicesList.innerHTML = '<div class="no-devices">No USB devices detected. Please insert a USB drive.</div>';
+                devicesList.innerHTML = '<div class="notice notice-info">No USB devices detected. Please insert a USB drive and click "Refresh Devices".</div>';
                 return;
             }
 
@@ -936,6 +960,10 @@ class HomeLabISOBuilder {
                     // Select this device
                     deviceCard.classList.add('selected');
                     this.selectedUSBDevice = device.path;
+
+                    // Enable flash button
+                    const flashBtn = document.getElementById('start-flash-btn');
+                    if (flashBtn) flashBtn.disabled = false;
                 });
 
                 devicesList.appendChild(deviceCard);
@@ -945,7 +973,7 @@ class HomeLabISOBuilder {
             console.error('Failed to refresh USB devices:', error);
             const devicesList = document.getElementById('usb-devices-list');
             if (devicesList) {
-                devicesList.innerHTML = `<div class="error">Error: ${error.message}</div>`;
+                devicesList.innerHTML = `<div class="notice notice-error" style="background: #fee; border-color: #c00; color: #600;">Error: ${error.message}</div>`;
             }
         }
     }

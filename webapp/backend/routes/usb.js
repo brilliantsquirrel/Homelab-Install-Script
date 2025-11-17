@@ -18,6 +18,18 @@ router.get('/devices', async (req, res) => {
     try {
         reqLogger.info('Scanning for USB devices');
 
+        // Check if running in Cloud Run (serverless environment without hardware access)
+        if (process.env.K_SERVICE) {
+            reqLogger.info('USB scanning not available in Cloud Run environment');
+            return res.json({
+                success: true,
+                devices: [],
+                cloudRun: true,
+                message: 'USB device detection is not available in Cloud Run. Please download the ISO and use a local tool like Rufus, balenaEtcher, or dd to create a bootable USB drive.',
+                timestamp: new Date().toISOString()
+            });
+        }
+
         // Use lsblk to list block devices with detailed information
         const { stdout } = await execAsync('lsblk -J -o NAME,SIZE,TYPE,MOUNTPOINT,VENDOR,MODEL,SERIAL,TRAN');
         const devices = JSON.parse(stdout);
@@ -49,6 +61,7 @@ router.get('/devices', async (req, res) => {
         res.json({
             success: true,
             devices: usbDevices,
+            cloudRun: false,
             timestamp: new Date().toISOString()
         });
 
