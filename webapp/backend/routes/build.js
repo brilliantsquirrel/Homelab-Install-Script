@@ -208,7 +208,7 @@ router.get('/:buildId/download', async (req, res) => {
             download_url: downloadUrl,
             iso_filename: status.iso_filename,
             iso_size: metadata.size,
-            expires_in_seconds: 3600,
+            expires_in_seconds: 18000, // 5 hours
         });
     } catch (error) {
         logger.error('Error generating download URL:', error);

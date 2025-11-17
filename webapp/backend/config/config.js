@@ -18,7 +18,7 @@ module.exports = {
     gcs: {
         artifactsBucket: process.env.GCS_ARTIFACTS_BUCKET || 'homelab-iso-artifacts',
         downloadsBucket: process.env.GCS_DOWNLOADS_BUCKET || 'homelab-iso-downloads',
-        signedUrlExpiration: parseInt(process.env.GCS_SIGNED_URL_EXPIRATION) || 3600, // 1 hour
+        signedUrlExpiration: parseInt(process.env.GCS_SIGNED_URL_EXPIRATION) || 18000, // 5 hours
         isoRetentionDays: parseInt(process.env.ISO_RETENTION_DAYS) || 7,
     },
 
