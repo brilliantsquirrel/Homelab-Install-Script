@@ -371,12 +371,13 @@ class BuildOrchestrator {
     /**
      * Get build status
      * @param {string} buildId - Build ID
-     * @returns {Object} Build status
+     * @returns {Object} Build status (or Promise if checking GCS)
      */
     getBuildStatus(buildId) {
         const build = this.builds.get(buildId);
         if (!build) {
-            return null;
+            // Not in memory - check GCS for build status file
+            return this.getBuildStatusFromGCS(buildId);
         }
 
         return {
@@ -393,6 +394,45 @@ class BuildOrchestrator {
             estimated_completion: build.estimatedCompletion,
             error: build.error,
         };
+    }
+
+    /**
+     * Get build status from GCS (for builds from previous container instances)
+     * @param {string} buildId - Build ID
+     * @returns {Promise<Object>} Build status
+     */
+    async getBuildStatusFromGCS(buildId) {
+        const statusFile = `build-status-${buildId}.json`;
+
+        try {
+            // Check if status file exists in downloads bucket
+            const statusData = await gcsManager.downloadStatusFile(statusFile);
+
+            if (!statusData) {
+                return null;
+            }
+
+            // Reconstruct basic build info from GCS status
+            const isoFilename = `ubuntu-24.04.3-homelab-custom-${buildId}.iso`;
+
+            return {
+                build_id: buildId,
+                status: statusData.stage === 'complete' ? 'complete' :
+                        statusData.stage === 'failed' ? 'failed' : 'building',
+                progress: statusData.progress || 0,
+                stage: statusData.stage || 'unknown',
+                vm_name: `iso-build-${buildId}`,
+                iso_filename: statusData.stage === 'complete' ? isoFilename : null,
+                logs: [statusData.message || 'Build status recovered from GCS'],
+                created: statusData.timestamp || null,
+                updated: statusData.timestamp || null,
+                estimated_completion: null,
+                error: statusData.stage === 'failed' ? statusData.message : null,
+            };
+        } catch (error) {
+            logger.error(`Failed to get build status from GCS for ${buildId}:`, error);
+            return null;
+        }
     }
 
     /**

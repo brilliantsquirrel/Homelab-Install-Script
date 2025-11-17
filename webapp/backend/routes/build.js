@@ -105,11 +105,11 @@ router.post('/', async (req, res) => {
  * GET /api/build/:buildId/status
  * Get build status
  */
-router.get('/:buildId/status', (req, res) => {
+router.get('/:buildId/status', async (req, res) => {
     try {
         const { buildId } = req.params;
 
-        const status = buildOrchestrator.getBuildStatus(buildId);
+        const status = await buildOrchestrator.getBuildStatus(buildId);
 
         if (!status) {
             return res.status(404).json({ error: 'Build not found' });
@@ -130,7 +130,7 @@ router.get('/:buildId/download', async (req, res) => {
     try {
         const { buildId } = req.params;
 
-        const status = buildOrchestrator.getBuildStatus(buildId);
+        const status = await buildOrchestrator.getBuildStatus(buildId);
 
         if (!status) {
             return res.status(404).json({ error: 'Build not found' });
