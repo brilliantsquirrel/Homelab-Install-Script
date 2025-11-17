@@ -54,10 +54,15 @@ class GCSManager {
                 throw new Error(`ISO file not found: ${isoFilename}`);
             }
 
+            // Cloud Run workaround: Use service account email for signing
+            const serviceAccount = process.env.GCS_SIGNING_EMAIL ||
+                                 '644872244499-compute@developer.gserviceaccount.com';
+
             const [url] = await file.getSignedUrl({
                 version: 'v4',
                 action: 'read',
                 expires: Date.now() + config.gcs.signedUrlExpiration * 1000,
+                signingEndpoint: `https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/${serviceAccount}:signBlob`,
             });
 
             logger.info(`Generated signed URL for ${isoFilename}`);
