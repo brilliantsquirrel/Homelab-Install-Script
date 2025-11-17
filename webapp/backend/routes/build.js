@@ -206,4 +206,47 @@ router.delete('/:buildId', async (req, res) => {
     }
 });
 
+/**
+ * GET /api/builds/completed
+ * List recent completed builds
+ */
+router.get('/completed', async (req, res) => {
+    try {
+        const limit = parseInt(req.query.limit) || 10;
+
+        // List all ISOs from GCS downloads bucket
+        const isos = await gcsManager.listISOs();
+
+        // Extract build IDs from ISO filenames
+        // Format: ubuntu-24.04.3-homelab-custom-{buildId}.iso
+        const builds = [];
+
+        for (const iso of isos.slice(0, limit)) {
+            const match = iso.name.match(/ubuntu-.*-homelab-custom-([a-f0-9]+)\.iso$/);
+            if (match) {
+                const buildId = match[1];
+
+                // Try to get build status from GCS
+                const status = await buildOrchestrator.getBuildStatus(buildId);
+
+                builds.push({
+                    build_id: buildId,
+                    iso_filename: iso.name,
+                    iso_size: iso.size,
+                    created: iso.created,
+                    status: status ? status.status : 'complete',
+                });
+            }
+        }
+
+        res.json({
+            builds: builds,
+            total: builds.length,
+        });
+    } catch (error) {
+        logger.error('Error listing completed builds:', error);
+        res.status(500).json({ error: 'Failed to list completed builds' });
+    }
+});
+
 module.exports = router;

@@ -66,6 +66,9 @@ class HomeLabISOBuilder {
 
         // Check for Ollama selection to enable/disable models
         this.checkOllamaSelected();
+
+        // Load previous builds
+        this.loadPreviousBuilds();
     }
 
     setupChecklistListeners() {
@@ -1166,6 +1169,96 @@ class HomeLabISOBuilder {
                 checkbox.dispatchEvent(event);
             }
         });
+    }
+
+    async loadPreviousBuilds() {
+        const container = document.getElementById('previous-builds-container');
+        if (!container) return;
+
+        try {
+            const response = await fetch('/api/builds/completed?limit=5');
+            if (!response.ok) {
+                throw new Error('Failed to load previous builds');
+            }
+
+            const data = await response.json();
+
+            if (data.builds && data.builds.length > 0) {
+                // Show list of previous builds
+                container.innerHTML = data.builds.map(build => `
+                    <div class="previous-build-item" style="
+                        padding: 0.75rem;
+                        margin-bottom: 0.5rem;
+                        border: 1px solid #e0e0e0;
+                        border-radius: 4px;
+                        display: flex;
+                        justify-content: space-between;
+                        align-items: center;
+                    ">
+                        <div style="flex: 1;">
+                            <div style="font-weight: 500; margin-bottom: 0.25rem;">
+                                ${build.iso_filename}
+                            </div>
+                            <div style="font-size: 0.875rem; color: #666;">
+                                ${this.formatFileSize(build.iso_size)} •
+                                ${this.formatDate(build.created)}
+                            </div>
+                        </div>
+                        <button
+                            class="btn btn-small btn-primary"
+                            onclick="app.downloadPreviousBuild('${build.build_id}')"
+                            style="margin-left: 1rem;"
+                        >
+                            📥 Download
+                        </button>
+                    </div>
+                `).join('');
+            } else {
+                container.innerHTML = '<p style="color: #666; font-style: italic;">No previous builds available</p>';
+            }
+        } catch (error) {
+            console.error('Error loading previous builds:', error);
+            container.innerHTML = '<p style="color: #999;">Unable to load previous builds</p>';
+        }
+    }
+
+    async downloadPreviousBuild(buildId) {
+        try {
+            const response = await fetch(`/api/build/${buildId}/download`);
+            if (!response.ok) {
+                throw new Error('Failed to get download URL');
+            }
+
+            const data = await response.json();
+
+            // Open download URL in new tab
+            window.open(data.download_url, '_blank');
+        } catch (error) {
+            console.error('Error downloading previous build:', error);
+            alert('Failed to download ISO. The download link may have expired.');
+        }
+    }
+
+    formatFileSize(bytes) {
+        const gb = bytes / (1024 * 1024 * 1024);
+        return `${gb.toFixed(2)} GB`;
+    }
+
+    formatDate(dateString) {
+        const date = new Date(dateString);
+        const now = new Date();
+        const diffMs = now - date;
+        const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+        if (diffDays === 0) {
+            return 'Today';
+        } else if (diffDays === 1) {
+            return 'Yesterday';
+        } else if (diffDays < 7) {
+            return `${diffDays} days ago`;
+        } else {
+            return date.toLocaleDateString();
+        }
     }
 }
 
