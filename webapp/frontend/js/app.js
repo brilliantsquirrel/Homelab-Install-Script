@@ -1176,7 +1176,7 @@ class HomeLabISOBuilder {
         if (!container) return;
 
         try {
-            const response = await fetch('/api/builds/completed?limit=5');
+            const response = await fetch('/api/build/completed?limit=5');
             if (!response.ok) {
                 throw new Error('Failed to load previous builds');
             }
