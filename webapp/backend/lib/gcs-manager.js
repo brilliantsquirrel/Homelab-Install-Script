@@ -148,11 +148,24 @@ class GCSManager {
      */
     async listISOs() {
         try {
-            const [files] = await this.downloadsBucket.getFiles();
-            return files.map(file => ({
-                name: file.name,
-                // Additional metadata could be fetched if needed
-            }));
+            const [files] = await this.downloadsBucket.getFiles({
+                prefix: '', // Get all files
+            });
+
+            // Filter for ISO files only and get metadata
+            const isoFiles = files
+                .filter(file => file.name.endsWith('.iso'))
+                .map(file => ({
+                    name: file.name,
+                    size: parseInt(file.metadata.size) || 0,
+                    created: file.metadata.timeCreated || new Date().toISOString(),
+                    updated: file.metadata.updated || new Date().toISOString(),
+                }));
+
+            // Sort by creation date, newest first
+            isoFiles.sort((a, b) => new Date(b.created) - new Date(a.created));
+
+            return isoFiles;
         } catch (error) {
             logger.error('Error listing ISOs:', error);
             throw error;
