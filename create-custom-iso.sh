@@ -583,6 +583,19 @@ CLOUD_INIT_EOF
 
 success "Cloud-init disabled - boot hang issue resolved"
 
+# Disable fwupd service to prevent installation error messages
+# fwupd (firmware updater) is unnecessary for server installations and causes errors
+log "Disabling fwupd services to prevent installation errors..."
+write_status "customizing" 78 "Disabling unnecessary services"
+
+# Mask fwupd services to prevent them from starting
+$SUDO mkdir -p "$SQUASHFS_EXTRACT/etc/systemd/system"
+$SUDO ln -sf /dev/null "$SQUASHFS_EXTRACT/etc/systemd/system/fwupd-refresh.service" 2>/dev/null || true
+$SUDO ln -sf /dev/null "$SQUASHFS_EXTRACT/etc/systemd/system/fwupd-refresh.timer" 2>/dev/null || true
+$SUDO ln -sf /dev/null "$SQUASHFS_EXTRACT/etc/systemd/system/fwupd.service" 2>/dev/null || true
+
+success "Unnecessary services disabled"
+
 success "Filesystem customization complete"
 
 # Step 4: Repack the squashfs filesystem
