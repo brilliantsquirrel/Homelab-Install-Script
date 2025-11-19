@@ -261,6 +261,14 @@ module.exports = {
             dependencies: [],
             required: false,
         },
+        'code-server': {
+            display: 'Code-Server',
+            description: 'VS Code in the browser',
+            category: 'homelab',
+            size_mb: 256,
+            dependencies: [],
+            required: false,
+        },
         // Infrastructure (required)
         'nginx': {
             display: 'Nginx (Required)',

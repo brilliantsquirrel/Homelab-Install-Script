@@ -2,15 +2,111 @@
 
 const express = require('express');
 const router = express.Router();
+const rateLimit = require('express-rate-limit');
 const logger = require('../lib/logger');
 const buildOrchestrator = require('../lib/build-orchestrator');
 const gcsManager = require('../lib/gcs-manager');
 
+// SECURITY: Strict rate limiting for build creation to prevent financial DoS
+// Each build costs ~$8 (VM + compute + storage + egress)
+// Without rate limiting, an attacker could create 40 builds/hour = $320/hour
+const buildRateLimiter = rateLimit({
+    windowMs: 60 * 60 * 1000,  // 1 hour window
+    max: 3,                     // Maximum 3 builds per hour per IP
+    skipSuccessfulRequests: false,
+    skipFailedRequests: false,  // Count failed attempts to prevent enumeration
+    message: {
+        error: 'Build rate limit exceeded. Maximum 3 builds per hour.',
+        retryAfter: '1 hour'
+    },
+    standardHeaders: true,      // Return rate limit info in RateLimit-* headers
+    legacyHeaders: false,       // Disable X-RateLimit-* headers
+    keyGenerator: (req) => {
+        // Use IP address as key (can be enhanced with user authentication later)
+        return req.ip || req.connection.remoteAddress;
+    },
+    handler: (req, res) => {
+        logger.warn('Build rate limit exceeded', {
+            ip: req.ip,
+            path: req.path,
+            headers: {
+                'user-agent': req.get('user-agent'),
+                'x-forwarded-for': req.get('x-forwarded-for')
+            }
+        });
+
+        res.status(429).json({
+            error: 'Build rate limit exceeded. Maximum 3 builds per hour per IP address.',
+            retryAfter: 3600,  // seconds
+            currentTime: new Date().toISOString()
+        });
+    }
+});
+
+// In-memory tracker for per-IP 24-hour build limits (additional layer)
+// This prevents circumventing hourly limits by spacing builds exactly 1 hour apart
+const dailyBuildTracker = new Map();
+
+// Cleanup old entries every hour to prevent memory leaks
+setInterval(() => {
+    const oneDayAgo = Date.now() - (24 * 60 * 60 * 1000);
+    for (const [ip, builds] of dailyBuildTracker.entries()) {
+        const recentBuilds = builds.filter(timestamp => timestamp > oneDayAgo);
+        if (recentBuilds.length === 0) {
+            dailyBuildTracker.delete(ip);
+        } else {
+            dailyBuildTracker.set(ip, recentBuilds);
+        }
+    }
+}, 60 * 60 * 1000);  // Run every hour
+
+const dailyBuildLimiter = (req, res, next) => {
+    const ip = req.ip || req.connection.remoteAddress;
+    const now = Date.now();
+    const oneDayAgo = now - (24 * 60 * 60 * 1000);
+
+    // Get builds for this IP in the last 24 hours
+    const builds = dailyBuildTracker.get(ip) || [];
+    const recentBuilds = builds.filter(timestamp => timestamp > oneDayAgo);
+
+    // Enforce daily limit: 5 builds per 24 hours
+    if (recentBuilds.length >= 5) {
+        const oldestBuild = Math.min(...recentBuilds);
+        const retryAfter = Math.ceil((oldestBuild + (24 * 60 * 60 * 1000) - now) / 1000);
+
+        logger.warn('Daily build limit exceeded', {
+            ip,
+            buildsLast24Hours: recentBuilds.length,
+            path: req.path
+        });
+
+        return res.status(429).json({
+            error: 'Daily build limit exceeded. Maximum 5 builds per 24 hours.',
+            retryAfter,
+            buildsRemaining: 0,
+            resetTime: new Date(oldestBuild + (24 * 60 * 60 * 1000)).toISOString()
+        });
+    }
+
+    // Track this build attempt
+    recentBuilds.push(now);
+    dailyBuildTracker.set(ip, recentBuilds);
+
+    // Add remaining builds info to response headers
+    res.set('X-Builds-Remaining-24h', String(5 - recentBuilds.length));
+
+    next();
+};
+
 /**
  * POST /api/build
  * Start a new ISO build
+ *
+ * Rate Limits:
+ * - 3 builds per hour per IP
+ * - 5 builds per 24 hours per IP
  */
-router.post('/', async (req, res) => {
+router.post('/', buildRateLimiter, dailyBuildLimiter, async (req, res) => {
     try {
         // Validate input types before processing
         if (req.body.services !== undefined && !Array.isArray(req.body.services)) {

@@ -23,9 +23,45 @@ const app = express();
 // Trust proxy (for Cloud Run / App Engine)
 app.set('trust proxy', true);
 
-// Middleware
+// Middleware - SECURITY: Enable Content Security Policy
 app.use(helmet({
-    contentSecurityPolicy: false, // Allow inline scripts for frontend
+    contentSecurityPolicy: {
+        directives: {
+            defaultSrc: ["'self'"],
+            scriptSrc: [
+                "'self'",
+                // Allow inline scripts for the frontend (needed for app.js)
+                // In production, consider using nonces or hashes instead
+                "'unsafe-inline'"
+            ],
+            styleSrc: [
+                "'self'",
+                "'unsafe-inline'"  // Allow inline styles for UI components
+            ],
+            imgSrc: [
+                "'self'",
+                "data:",  // Allow data: URIs for inline images
+                "https:"  // Allow HTTPS images (for icons, logos)
+            ],
+            connectSrc: ["'self'"],  // Only allow API calls to same origin
+            fontSrc: ["'self'"],
+            objectSrc: ["'none'"],  // Disable plugins (Flash, etc.)
+            mediaSrc: ["'self'"],
+            frameSrc: ["'none'"],  // Prevent embedding in iframes
+            formAction: ["'self'"],  // Forms can only submit to same origin
+            frameAncestors: ["'none'"],  // Prevent clickjacking (X-Frame-Options)
+            baseUri: ["'self'"],  // Prevent base tag hijacking
+            upgradeInsecureRequests: [],  // Upgrade HTTP to HTTPS
+        },
+    },
+    hsts: {
+        maxAge: 31536000,  // 1 year
+        includeSubDomains: true,
+        preload: true,
+    },
+    noSniff: true,  // Prevent MIME type sniffing
+    xssFilter: true,  // Enable XSS filter
+    referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
 }));
 
 app.use(cors({

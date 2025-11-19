@@ -73,6 +73,7 @@ if [ -z "${DOWNLOADS_BUCKET:-}" ] && command -v curl &> /dev/null; then
 fi
 
 # Function to write build status to GCS for real-time progress tracking
+# SECURITY: Validates all inputs and uses secure temporary files
 write_status() {
     local stage="$1"
     local progress="$2"
@@ -83,10 +84,34 @@ write_status() {
         return 0
     fi
 
-    local BUILD_ID_SHORT="${BUILD_ID:0:8}"
-    local STATUS_FILE="gs://$DOWNLOADS_BUCKET/build-status-${BUILD_ID_SHORT}.json"
+    # SECURITY: Validate BUILD_ID format (UUID only, no shell metacharacters)
+    if ! [[ "$BUILD_ID" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]]; then
+        echo "[ERROR] Invalid BUILD_ID format in write_status: $BUILD_ID"
+        return 1
+    fi
 
-    cat > /tmp/build-status.json <<EOF
+    # SECURITY: Validate DOWNLOADS_BUCKET format (GCS bucket naming rules)
+    if ! [[ "$DOWNLOADS_BUCKET" =~ ^[a-z0-9][a-z0-9._-]{1,61}[a-z0-9]$ ]]; then
+        echo "[ERROR] Invalid DOWNLOADS_BUCKET format in write_status: $DOWNLOADS_BUCKET"
+        return 1
+    fi
+
+    # Safe substring (already validated format)
+    local BUILD_ID_SHORT="${BUILD_ID:0:8}"
+    local STATUS_FILE="gs://${DOWNLOADS_BUCKET}/build-status-${BUILD_ID_SHORT}.json"
+
+    # SECURITY: Create secure temporary file (atomic, exclusive, mode 0600)
+    local TEMP_STATUS
+    TEMP_STATUS=$(mktemp /tmp/build-status.XXXXXXXXXX) || {
+        echo "[ERROR] Failed to create secure temporary file"
+        return 1
+    }
+
+    # Ensure cleanup on function exit
+    trap "rm -f '$TEMP_STATUS'" RETURN
+
+    # Write to secure temporary file
+    cat > "$TEMP_STATUS" <<EOF
 {
   "stage": "$stage",
   "progress": $progress,
@@ -95,13 +120,16 @@ write_status() {
 }
 EOF
 
-    # Upload status file (retry up to 3 times, silently)
+    # Upload from secure temp file (retry up to 3 times, silently)
     for i in {1..3}; do
-        if gsutil cp /tmp/build-status.json "$STATUS_FILE" 2>/dev/null; then
+        if gsutil cp "$TEMP_STATUS" "$STATUS_FILE" 2>/dev/null; then
             break
         fi
         sleep 1
     done
+
+    # Explicit cleanup (trap will also clean up, but be explicit)
+    rm -f "$TEMP_STATUS"
 }
 
 # Set SUDO prefix based on whether we're running as root
@@ -115,10 +143,61 @@ else
     log "Running as regular user with sudo"
 fi
 
-# Get the repository root directory
-REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Get the repository root directory with validation (SECURITY: Prevent path traversal)
+validate_repo_dir() {
+    local repo="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+    # Resolve to canonical absolute path (follows symlinks, removes ..)
+    local canonical
+    if command -v realpath &>/dev/null; then
+        canonical="$(realpath "$repo")"
+    else
+        canonical="$(readlink -f "$repo" 2>/dev/null || cd "$repo" && pwd -P)"
+    fi
+
+    # SECURITY: Must be in expected locations only
+    # Allow: /root/Homelab-Install-Script, /tmp/homelab-*, /home/*/Homelab-Install-Script
+    if [[ "$canonical" =~ ^/root/Homelab-Install-Script($|/) ]] || \
+       [[ "$canonical" =~ ^/tmp/homelab- ]] || \
+       [[ "$canonical" =~ ^/home/[a-z0-9_-]+/.*Homelab-Install-Script($|/) ]]; then
+        echo "$canonical"
+        return 0
+    else
+        error "SECURITY: Invalid repository directory: $canonical"
+        error "Repository must be in one of:"
+        error "  - /root/Homelab-Install-Script"
+        error "  - /home/*/Homelab-Install-Script"
+        error "  - /tmp/homelab-*"
+        error ""
+        error "Current location: $canonical"
+        error "This may indicate a symlink attack or misconfiguration."
+        return 1
+    fi
+}
+
+REPO_DIR="$(validate_repo_dir)" || {
+    error "Repository directory validation failed"
+    exit 1
+}
+
+# Additional safety check: Ensure we're not being run from a symlink to /etc or other sensitive dirs
+if [ -L "${BASH_SOURCE[0]}" ]; then
+    warning "Script is being run via symlink: ${BASH_SOURCE[0]}"
+    SYMLINK_TARGET="$(readlink -f "${BASH_SOURCE[0]}")"
+    log "Symlink target: $SYMLINK_TARGET"
+
+    # Verify symlink target is also in safe location
+    if [[ ! "$SYMLINK_TARGET" =~ ^/root/Homelab-Install-Script($|/) ]] && \
+       [[ ! "$SYMLINK_TARGET" =~ ^/tmp/homelab- ]] && \
+       [[ ! "$SYMLINK_TARGET" =~ ^/home/[a-z0-9_-]+/.*Homelab-Install-Script($|/) ]]; then
+        error "SECURITY: Symlink target is in unauthorized location: $SYMLINK_TARGET"
+        exit 1
+    fi
+fi
 
 header "Custom Ubuntu ISO Builder - Homelab Edition"
+
+log "Validated repository directory: $REPO_DIR"
 
 # Start overall timer
 SCRIPT_START_TIME=$(date +%s)
@@ -471,6 +550,38 @@ $SUDO chroot "$SQUASHFS_EXTRACT" /bin/bash -c "systemctl enable homelab-first-bo
     $SUDO ln -sf "/etc/systemd/system/homelab-first-boot.service" \
         "$SQUASHFS_EXTRACT/etc/systemd/system/multi-user.target.wants/homelab-first-boot.service"
 }
+
+# Fix cloud-init boot hang issue
+# Ubuntu Server installer waits for cloud-init, but we don't have cloud-init data
+# Solution: Disable cloud-init to prevent boot hang
+log "Disabling cloud-init to prevent boot hang..."
+write_status "customizing" 76 "Configuring cloud-init settings"
+
+# Method 1: Create cloud-init disable file (preferred method)
+# This tells cloud-init to skip all initialization
+$SUDO mkdir -p "$SQUASHFS_EXTRACT/etc/cloud"
+$SUDO touch "$SQUASHFS_EXTRACT/etc/cloud/cloud-init.disabled"
+
+# Method 2: Add kernel boot parameter as fallback
+# Modify GRUB configuration to add cloud-init=disabled
+if [ -f "$ISO_EXTRACT/boot/grub/grub.cfg" ]; then
+    log "Adding cloud-init=disabled to GRUB boot parameters..."
+    $SUDO sed -i 's/\(linux.*\)/\1 cloud-init=disabled/' "$ISO_EXTRACT/boot/grub/grub.cfg" || {
+        warning "Could not modify grub.cfg, using file-based disable only"
+    }
+fi
+
+# Method 3: Provide minimal cloud-init config as fallback (prevents errors)
+# This ensures cloud-init finishes quickly if it does run
+$SUDO mkdir -p "$SQUASHFS_EXTRACT/etc/cloud/cloud.cfg.d"
+$SUDO tee "$SQUASHFS_EXTRACT/etc/cloud/cloud.cfg.d/99-disable-network-config.cfg" > /dev/null << 'CLOUD_INIT_EOF'
+# Disable cloud-init network configuration
+# This prevents cloud-init from waiting for network metadata
+network: {config: disabled}
+datasource_list: [None]
+CLOUD_INIT_EOF
+
+success "Cloud-init disabled - boot hang issue resolved"
 
 success "Filesystem customization complete"
 

@@ -4,6 +4,13 @@
 .env.*.local
 *.env
 
+# Docker secrets (CRITICAL: Never commit these!)
+secrets/
+*.secret
+*_secret.txt
+*_key.txt
+*_password.txt
+
 # SSH keys
 *.pem
 *.key

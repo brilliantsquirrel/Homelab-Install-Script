@@ -60,6 +60,7 @@ if [ -z "${DOWNLOADS_BUCKET:-}" ] && command -v curl &> /dev/null; then
 fi
 
 # Function to write build status to GCS for real-time progress tracking
+# SECURITY: Validates all inputs and uses secure temporary files
 write_status() {
     local stage="$1"
     local progress="$2"
@@ -70,10 +71,34 @@ write_status() {
         return 0
     fi
 
-    local BUILD_ID_SHORT="${BUILD_ID:0:8}"
-    local STATUS_FILE="gs://$DOWNLOADS_BUCKET/build-status-${BUILD_ID_SHORT}.json"
+    # SECURITY: Validate BUILD_ID format (UUID only, no shell metacharacters)
+    if ! [[ "$BUILD_ID" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]]; then
+        echo "[ERROR] Invalid BUILD_ID format in write_status: $BUILD_ID"
+        return 1
+    fi
 
-    cat > /tmp/build-status.json <<EOF
+    # SECURITY: Validate DOWNLOADS_BUCKET format (GCS bucket naming rules)
+    if ! [[ "$DOWNLOADS_BUCKET" =~ ^[a-z0-9][a-z0-9._-]{1,61}[a-z0-9]$ ]]; then
+        echo "[ERROR] Invalid DOWNLOADS_BUCKET format in write_status: $DOWNLOADS_BUCKET"
+        return 1
+    fi
+
+    # Safe substring (already validated format)
+    local BUILD_ID_SHORT="${BUILD_ID:0:8}"
+    local STATUS_FILE="gs://${DOWNLOADS_BUCKET}/build-status-${BUILD_ID_SHORT}.json"
+
+    # SECURITY: Create secure temporary file (atomic, exclusive, mode 0600)
+    local TEMP_STATUS
+    TEMP_STATUS=$(mktemp /tmp/build-status.XXXXXXXXXX) || {
+        echo "[ERROR] Failed to create secure temporary file"
+        return 1
+    }
+
+    # Ensure cleanup on function exit
+    trap "rm -f '$TEMP_STATUS'" RETURN
+
+    # Write to secure temporary file
+    cat > "$TEMP_STATUS" <<EOF
 {
   "stage": "$stage",
   "progress": $progress,
@@ -82,13 +107,16 @@ write_status() {
 }
 EOF
 
-    # Upload status file (retry up to 3 times, silently)
+    # Upload from secure temp file (retry up to 3 times, silently)
     for i in {1..3}; do
-        if gsutil cp /tmp/build-status.json "$STATUS_FILE" 2>/dev/null; then
+        if gsutil cp "$TEMP_STATUS" "$STATUS_FILE" 2>/dev/null; then
             break
         fi
         sleep 1
     done
+
+    # Explicit cleanup (trap will also clean up, but be explicit)
+    rm -f "$TEMP_STATUS"
 }
 
 # Get the repository root directory
@@ -100,12 +128,106 @@ header "Dynamic ISO Preparation - Custom Homelab Configuration"
 log "Script location: ${BASH_SOURCE[0]}"
 log "Repository root: $REPO_DIR"
 
-# Parse environment variables
-IFS=',' read -ra SERVICES <<< "$SELECTED_SERVICES"
-IFS=',' read -ra MODELS <<< "$SELECTED_MODELS"
+# Validation function for service/model names (SECURITY: Prevent command injection)
+validate_name() {
+    local name="$1"
+    local type="$2"
 
-log "Selected services: ${SERVICES[*]}"
-log "Selected models: ${MODELS[*]}"
+    # Check for empty
+    if [ -z "$name" ]; then
+        error "Empty $type name detected"
+        return 1
+    fi
+
+    # SECURITY: Only allow alphanumeric, dash, underscore, colon, slash, dot (for docker images)
+    # Reject any shell metacharacters: ; | & $ ( ) ` < > \ " ' space newline
+    if ! [[ "$name" =~ ^[a-zA-Z0-9:/_.-]+$ ]]; then
+        error "Invalid $type name: $name (contains prohibited characters)"
+        error "Only alphanumeric, dash, underscore, colon, slash, and dot allowed"
+        return 1
+    fi
+
+    # Additional safety: Max length check (prevent buffer overflow attempts)
+    if [ ${#name} -gt 200 ]; then
+        error "Invalid $type name: $name (exceeds 200 character limit)"
+        return 1
+    fi
+
+    return 0
+}
+
+# Whitelist of valid services (SECURITY: Defense in depth)
+VALID_SERVICES="ollama openwebui langchain langgraph langgraph-db langgraph-redis langflow n8n qdrant homarr hoarder plex nextcloud nextcloud-db nextcloud-redis pihole portainer docker-socket-proxy nginx-proxy comfyui huggingface-tgi code-server"
+
+# Whitelist of valid model patterns (allow version tags)
+VALID_MODEL_PATTERN='^[a-z0-9-]+:[a-z0-9.-]+$'
+
+# Parse and validate environment variables
+IFS=',' read -ra SERVICES_RAW <<< "$SELECTED_SERVICES"
+IFS=',' read -ra MODELS_RAW <<< "$SELECTED_MODELS"
+
+# Validate and filter services
+SERVICES=()
+for service in "${SERVICES_RAW[@]}"; do
+    # Trim whitespace
+    service=$(echo "$service" | xargs)
+
+    # Skip empty
+    [ -z "$service" ] && continue
+
+    # Validate format
+    if ! validate_name "$service" "service"; then
+        error "Skipping invalid service: $service"
+        write_status "failed" 0 "Invalid service name: $service"
+        exit 1
+    fi
+
+    # Check against whitelist
+    if ! echo "$VALID_SERVICES" | grep -wq "$service"; then
+        error "Unknown/unauthorized service: $service"
+        error "Valid services: $VALID_SERVICES"
+        write_status "failed" 0 "Unknown service: $service"
+        exit 1
+    fi
+
+    SERVICES+=("$service")
+done
+
+# Validate and filter models
+MODELS=()
+for model in "${MODELS_RAW[@]}"; do
+    # Trim whitespace
+    model=$(echo "$model" | xargs)
+
+    # Skip empty
+    [ -z "$model" ] && continue
+
+    # Validate format
+    if ! validate_name "$model" "model"; then
+        error "Skipping invalid model: $model"
+        write_status "failed" 0 "Invalid model name: $model"
+        exit 1
+    fi
+
+    # Validate model format (name:tag)
+    if ! [[ "$model" =~ $VALID_MODEL_PATTERN ]]; then
+        error "Invalid model format: $model (expected format: modelname:tag)"
+        write_status "failed" 0 "Invalid model format: $model"
+        exit 1
+    fi
+
+    MODELS+=("$model")
+done
+
+# Validate we have at least one service
+if [ ${#SERVICES[@]} -eq 0 ]; then
+    error "No valid services selected"
+    write_status "failed" 0 "No valid services selected"
+    exit 1
+fi
+
+log "Validated services: ${SERVICES[*]}"
+log "Validated models: ${MODELS[*]}"
 log "GPU enabled: ${GPU_ENABLED:-false}"
 
 # Create output directory structure

@@ -26,7 +26,7 @@
                     <div class="category-group">
                         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
                             <h4 style="margin: 0;">🤖 AI & Machine Learning</h4>
-                            <button class="btn btn-small btn-secondary" onclick="app.selectAllInCategory('ai')">Select All</button>
+                            <button class="btn btn-small btn-secondary select-category-btn" data-category="ai">Select All</button>
                         </div>
                         <div class="service-checklist">
                             <label class="checklist-item">
@@ -107,7 +107,7 @@
                     <div class="category-group">
                         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
                             <h4 style="margin: 0;">🏡 Homelab Services</h4>
-                            <button class="btn btn-small btn-secondary" onclick="app.selectAllInCategory('homelab')">Select All</button>
+                            <button class="btn btn-small btn-secondary select-category-btn" data-category="homelab">Select All</button>
                         </div>
                         <div class="service-checklist">
                             <label class="checklist-item">
@@ -155,13 +155,22 @@
                                 </div>
                                 <span class="item-size">~100MB</span>
                             </label>
+                            <label class="checklist-item">
+                                <input type="checkbox" name="service" value="code-server" data-category="homelab" data-size="0.25">
+                                <span class="checkbox-custom"></span>
+                                <div class="item-content">
+                                    <span class="item-name">Code-Server</span>
+                                    <span class="item-description">VS Code in the browser</span>
+                                </div>
+                                <span class="item-size">~250MB</span>
+                            </label>
                         </div>
                     </div>
 
                     <div class="category-group">
                         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
                             <h4 style="margin: 0;">🔧 Infrastructure (Required)</h4>
-                            <button class="btn btn-small btn-secondary" onclick="app.selectAllInCategory('infrastructure')">Select All</button>
+                            <button class="btn btn-small btn-secondary select-category-btn" data-category="infrastructure">Select All</button>
                         </div>
                         <div class="service-checklist">
                             <label class="checklist-item">
@@ -190,7 +199,7 @@
                 <div class="setup-section">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
                         <h3 style="margin: 0;">🧠 AI Models (Ollama)</h3>
-                        <button class="btn btn-small btn-secondary" onclick="app.selectAllModels()">Select All Models</button>
+                        <button class="btn btn-small btn-secondary select-all-models-btn">Select All Models</button>
                     </div>
                     <div id="models-disabled-notice" class="notice notice-warning" style="display:none;">
                         <strong>Note:</strong> AI model selection requires the Ollama service. Please select Ollama above to enable this section.
@@ -289,7 +298,7 @@
                 </div>
 
                 <div class="step-actions">
-                    <button class="btn btn-success btn-lg" onclick="app.startBuild()">🚀 Start Build</button>
+                    <button class="btn btn-success btn-lg" id="start-build-btn">🚀 Start Build</button>
                 </div>
             </section>
 
@@ -403,7 +412,7 @@
                 <div class="build-logs">
                     <div class="logs-header">
                         <h3>📜 Live Debug Log</h3>
-                        <button id="copy-logs-btn" class="btn btn-small btn-secondary" onclick="app.copyLogs()" title="Copy logs to clipboard">
+                        <button id="copy-logs-btn" class="btn btn-small btn-secondary" title="Copy logs to clipboard">
                             📋 Copy
                         </button>
                     </div>
@@ -429,7 +438,7 @@
                 <div class="usb-section">
                     <div class="section-header">
                         <h3>💾 Select USB Drive</h3>
-                        <button class="btn btn-small btn-secondary" onclick="app.refreshUSBDevices()">
+                        <button class="btn btn-small btn-secondary" id="refresh-usb-btn">
                             🔄 Refresh Devices
                         </button>
                     </div>
@@ -546,8 +555,8 @@
                 </div>
 
                 <div class="step-actions">
-                    <button class="btn btn-secondary" onclick="app.skipFlash()">⏭️ Skip - Download ISO Instead</button>
-                    <button id="start-flash-btn" class="btn btn-primary" onclick="app.startFlash()" disabled>
+                    <button class="btn btn-secondary" id="skip-flash-btn">⏭️ Skip - Download ISO Instead</button>
+                    <button id="start-flash-btn" class="btn btn-primary" disabled>
                         ⚡ Flash to USB Drive
                     </button>
                 </div>
@@ -567,7 +576,7 @@
                 </div>
 
                 <div class="step-actions">
-                    <button class="btn btn-secondary" onclick="app.reset()">← Try Again</button>
+                    <button class="btn btn-secondary" id="reset-btn">← Try Again</button>
                 </div>
             </section>
         </div>

@@ -145,14 +145,21 @@ setup_environment() {
     log "Generated 13 secure API keys and passwords"
     echo ""
 
-    # Set restrictive umask before creating file (prevents race condition)
-    # This ensures .env is created with 600 permissions from the start
+    # SECURITY: Atomic file creation with guaranteed permissions
+    # Use install command for atomic creation that prevents race conditions
     local old_umask=$(umask)
     umask 077
 
-    # Copy template (will inherit restrictive permissions from umask)
-    cp .env.example .env
-    debug "Copied .env from .env.example with secure permissions (600)"
+    # SECURITY: Use install command for atomic creation with specific permissions
+    # This is safer than cp because it creates the file atomically
+    if ! install -m 600 .env.example .env 2>/dev/null; then
+        # Fallback to cp if install fails (shouldn't happen, but be safe)
+        warning "install command failed, using cp as fallback"
+        cp .env.example .env
+        chmod 600 .env
+    fi
+
+    debug "Created .env from .env.example with secure permissions (600)"
 
     # Replace values in .env
     sed -i "s|^OLLAMA_API_KEY=.*|OLLAMA_API_KEY=$OLLAMA_API_KEY|" .env

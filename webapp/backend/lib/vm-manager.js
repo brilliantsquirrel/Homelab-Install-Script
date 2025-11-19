@@ -201,6 +201,10 @@ class VMManager {
                             value: config.gcs.artifactsBucket,
                         },
                         {
+                            key: 'artifacts-bucket',
+                            value: config.gcs.artifactsBucket,
+                        },
+                        {
                             key: 'downloads-bucket',
                             value: config.gcs.downloadsBucket,
                         },
@@ -283,25 +287,65 @@ class VMManager {
 
     /**
      * Generate startup script for VM
-     * Security: Uses JSON-encoded build config from metadata instead of direct interpolation
+     * Security: Validates all inputs and uses parameterized values from metadata
      */
     generateStartupScript(buildId, buildConfig) {
-        // Build config is passed as JSON in instance metadata (line 98)
-        // We'll parse it in the script instead of interpolating values directly
-        // This prevents command injection from malicious service/model names or ISO names
+        // SECURITY: Validate buildId format (UUID v4)
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        if (!uuidRegex.test(buildId)) {
+            throw new Error(`Invalid buildId format: ${buildId}`);
+        }
 
-        // Security: Bounds checking for buildId substring
-        const buildIdShort = buildId.length >= 8 ? buildId.substring(0, 8) : buildId;
+        // SECURITY: Validate bucket names (GCS bucket naming rules)
+        const bucketRegex = /^[a-z0-9][a-z0-9._-]{1,61}[a-z0-9]$/;
+        if (!bucketRegex.test(config.gcs.artifactsBucket)) {
+            throw new Error(`Invalid artifacts bucket name: ${config.gcs.artifactsBucket}`);
+        }
+        if (!bucketRegex.test(config.gcs.downloadsBucket)) {
+            throw new Error(`Invalid downloads bucket name: ${config.gcs.downloadsBucket}`);
+        }
 
+        // Safe substring (already validated format)
+        const buildIdShort = buildId.substring(0, 8);
+
+        // SECURITY: All dynamic values come from metadata and are validated in the bash script
+        // No user-controlled values are directly interpolated into the script
         return `#!/bin/bash
 # Startup script for ISO build VM
+# SECURITY: All inputs validated before use
 set -e
 
 LOG_FILE="/var/log/iso-build.log"
-BUILD_ID="${buildId}"
-ARTIFACTS_BUCKET="${config.gcs.artifactsBucket}"
-DOWNLOADS_BUCKET="${config.gcs.downloadsBucket}"
-STATUS_FILE="gs://$DOWNLOADS_BUCKET/build-status-${buildIdShort}.json"
+
+# Read and validate build ID from metadata
+BUILD_ID="$(curl -s -f -H "Metadata-Flavor: Google" "http://metadata.google.internal/computeMetadata/v1/instance/attributes/build-id" || echo "")"
+if [ -z "$BUILD_ID" ]; then
+    echo "[ERROR] BUILD_ID not found in metadata"
+    exit 1
+fi
+
+# SECURITY: Validate BUILD_ID format (UUID only, no shell metacharacters)
+if ! [[ "$BUILD_ID" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]]; then
+    echo "[ERROR] Invalid BUILD_ID format: $BUILD_ID"
+    exit 1
+fi
+
+# Read bucket names from metadata (validated in Node.js before VM creation)
+ARTIFACTS_BUCKET="$(curl -s -f -H "Metadata-Flavor: Google" "http://metadata.google.internal/computeMetadata/v1/instance/attributes/artifacts-bucket" || echo "")"
+DOWNLOADS_BUCKET="$(curl -s -f -H "Metadata-Flavor: Google" "http://metadata.google.internal/computeMetadata/v1/instance/attributes/downloads-bucket" || echo "")"
+
+# SECURITY: Validate bucket names (GCS naming rules: lowercase, alphanumeric, dash, dot, underscore)
+if ! [[ "$ARTIFACTS_BUCKET" =~ ^[a-z0-9][a-z0-9._-]{1,61}[a-z0-9]$ ]]; then
+    echo "[ERROR] Invalid ARTIFACTS_BUCKET: $ARTIFACTS_BUCKET"
+    exit 1
+fi
+if ! [[ "$DOWNLOADS_BUCKET" =~ ^[a-z0-9][a-z0-9._-]{1,61}[a-z0-9]$ ]]; then
+    echo "[ERROR] Invalid DOWNLOADS_BUCKET: $DOWNLOADS_BUCKET"
+    exit 1
+fi
+
+BUILD_ID_SHORT="\${BUILD_ID:0:8}"
+STATUS_FILE="gs://\${DOWNLOADS_BUCKET}/build-status-\${BUILD_ID_SHORT}.json"
 
 log() {
     echo "[$(date +'%Y-%m-%d %H:%M:%S')] $1" | tee -a "$LOG_FILE"

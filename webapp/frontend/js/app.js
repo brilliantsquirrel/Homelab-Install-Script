@@ -51,6 +51,7 @@ class HomeLabISOBuilder {
             'pihole': 0.2,
             'homarr': 0.15,
             'hoarder': 0.1,
+            'code-server': 0.25,
             'portainer': 0.3,
             'docker-socket-proxy': 0.05,
             'nginx': 0.05,
@@ -62,6 +63,7 @@ class HomeLabISOBuilder {
     init() {
         // Initialize event listeners for new checklist-based UI
         this.setupChecklistListeners();
+        this.setupButtonListeners();
         this.updateSummary();
 
         // Check for Ollama selection to enable/disable models
@@ -69,6 +71,72 @@ class HomeLabISOBuilder {
 
         // Load previous builds
         this.loadPreviousBuilds();
+    }
+
+    setupButtonListeners() {
+        // Select All category buttons
+        document.querySelectorAll('.select-category-btn').forEach(button => {
+            button.addEventListener('click', () => {
+                const category = button.dataset.category;
+                this.selectAllInCategory(category);
+            });
+        });
+
+        // Select All Models button
+        const selectAllModelsBtn = document.querySelector('.select-all-models-btn');
+        if (selectAllModelsBtn) {
+            selectAllModelsBtn.addEventListener('click', () => {
+                this.selectAllModels();
+            });
+        }
+
+        // Start Build button
+        const startBuildBtn = document.getElementById('start-build-btn');
+        if (startBuildBtn) {
+            startBuildBtn.addEventListener('click', () => {
+                this.startBuild();
+            });
+        }
+
+        // Copy Logs button
+        const copyLogsBtn = document.getElementById('copy-logs-btn');
+        if (copyLogsBtn) {
+            copyLogsBtn.addEventListener('click', () => {
+                this.copyLogs();
+            });
+        }
+
+        // Refresh USB Devices button
+        const refreshUSBBtn = document.getElementById('refresh-usb-btn');
+        if (refreshUSBBtn) {
+            refreshUSBBtn.addEventListener('click', () => {
+                this.refreshUSBDevices();
+            });
+        }
+
+        // Skip Flash button
+        const skipFlashBtn = document.getElementById('skip-flash-btn');
+        if (skipFlashBtn) {
+            skipFlashBtn.addEventListener('click', () => {
+                this.skipFlash();
+            });
+        }
+
+        // Start Flash button
+        const startFlashBtn = document.getElementById('start-flash-btn');
+        if (startFlashBtn) {
+            startFlashBtn.addEventListener('click', () => {
+                this.startFlash();
+            });
+        }
+
+        // Reset button
+        const resetBtn = document.getElementById('reset-btn');
+        if (resetBtn) {
+            resetBtn.addEventListener('click', () => {
+                this.reset();
+            });
+        }
     }
 
     setupChecklistListeners() {
@@ -289,7 +357,17 @@ class HomeLabISOBuilder {
             } catch (error) {
                 console.error('Failed to get build status:', error);
                 this.stopStatusPolling();
-                this.showError('Failed to get build status', error.message);
+
+                // Provide more helpful error messages
+                let errorTitle = 'Failed to get build status';
+                let errorDetails = error.message;
+
+                if (error.message.includes('Build not found')) {
+                    errorTitle = 'Build Failed or Expired';
+                    errorDetails = 'This build is no longer available. It may have failed during initialization or been cleaned up after an error.\n\nCommon causes:\n• GitHub was temporarily unavailable during repository clone\n• VM creation failed\n• Build exceeded timeout\n\nPlease start a new build.';
+                }
+
+                this.showError(errorTitle, errorDetails);
             }
         }, 5000);
     }
@@ -920,12 +998,103 @@ class HomeLabISOBuilder {
                     <div class="notice notice-warning">
                         <strong>USB Flashing Not Available</strong>
                         <p>${data.message}</p>
-                        <p style="margin-top: 1rem;"><strong>Recommended Tools:</strong></p>
-                        <ul style="margin-left: 1.5rem; margin-top: 0.5rem;">
-                            <li><strong>Windows:</strong> <a href="https://rufus.ie" target="_blank">Rufus</a> or <a href="https://www.balena.io/etcher" target="_blank">balenaEtcher</a></li>
-                            <li><strong>macOS:</strong> <a href="https://www.balena.io/etcher" target="_blank">balenaEtcher</a> or <code>dd</code> command</li>
-                            <li><strong>Linux:</strong> <code>dd</code> command or <a href="https://www.balena.io/etcher" target="_blank">balenaEtcher</a></li>
-                        </ul>
+
+                        <div style="margin-top: 1.5rem;">
+                            <h4 style="margin-bottom: 0.5rem;">📋 Manual Flashing Instructions</h4>
+
+                            <details style="margin-top: 1rem; padding: 0.75rem; background: #f8f9fa; border-radius: 4px;">
+                                <summary style="cursor: pointer; font-weight: 600; color: #0066cc;">
+                                    🪟 Windows - Using Rufus or balenaEtcher
+                                </summary>
+                                <div style="margin-top: 0.75rem; padding-left: 0.5rem;">
+                                    <p><strong>Option 1: Rufus (Recommended)</strong></p>
+                                    <ol style="margin-left: 1.5rem;">
+                                        <li>Download <a href="https://rufus.ie" target="_blank">Rufus</a></li>
+                                        <li>Insert your USB drive (8GB+ recommended)</li>
+                                        <li>Select your USB device in Rufus</li>
+                                        <li>Click "SELECT" and choose your downloaded ISO</li>
+                                        <li>Click "START" and wait for completion</li>
+                                    </ol>
+                                    <p style="margin-top: 0.5rem;"><strong>Option 2: balenaEtcher</strong></p>
+                                    <ol style="margin-left: 1.5rem;">
+                                        <li>Download <a href="https://www.balena.io/etcher" target="_blank">balenaEtcher</a></li>
+                                        <li>Click "Flash from file" and select your ISO</li>
+                                        <li>Select your USB drive</li>
+                                        <li>Click "Flash!" and wait for completion</li>
+                                    </ol>
+                                </div>
+                            </details>
+
+                            <details style="margin-top: 1rem; padding: 0.75rem; background: #f8f9fa; border-radius: 4px;">
+                                <summary style="cursor: pointer; font-weight: 600; color: #0066cc;">
+                                    🍎 macOS - Using dd command
+                                </summary>
+                                <div style="margin-top: 0.75rem; padding-left: 0.5rem;">
+                                    <p><strong>Step 1:</strong> Find your USB device</p>
+                                    <pre style="background: #2d2d2d; color: #f8f8f2; padding: 0.75rem; border-radius: 4px; overflow-x: auto;">diskutil list</pre>
+                                    <p style="margin-top: 0.5rem; font-size: 0.9em; color: #666;">Look for your USB drive (e.g., <code>/dev/disk2</code>)</p>
+
+                                    <p style="margin-top: 1rem;"><strong>Step 2:</strong> Unmount the USB drive</p>
+                                    <pre style="background: #2d2d2d; color: #f8f8f2; padding: 0.75rem; border-radius: 4px; overflow-x: auto;">diskutil unmountDisk /dev/diskX</pre>
+                                    <p style="margin-top: 0.5rem; font-size: 0.9em; color: #666;">Replace <code>diskX</code> with your device (e.g., <code>disk2</code>)</p>
+
+                                    <p style="margin-top: 1rem;"><strong>Step 3:</strong> Write ISO to USB (⚠️ DESTROYS ALL DATA)</p>
+                                    <pre style="background: #2d2d2d; color: #f8f8f2; padding: 0.75rem; border-radius: 4px; overflow-x: auto;">sudo dd if=/path/to/downloaded.iso of=/dev/rdiskX bs=1m status=progress</pre>
+                                    <p style="margin-top: 0.5rem; font-size: 0.9em; color: #666;">
+                                        • Replace <code>/path/to/downloaded.iso</code> with your ISO path<br>
+                                        • Replace <code>rdiskX</code> with your device (e.g., <code>rdisk2</code>)<br>
+                                        • Use <code>rdisk</code> (not <code>disk</code>) for faster writes<br>
+                                        • This will take 10-30 minutes depending on ISO size
+                                    </p>
+
+                                    <p style="margin-top: 1rem;"><strong>Step 4:</strong> Eject the drive</p>
+                                    <pre style="background: #2d2d2d; color: #f8f8f2; padding: 0.75rem; border-radius: 4px; overflow-x: auto;">diskutil eject /dev/diskX</pre>
+
+                                    <div style="margin-top: 1rem; padding: 0.75rem; background: #fff3cd; border-left: 4px solid #ffc107; border-radius: 4px;">
+                                        <strong>⚠️ Warning:</strong> Double-check the device name! Using the wrong device will destroy data on that drive.
+                                    </div>
+
+                                    <p style="margin-top: 1rem;"><strong>Alternative: balenaEtcher (GUI)</strong></p>
+                                    <p>Download <a href="https://www.balena.io/etcher" target="_blank">balenaEtcher</a> for a user-friendly alternative</p>
+                                </div>
+                            </details>
+
+                            <details style="margin-top: 1rem; padding: 0.75rem; background: #f8f9fa; border-radius: 4px;">
+                                <summary style="cursor: pointer; font-weight: 600; color: #0066cc;">
+                                    🐧 Linux - Using dd command
+                                </summary>
+                                <div style="margin-top: 0.75rem; padding-left: 0.5rem;">
+                                    <p><strong>Step 1:</strong> Find your USB device</p>
+                                    <pre style="background: #2d2d2d; color: #f8f8f2; padding: 0.75rem; border-radius: 4px; overflow-x: auto;">lsblk</pre>
+                                    <p style="margin-top: 0.5rem; font-size: 0.9em; color: #666;">Look for your USB drive (e.g., <code>/dev/sdb</code>)</p>
+
+                                    <p style="margin-top: 1rem;"><strong>Step 2:</strong> Unmount the USB drive (if mounted)</p>
+                                    <pre style="background: #2d2d2d; color: #f8f8f2; padding: 0.75rem; border-radius: 4px; overflow-x: auto;">sudo umount /dev/sdX*</pre>
+                                    <p style="margin-top: 0.5rem; font-size: 0.9em; color: #666;">Replace <code>sdX</code> with your device (e.g., <code>sdb</code>)</p>
+
+                                    <p style="margin-top: 1rem;"><strong>Step 3:</strong> Write ISO to USB (⚠️ DESTROYS ALL DATA)</p>
+                                    <pre style="background: #2d2d2d; color: #f8f8f2; padding: 0.75rem; border-radius: 4px; overflow-x: auto;">sudo dd if=/path/to/downloaded.iso of=/dev/sdX bs=4M status=progress oflag=sync</pre>
+                                    <p style="margin-top: 0.5rem; font-size: 0.9em; color: #666;">
+                                        • Replace <code>/path/to/downloaded.iso</code> with your ISO path<br>
+                                        • Replace <code>sdX</code> with your device (e.g., <code>sdb</code>)<br>
+                                        • <code>bs=4M</code> sets block size for faster writes<br>
+                                        • <code>oflag=sync</code> ensures data is written to disk<br>
+                                        • This will take 10-30 minutes depending on ISO size
+                                    </p>
+
+                                    <p style="margin-top: 1rem;"><strong>Step 4:</strong> Sync and eject</p>
+                                    <pre style="background: #2d2d2d; color: #f8f8f2; padding: 0.75rem; border-radius: 4px; overflow-x: auto;">sync
+sudo eject /dev/sdX</pre>
+
+                                    <div style="margin-top: 1rem; padding: 0.75rem; background: #fff3cd; border-left: 4px solid #ffc107; border-radius: 4px;">
+                                        <strong>⚠️ Warning:</strong> Double-check the device name with <code>lsblk</code>! Using the wrong device will destroy data on that drive.
+                                    </div>
+
+                                    <p style="margin-top: 1rem;"><strong>Alternative: balenaEtcher (GUI)</strong></p>
+                                    <p>Download <a href="https://www.balena.io/etcher" target="_blank">balenaEtcher</a> for a user-friendly alternative</p>
+                                </div>
+                            </details>
+                        </div>
                     </div>
                 `;
 

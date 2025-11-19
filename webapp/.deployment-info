@@ -5,4 +5,4 @@ ZONE=us-west1-a
 SERVICE_URL=https://iso-builder-m2ug2mtkna-uw.a.run.app
 ARTIFACTS_BUCKET=cloud-ai-server-artifacts
 DOWNLOADS_BUCKET=cloud-ai-server-downloads
-DEPLOYED_AT=2025-11-13T22:26:12Z
+DEPLOYED_AT=2025-11-16T00:34:06Z

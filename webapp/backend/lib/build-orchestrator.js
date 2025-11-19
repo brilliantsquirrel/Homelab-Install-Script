@@ -455,58 +455,149 @@ class BuildOrchestrator {
 
     /**
      * Validate build configuration
+     * SECURITY: Comprehensive validation with path traversal and injection prevention
      */
     validateBuildConfig(buildConfig) {
         const { services, models, iso_name } = buildConfig;
 
-        if (!services || !Array.isArray(services) || services.length === 0) {
+        // SECURITY: Validate services array
+        if (!services || !Array.isArray(services)) {
+            throw new Error('services must be an array');
+        }
+
+        if (services.length === 0) {
             throw new Error('At least one service must be selected');
         }
 
+        // SECURITY: Check array length BEFORE iterating (DoS protection)
         if (services.length > config.build.maxServicesPerBuild) {
             throw new Error(`Maximum ${config.build.maxServicesPerBuild} services allowed`);
         }
 
-        if (models && models.length > config.build.maxModelsPerBuild) {
-            throw new Error(`Maximum ${config.build.maxModelsPerBuild} models allowed`);
-        }
+        // SECURITY: Validate each service is a string with safe format
+        services.forEach((service, index) => {
+            // Type check
+            if (typeof service !== 'string') {
+                throw new Error(`Service at index ${index} must be a string, got ${typeof service}`);
+            }
 
-        // Validate service names
-        services.forEach(service => {
+            // Length check (prevent memory exhaustion)
+            if (service.length > 100) {
+                throw new Error(`Service name too long at index ${index}: maximum 100 characters`);
+            }
+
+            // Format check: only lowercase alphanumeric and hyphens
+            if (!/^[a-z0-9-]+$/.test(service)) {
+                throw new Error(`Invalid service name format: ${service}. Use only lowercase letters, numbers, and hyphens.`);
+            }
+
+            // Whitelist check
             if (!config.services[service]) {
-                throw new Error(`Invalid service: ${service}`);
+                throw new Error(`Unknown service: ${service}`);
             }
         });
 
-        // Validate model names
+        // SECURITY: Validate models array (if provided)
         if (models) {
-            models.forEach(model => {
+            if (!Array.isArray(models)) {
+                throw new Error('models must be an array');
+            }
+
+            // Length check (DoS protection)
+            if (models.length > config.build.maxModelsPerBuild) {
+                throw new Error(`Maximum ${config.build.maxModelsPerBuild} models allowed`);
+            }
+
+            models.forEach((model, index) => {
+                // Type check
+                if (typeof model !== 'string') {
+                    throw new Error(`Model at index ${index} must be a string, got ${typeof model}`);
+                }
+
+                // Length check
+                if (model.length > 100) {
+                    throw new Error(`Model name too long at index ${index}: maximum 100 characters`);
+                }
+
+                // Format check: name:tag pattern
+                if (!/^[a-z0-9-]+:[a-z0-9.-]+$/.test(model)) {
+                    throw new Error(`Invalid model format: ${model}. Expected format: modelname:tag`);
+                }
+
+                // Whitelist check
                 if (!config.models[model]) {
-                    throw new Error(`Invalid model: ${model}`);
+                    throw new Error(`Unknown model: ${model}`);
                 }
             });
         }
 
-        // Validate ISO name (alphanumeric, periods, hyphens, underscores only)
+        // SECURITY: Validate ISO name with comprehensive path traversal prevention
         if (iso_name) {
-            // Check character whitelist
+            // Type check
+            if (typeof iso_name !== 'string') {
+                throw new Error('iso_name must be a string');
+            }
+
+            // Decode to check for encoded path traversal attempts
+            let decoded;
+            try {
+                decoded = decodeURIComponent(iso_name);
+            } catch (e) {
+                throw new Error('Invalid ISO name: contains malformed URL encoding');
+            }
+
+            // SECURITY: Comprehensive path traversal checks (both encoded and decoded)
+            const pathTraversalPatterns = [
+                /\.\./,                  // Dot-dot
+                /[\/\\]/,               // Slashes (forward or back)
+                /%2[eE]%2[eE]/i,        // URL-encoded .. (%2e%2e)
+                /%2[fF]/i,              // URL-encoded / (%2f)
+                /%5[cC]/i,              // URL-encoded \ (%5c)
+                /\x00/,                 // Null bytes
+                /[^\x20-\x7E]/,         // Non-printable ASCII
+                /^[A-Z]:/i,             // Windows drive letters (C:)
+                /^\\\\/,                // UNC paths (\\)
+                /\u002e\u002e/,         // Unicode encoded dots
+                /\uff0e\uff0e/,         // Full-width Unicode dots
+            ];
+
+            for (const pattern of pathTraversalPatterns) {
+                if (pattern.test(iso_name) || pattern.test(decoded)) {
+                    throw new Error('Invalid ISO name: prohibited pattern detected (possible path traversal attempt)');
+                }
+            }
+
+            // SECURITY: Strict whitelist - only safe filename characters
             if (!/^[a-zA-Z0-9._-]+$/.test(iso_name)) {
-                throw new Error('Invalid ISO name. Use only alphanumeric characters, periods, hyphens, and underscores.');
+                throw new Error('Invalid ISO name. Use only: a-z A-Z 0-9 . - _');
             }
 
-            // Check for path traversal patterns
-            if (iso_name.includes('..') || iso_name.includes('/') || iso_name.includes('\\')) {
-                throw new Error('Invalid ISO name. Path traversal patterns not allowed.');
+            // Length check (filesystem limit is 255, use 200 for safety margin)
+            if (iso_name.length > 200) {
+                throw new Error('Invalid ISO name. Maximum length is 200 characters.');
             }
 
-            // Check length (max 255 characters for filesystem compatibility)
-            if (iso_name.length > 255) {
-                throw new Error('Invalid ISO name. Maximum length is 255 characters.');
+            // Minimum length (prevent single-char names that could be special)
+            if (iso_name.length < 3) {
+                throw new Error('Invalid ISO name. Minimum length is 3 characters.');
             }
 
             // Check for leading/trailing periods or hyphens (filesystem edge cases)
             if (/^[.-]|[.-]$/.test(iso_name)) {
                 throw new Error('Invalid ISO name. Cannot start or end with period or hyphen.');
+            }
+
+            // Check for consecutive special characters (could indicate obfuscation)
+            if (/[._-]{3,}/.test(iso_name)) {
+                throw new Error('Invalid ISO name. Cannot contain 3+ consecutive special characters.');
+            }
+
+            // Reserved names check (Windows reserved names, just in case)
+            const reservedNames = ['CON', 'PRN', 'AUX', 'NUL', 'COM1', 'COM2', 'COM3', 'COM4',
+                                   'COM5', 'COM6', 'COM7', 'COM8', 'COM9', 'LPT1', 'LPT2',
+                                   'LPT3', 'LPT4', 'LPT5', 'LPT6', 'LPT7', 'LPT8', 'LPT9'];
+            if (reservedNames.includes(iso_name.toUpperCase())) {
+                throw new Error('Invalid ISO name. Name is reserved by the system.');
             }
         }
     }
