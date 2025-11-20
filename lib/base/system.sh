@@ -64,9 +64,13 @@ install_ssh() {
     log "Configuring SSH security settings..."
 
     # Define desired SSH settings
+    # Allow password authentication by default for initial setup
+    # Users can disable it later by setting SSH_PASSWORD_AUTH=no in .env
+    local password_auth="${SSH_PASSWORD_AUTH:-yes}"
+
     local -A ssh_settings=(
         ["PermitRootLogin"]="no"
-        ["PasswordAuthentication"]="no"
+        ["PasswordAuthentication"]="$password_auth"
         ["PubkeyAuthentication"]="yes"
         ["PermitEmptyPasswords"]="no"
         ["X11Forwarding"]="no"
