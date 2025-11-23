@@ -410,20 +410,26 @@ install_docker_containers() {
 
     # Validate docker-compose.yml syntax
     log "Validating docker-compose.yml syntax..."
-    if ! sudo docker compose -f "$compose_file" config > /dev/null 2>&1; then
+    # Use --env-file to ensure .env is loaded (sudo doesn't inherit environment variables)
+    local env_file="$(pwd)/.env"
+    local compose_cmd="sudo docker compose -f $compose_file"
+    if [ -f "$env_file" ]; then
+        compose_cmd="sudo docker compose --env-file $env_file -f $compose_file"
+    fi
+    if ! $compose_cmd config > /dev/null 2>&1; then
         error "docker-compose.yml is invalid"
         error "Run the following to see detailed errors:"
-        error "  sudo docker compose -f $compose_file config"
+        error "  $compose_cmd config"
         return 1
     fi
     success "docker-compose.yml is valid"
 
     # Start all containers
     log "Starting Docker containers..."
-    if ! sudo docker compose -f "$compose_file" up -d; then
+    if ! $compose_cmd up -d; then
         error "Failed to start Docker containers"
         error "Check logs for details:"
-        error "  sudo docker compose -f $compose_file logs"
+        error "  $compose_cmd logs"
         return 1
     fi
 

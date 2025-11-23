@@ -223,52 +223,108 @@ configure_tier_d_bulk_storage() {
     TIER_D_MOUNT="/mnt/bulk"
 }
 
+# Get free space on a drive in GB
+get_drive_free_space_gb() {
+    local drive="$1"
+    local drive_size=$(lsblk -b -d -n -o SIZE /dev/$drive)
+    local drive_size_gb=$((drive_size / 1024 / 1024 / 1024))
+
+    # Get used space by existing partitions
+    local used_space=0
+    local partitions=$(lsblk -b -n -o NAME,SIZE,TYPE /dev/$drive | grep 'part' | awk '{print $2}')
+    if [ -n "$partitions" ]; then
+        while IFS= read -r part_size; do
+            used_space=$((used_space + part_size))
+        done <<< "$partitions"
+    fi
+
+    local used_gb=$((used_space / 1024 / 1024 / 1024))
+    local free_gb=$((drive_size_gb - used_gb))
+    echo "$free_gb"
+}
+
 # Select drive and partition size for a tier
 select_drive_and_size() {
     local tier_name="$1"
     local default_size="$2"
     local tier_var_prefix="$3"
 
-    # Select drive
-    echo "Select drive for $tier_name:"
-    for i in "${!AVAILABLE_DRIVES[@]}"; do
-        local drive_info="${AVAILABLE_DRIVES[$i]}"
-        local drive=$(echo "$drive_info" | cut -d'|' -f1)
-        local size=$(echo "$drive_info" | cut -d'|' -f2)
-        local rota=$(echo "$drive_info" | cut -d'|' -f3)
-        local drive_type="SSD/NVMe"
-        [ "$rota" = "1" ] && drive_type="HDD"
+    local selected_drive=""
+    local partition_size=""
 
-        echo "  [$((i+1))] /dev/$drive - $size ($drive_type)"
-    done
-
-    local drive_selection
+    # Loop until valid drive and size are selected
     while true; do
-        read -p "Enter drive number [1-${#AVAILABLE_DRIVES[@]}]: " drive_selection
-        if [[ "$drive_selection" =~ ^[0-9]+$ ]] && [ "$drive_selection" -ge 1 ] && [ "$drive_selection" -le "${#AVAILABLE_DRIVES[@]}" ]; then
+        # Select drive
+        echo "Select drive for $tier_name:"
+        for i in "${!AVAILABLE_DRIVES[@]}"; do
+            local drive_info="${AVAILABLE_DRIVES[$i]}"
+            local drive=$(echo "$drive_info" | cut -d'|' -f1)
+            local size=$(echo "$drive_info" | cut -d'|' -f2)
+            local rota=$(echo "$drive_info" | cut -d'|' -f3)
+            local drive_type="SSD/NVMe"
+            [ "$rota" = "1" ] && drive_type="HDD"
+            local free_gb=$(get_drive_free_space_gb "$drive")
+
+            echo "  [$((i+1))] /dev/$drive - $size ($drive_type) - ${free_gb}GB free"
+        done
+
+        local drive_selection
+        while true; do
+            read -p "Enter drive number [1-${#AVAILABLE_DRIVES[@]}]: " drive_selection
+            if [[ "$drive_selection" =~ ^[0-9]+$ ]] && [ "$drive_selection" -ge 1 ] && [ "$drive_selection" -le "${#AVAILABLE_DRIVES[@]}" ]; then
+                break
+            fi
+            echo "Invalid selection. Please enter a number between 1 and ${#AVAILABLE_DRIVES[@]}"
+        done
+
+        local selected_drive_info="${AVAILABLE_DRIVES[$((drive_selection-1))]}"
+        selected_drive=$(echo "$selected_drive_info" | cut -d'|' -f1)
+        local free_space_gb=$(get_drive_free_space_gb "$selected_drive")
+
+        # Get partition size
+        if [ "$default_size" = "remaining" ]; then
+            echo "Size: Use all remaining space on /dev/$selected_drive (${free_space_gb}GB available)"
+            partition_size="remaining"
             break
+        else
+            # Show available space and allow re-selection
+            echo "Available space on /dev/$selected_drive: ${free_space_gb}GB"
+            read -p "Partition size in GB [default: ${default_size}GB, max: ${free_space_gb}GB]: " partition_size
+            partition_size="${partition_size:-$default_size}"
+
+            # Validate size is a number
+            if ! [[ "$partition_size" =~ ^[0-9]+$ ]]; then
+                error "Invalid size. Please enter a number."
+                continue
+            fi
+
+            # Check if there's enough space
+            if [ "$partition_size" -gt "$free_space_gb" ]; then
+                warning "Not enough free space on /dev/$selected_drive"
+                warning "Required: ${partition_size}GB, Available: ${free_space_gb}GB"
+                echo ""
+                echo "Options:"
+                echo "  1. Enter a smaller size (max ${free_space_gb}GB)"
+                echo "  2. Select a different drive"
+                read -p "Choose [1-2]: " retry_choice
+                if [ "$retry_choice" = "1" ]; then
+                    # Let them re-enter size for same drive
+                    echo "Selected drive: /dev/$selected_drive (${free_space_gb}GB available)"
+                    read -p "Partition size in GB [max: ${free_space_gb}GB]: " partition_size
+                    if ! [[ "$partition_size" =~ ^[0-9]+$ ]] || [ "$partition_size" -gt "$free_space_gb" ]; then
+                        error "Invalid size. Starting over..."
+                        continue
+                    fi
+                    break
+                else
+                    # Restart drive selection
+                    continue
+                fi
+            else
+                break
+            fi
         fi
-        echo "Invalid selection. Please enter a number between 1 and ${#AVAILABLE_DRIVES[@]}"
     done
-
-    local selected_drive_info="${AVAILABLE_DRIVES[$((drive_selection-1))]}"
-    local selected_drive=$(echo "$selected_drive_info" | cut -d'|' -f1)
-
-    # Get partition size
-    local partition_size
-    if [ "$default_size" = "remaining" ]; then
-        echo "Size: Use all remaining space on /dev/$selected_drive"
-        partition_size="remaining"
-    else
-        read -p "Partition size in GB [default: ${default_size}GB]: " partition_size
-        partition_size="${partition_size:-$default_size}"
-
-        # Validate size is a number
-        if ! [[ "$partition_size" =~ ^[0-9]+$ ]]; then
-            error "Invalid size. Using default: ${default_size}GB"
-            partition_size="$default_size"
-        fi
-    fi
 
     # Store configuration
     eval "${tier_var_prefix}_DRIVE=$selected_drive"
