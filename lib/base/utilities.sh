@@ -67,15 +67,25 @@ validate_environment() {
     local invalid_keys=()
 
     # Check for required API keys (must not be empty or placeholder values)
+    # These must match all ${VAR:?error} variables in docker-compose.yml
     local required_keys=(
+        # AI Services
         "OLLAMA_API_KEY"
         "WEBUI_SECRET_KEY"
         "QDRANT_API_KEY"
         "N8N_ENCRYPTION_KEY"
         "LANGCHAIN_API_KEY"
         "LANGGRAPH_API_KEY"
+        "LANGGRAPH_DB_PASSWORD"
         "LANGFLOW_API_KEY"
+        # Infrastructure
         "NGINX_AUTH_PASSWORD"
+        # Homelab Services
+        "HOARDER_SECRET_KEY"
+        "NEXTAUTH_SECRET"
+        "NEXTCLOUD_DB_PASSWORD"
+        "PIHOLE_PASSWORD"
+        "CODE_SERVER_PASSWORD"
     )
 
     debug "Validating required environment variables"
