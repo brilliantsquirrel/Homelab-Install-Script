@@ -376,9 +376,86 @@ disable_systemd_resolved_stub() {
     fi
 }
 
+# Pull a single Docker image with retry logic
+pull_docker_image_with_retry() {
+    local image="$1"
+    local max_retries=3
+    local retry_delay=10
+    local attempt=1
+
+    while [ $attempt -le $max_retries ]; do
+        log "Pulling image: $image (attempt $attempt/$max_retries)"
+
+        if sudo docker pull "$image"; then
+            success "Successfully pulled: $image"
+            return 0
+        else
+            if [ $attempt -lt $max_retries ]; then
+                warning "Failed to pull $image (attempt $attempt/$max_retries)"
+                log "Waiting ${retry_delay}s before retry..."
+                sleep $retry_delay
+                ((retry_delay *= 2))  # Exponential backoff
+            else
+                error "Failed to pull $image after $max_retries attempts"
+                return 1
+            fi
+        fi
+
+        ((attempt++))
+    done
+
+    return 1
+}
+
+# Pre-pull all Docker images sequentially
+prepull_docker_images() {
+    log "Pre-pulling Docker images (one at a time to handle slow connections)..."
+    echo ""
+
+    # Extract unique images from docker-compose.yml
+    local images=($(grep -E '^\s+image:' docker-compose.yml | awk '{print $2}' | sort -u))
+
+    log "Found ${#images[@]} unique images to download"
+    echo ""
+
+    local failed_images=()
+    local successful_images=()
+
+    for image in "${images[@]}"; do
+        if pull_docker_image_with_retry "$image"; then
+            successful_images+=("$image")
+        else
+            failed_images+=("$image")
+        fi
+    done
+
+    # Summary
+    echo ""
+    log "Image pull summary:"
+    log "  Successful: ${#successful_images[@]}/${#images[@]} images"
+
+    if [ ${#failed_images[@]} -gt 0 ]; then
+        warning "  Failed: ${#failed_images[@]} images"
+        for image in "${failed_images[@]}"; do
+            echo "    ✗ $image"
+        done
+        echo ""
+        warning "Some images failed to download. Docker Compose will attempt to use existing images or retry."
+        warning "If containers fail to start, you can manually pull failed images:"
+        for image in "${failed_images[@]}"; do
+            echo "    sudo docker pull $image"
+        done
+        echo ""
+    fi
+
+    return 0
+}
+
 # Start Docker containers from docker-compose.yml
 install_docker_containers() {
     local compose_file="$(pwd)/docker-compose.yml"
+    local max_retries=3
+    local retry_count=0
 
     log "Starting Docker containers..."
 
@@ -386,7 +463,9 @@ install_docker_containers() {
     if [ "${OFFLINE_MODE:-false}" = "true" ]; then
         log "OFFLINE_MODE detected - using pre-loaded Docker images"
     else
-        log "Online mode - Docker will pull images as needed"
+        log "Online mode - will pull images sequentially"
+        # Pre-pull images one at a time to handle slow/unreliable connections
+        prepull_docker_images
     fi
 
     # Disable systemd-resolved stub listener before starting Pi-Hole
@@ -424,19 +503,30 @@ install_docker_containers() {
     fi
     success "docker-compose.yml is valid"
 
-    # Start all containers
+    # Start all containers with retry logic
     log "Starting Docker containers..."
-    if ! $compose_cmd up -d; then
-        error "Failed to start Docker containers"
-        error "Check logs for details:"
-        error "  $compose_cmd logs"
-        return 1
-    fi
+    while [ $retry_count -lt $max_retries ]; do
+        if $compose_cmd up -d; then
+            debug "Waiting for services to be ready..."
+            sleep "${DOCKER_STARTUP_WAIT:-10}"
+            success "Docker containers started successfully"
+            return 0
+        else
+            ((retry_count++))
+            if [ $retry_count -lt $max_retries ]; then
+                warning "Failed to start containers (attempt $retry_count/$max_retries)"
+                log "Waiting 10s before retry..."
+                sleep 10
+            else
+                error "Failed to start Docker containers after $max_retries attempts"
+                error "Check logs for details:"
+                error "  $compose_cmd logs"
+                return 1
+            fi
+        fi
+    done
 
-    debug "Waiting for services to be ready..."
-    sleep "${DOCKER_STARTUP_WAIT:-10}"
-
-    success "Docker containers started successfully"
+    return 1
 }
 
 # ========================================
