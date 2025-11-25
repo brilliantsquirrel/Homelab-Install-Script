@@ -103,7 +103,20 @@ install_ssh() {
 
     # Validate sshd_config before restarting
     log "Validating SSH configuration..."
-    if ! sudo sshd -t 2>&1; then
+    # Use full path to sshd as /usr/sbin may not be in PATH
+    local sshd_bin="/usr/sbin/sshd"
+    if [ ! -x "$sshd_bin" ]; then
+        # Try to find sshd
+        sshd_bin=$(which sshd 2>/dev/null || command -v sshd 2>/dev/null || echo "")
+        if [ -z "$sshd_bin" ]; then
+            error "sshd binary not found - is openssh-server installed?"
+            error "Install with: sudo apt-get install openssh-server"
+            error "Rolling back to: $backup_file"
+            sudo cp "$backup_file" "$sshd_config" || error "Failed to restore backup!"
+            return 1
+        fi
+    fi
+    if ! sudo "$sshd_bin" -t 2>&1; then
         error "SSH configuration validation failed"
         error "Rolling back to: $backup_file"
         sudo cp "$backup_file" "$sshd_config" || error "Failed to restore backup!"
