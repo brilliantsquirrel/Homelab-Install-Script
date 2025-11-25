@@ -89,6 +89,255 @@ display_drive_info() {
 }
 
 # ========================================
+# Partition Management
+# ========================================
+
+# Manage existing partitions - delete or format drives
+manage_partitions() {
+    log "Partition management..."
+    echo ""
+
+    # Get boot drive to prevent accidental deletion
+    local boot_drive=$(lsblk -no PKNAME $(findmnt -n -o SOURCE /))
+
+    echo -e "${YELLOW}========================================${NC}"
+    echo -e "${YELLOW}Partition Management${NC}"
+    echo -e "${YELLOW}========================================${NC}"
+    echo ""
+    echo "Would you like to delete existing partitions or format drives?"
+    echo "This can free up space for the new storage configuration."
+    echo ""
+    echo -e "${RED}WARNING: This will permanently delete data!${NC}"
+    echo ""
+
+    read -p "Manage partitions? (y/N): " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        log "Skipping partition management"
+        return 0
+    fi
+
+    # Loop to allow multiple operations
+    while true; do
+        echo ""
+        echo "Partition Management Options:"
+        echo "  1. Delete a specific partition"
+        echo "  2. Format entire drive (delete all partitions)"
+        echo "  3. View current partitions"
+        echo "  4. Done (continue with storage configuration)"
+        echo ""
+
+        read -p "Choose option [1-4]: " choice
+
+        case $choice in
+            1)
+                delete_partition "$boot_drive"
+                ;;
+            2)
+                format_drive "$boot_drive"
+                ;;
+            3)
+                display_all_partitions "$boot_drive"
+                ;;
+            4)
+                log "Partition management complete"
+                return 0
+                ;;
+            *)
+                warning "Invalid option. Please choose 1-4."
+                ;;
+        esac
+    done
+}
+
+# Display all partitions on all drives
+display_all_partitions() {
+    local boot_drive="$1"
+
+    echo ""
+    echo -e "${BLUE}========================================${NC}"
+    echo -e "${BLUE}All Partitions${NC}"
+    echo -e "${BLUE}========================================${NC}"
+    echo ""
+
+    # List all drives
+    while IFS= read -r line; do
+        local drive=$(echo "$line" | awk '{print $1}')
+        local size=$(echo "$line" | awk '{print $2}')
+
+        # Mark boot drive
+        local boot_marker=""
+        if [ "$drive" = "$boot_drive" ]; then
+            boot_marker=" ${RED}(BOOT DRIVE - DO NOT MODIFY)${NC}"
+        fi
+
+        echo -e "/dev/$drive - $size$boot_marker"
+
+        # Show partitions
+        local partitions=$(lsblk -n -o NAME,SIZE,FSTYPE,MOUNTPOINT /dev/$drive | tail -n +2)
+        if [ -n "$partitions" ]; then
+            echo "$partitions" | while IFS= read -r part_line; do
+                echo "  $part_line"
+            done
+        else
+            echo "  (no partitions)"
+        fi
+        echo ""
+    done < <(lsblk -d -n -o NAME,SIZE | grep -v "^loop\|^sr")
+}
+
+# Delete a specific partition
+delete_partition() {
+    local boot_drive="$1"
+
+    echo ""
+    display_all_partitions "$boot_drive"
+
+    echo "Enter the partition to delete (e.g., sda1, nvme0n1p1):"
+    echo -e "${RED}WARNING: This will permanently delete all data on the partition!${NC}"
+    read -p "Partition name (or 'cancel'): " partition_name
+
+    if [ "$partition_name" = "cancel" ] || [ -z "$partition_name" ]; then
+        log "Cancelled partition deletion"
+        return 0
+    fi
+
+    # Validate partition exists
+    if [ ! -b "/dev/$partition_name" ]; then
+        error "Partition /dev/$partition_name does not exist"
+        return 1
+    fi
+
+    # Check if it's on the boot drive
+    local part_drive=$(lsblk -no PKNAME /dev/$partition_name 2>/dev/null)
+    if [ "$part_drive" = "$boot_drive" ]; then
+        error "Cannot delete partition on boot drive: /dev/$partition_name"
+        error "This could make your system unbootable!"
+        return 1
+    fi
+
+    # Check if partition is mounted
+    local mount_point=$(lsblk -no MOUNTPOINT /dev/$partition_name 2>/dev/null)
+    if [ -n "$mount_point" ]; then
+        warning "Partition /dev/$partition_name is mounted at: $mount_point"
+        read -p "Unmount and delete? (y/N): " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            log "Cancelled"
+            return 0
+        fi
+
+        log "Unmounting /dev/$partition_name..."
+        sudo umount /dev/$partition_name || {
+            error "Failed to unmount /dev/$partition_name"
+            return 1
+        }
+    fi
+
+    # Final confirmation
+    echo ""
+    echo -e "${RED}FINAL WARNING: About to delete /dev/$partition_name${NC}"
+    read -p "Type 'DELETE' to confirm: " confirm
+
+    if [ "$confirm" != "DELETE" ]; then
+        log "Cancelled partition deletion"
+        return 0
+    fi
+
+    log "Deleting partition /dev/$partition_name..."
+
+    # Get partition number
+    local part_num=$(echo "$partition_name" | grep -o '[0-9]*$')
+    local drive_name=$(echo "$partition_name" | sed 's/[0-9]*$//' | sed 's/p$//')
+
+    # Delete partition using parted
+    sudo parted -s /dev/$drive_name rm $part_num || {
+        error "Failed to delete partition /dev/$partition_name"
+        return 1
+    }
+
+    # Update partition table
+    sudo partprobe /dev/$drive_name
+    sleep 1
+
+    success "Partition /dev/$partition_name deleted successfully"
+    return 0
+}
+
+# Format entire drive (delete all partitions)
+format_drive() {
+    local boot_drive="$1"
+
+    echo ""
+    display_all_partitions "$boot_drive"
+
+    echo "Enter the drive to format (e.g., sda, nvme0n1):"
+    echo -e "${RED}WARNING: This will delete ALL partitions and data on the drive!${NC}"
+    read -p "Drive name (or 'cancel'): " drive_name
+
+    if [ "$drive_name" = "cancel" ] || [ -z "$drive_name" ]; then
+        log "Cancelled drive format"
+        return 0
+    fi
+
+    # Validate drive exists
+    if [ ! -b "/dev/$drive_name" ]; then
+        error "Drive /dev/$drive_name does not exist"
+        return 1
+    fi
+
+    # Check if it's the boot drive
+    if [ "$drive_name" = "$boot_drive" ]; then
+        error "Cannot format boot drive: /dev/$drive_name"
+        error "This would make your system unbootable!"
+        return 1
+    fi
+
+    # Check for mounted partitions
+    local mounted_parts=$(lsblk -no MOUNTPOINT /dev/$drive_name | grep -v '^$')
+    if [ -n "$mounted_parts" ]; then
+        warning "Drive /dev/$drive_name has mounted partitions:"
+        echo "$mounted_parts"
+        read -p "Unmount all and format? (y/N): " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            log "Cancelled"
+            return 0
+        fi
+
+        log "Unmounting all partitions on /dev/$drive_name..."
+        sudo umount /dev/${drive_name}* 2>/dev/null || true
+    fi
+
+    # Final confirmation
+    echo ""
+    echo -e "${RED}FINAL WARNING: About to wipe ALL data on /dev/$drive_name${NC}"
+    local drive_size=$(lsblk -d -n -o SIZE /dev/$drive_name)
+    echo "Drive: /dev/$drive_name ($drive_size)"
+    read -p "Type 'FORMAT' to confirm: " confirm
+
+    if [ "$confirm" != "FORMAT" ]; then
+        log "Cancelled drive format"
+        return 0
+    fi
+
+    log "Formatting /dev/$drive_name (creating new GPT partition table)..."
+
+    # Create new GPT partition table (deletes all partitions)
+    sudo parted -s /dev/$drive_name mklabel gpt || {
+        error "Failed to create partition table on /dev/$drive_name"
+        return 1
+    }
+
+    # Update partition table
+    sudo partprobe /dev/$drive_name
+    sleep 1
+
+    success "Drive /dev/$drive_name formatted successfully (all partitions removed)"
+    return 0
+}
+
+# ========================================
 # Storage Tier Configuration
 # ========================================
 
@@ -155,6 +404,9 @@ configure_storage_tiers() {
             fi
         fi
     fi
+
+    # Offer partition management before configuring storage
+    manage_partitions
 
     # Detect available drives
     if ! detect_available_drives; then
