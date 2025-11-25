@@ -468,6 +468,20 @@ pull_ollama_models() {
         return 1
     fi
 
+    # Verify model storage location
+    local model_storage=$(sudo docker inspect ollama 2>/dev/null | grep -A1 '"Destination": "/root/.ollama"' | grep "Source" | grep -oP '(?<="Source": ")[^"]+' || echo "")
+    if [ -n "$model_storage" ]; then
+        log "Ollama models will be stored at: $model_storage"
+        log "This location is on your configured model storage drive"
+        log "Models will persist across OS reinstalls"
+    else
+        # Check via docker volume or bind mount
+        model_storage=$(sudo docker inspect ollama --format '{{range .Mounts}}{{if eq .Destination "/root/.ollama"}}{{.Source}}{{end}}{{end}}' 2>/dev/null || echo "")
+        if [ -n "$model_storage" ]; then
+            log "Ollama models will be stored at: $model_storage"
+        fi
+    fi
+
     log "Pulling Ollama models (this may take a while)..."
     log "Note: Large models (30B) may take 30+ minutes to several hours depending on network speed"
 

@@ -334,14 +334,23 @@ run_step "System Updates" install_system_updates true
 run_step "SSH Server" install_ssh false
 run_step "SQLite" install_sqlite false
 run_step "Cockpit" install_cockpit false
-run_step "Storage Configuration" configure_storage_tiers false
 run_step "Docker Engine" install_docker false
-run_step "Docker Storage" configure_docker_storage false
 run_step "NVIDIA GPU Support" install_nvidia_gpu_support false
-run_step "Pi-Hole DNS Configuration" configure_pihole_dns false
+
+# Storage configuration BEFORE pulling Docker images or Ollama models
+# This ensures images and models are stored on the specified drives
+# and will survive OS reinstalls
+run_step "Storage Configuration" configure_storage_tiers false
+run_step "Docker Storage" configure_docker_storage false
 run_step "Storage Paths" update_docker_compose_storage false
 run_step "SQLite Storage" configure_sqlite_storage false
+run_step "Ollama Storage" configure_ollama_storage false
+
+# Now pull Docker images and start containers (uses configured storage)
+run_step "Pi-Hole DNS Configuration" configure_pihole_dns false
 run_step "Docker Containers" install_docker_containers false
+
+# Pull Ollama models (uses configured model storage path)
 run_step "Ollama Models" pull_ollama_models false
 run_step "Git Configuration" configure_git false
 run_step "Claude Code Installation" install_claude_code false
@@ -421,6 +430,22 @@ echo "  - Log out and back in for Docker group changes to take effect"
 echo "  - SSH is hardened for security (key-based auth only, no root login)"
 echo "  - Find your server IP with: hostname -I"
 echo "  - Ollama models are being pulled in the background (may take 1-2 hours)"
+echo ""
+
+echo -e "${YELLOW}Storage Configuration:${NC}"
+echo "  Docker images and Ollama models are stored on your configured drives."
+echo "  This data will PERSIST across OS reinstalls!"
+echo ""
+echo "  Storage locations (view with: cat ~/.homelab-storage.conf):"
+echo "  - Docker images/containers: Bulk Storage (Tier D)"
+echo "  - Ollama models: Model Storage (Tier C)"
+echo "  - Databases (PostgreSQL, Redis, Qdrant): Fast Storage (Tier A)"
+echo "  - Application data: AI Service Storage (Tier B)"
+echo ""
+echo "  After an OS reinstall, simply re-run this script and it will:"
+echo "  - Detect existing storage configuration"
+echo "  - Reconnect to your existing Docker images and Ollama models"
+echo "  - No need to re-download large AI models!"
 echo ""
 
 echo -e "${YELLOW}GPU Support:${NC}"

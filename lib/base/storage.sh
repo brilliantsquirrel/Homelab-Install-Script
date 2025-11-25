@@ -97,6 +97,65 @@ configure_storage_tiers() {
     log "Configuring storage tiers with automatic partitioning..."
     echo ""
 
+    # Check for existing storage configuration (e.g., after OS reinstall)
+    if load_storage_config 2>/dev/null; then
+        log "Found existing storage configuration!"
+        echo ""
+        echo -e "${BLUE}========================================${NC}"
+        echo -e "${BLUE}Existing Storage Configuration Detected${NC}"
+        echo -e "${BLUE}========================================${NC}"
+        echo ""
+        echo "Previous storage configuration found at: ~/.homelab-storage.conf"
+        echo ""
+        echo "Storage tiers:"
+        echo "  - Fast Storage (Tier A): ${TIER_A_MOUNT:-not set}"
+        echo "  - AI Data (Tier B): ${TIER_B_MOUNT:-not set}"
+        echo "  - Model Storage (Tier C): ${TIER_C_MOUNT:-not set}"
+        echo "  - Bulk Storage (Tier D): ${TIER_D_MOUNT:-not set}"
+        echo ""
+
+        # Verify mounts are accessible
+        local mounts_valid=true
+        for mount in "$TIER_A_MOUNT" "$TIER_B_MOUNT" "$TIER_C_MOUNT" "$TIER_D_MOUNT"; do
+            if [ -n "$mount" ] && [ -d "$mount" ]; then
+                echo -e "  ${GREEN}✓${NC} $mount is accessible"
+            elif [ -n "$mount" ]; then
+                echo -e "  ${RED}✗${NC} $mount is NOT accessible"
+                mounts_valid=false
+            fi
+        done
+        echo ""
+
+        if [ "$mounts_valid" = true ]; then
+            echo "All storage mounts are accessible."
+            echo "Your Docker images and Ollama models should still be available!"
+            echo ""
+            read -p "Use existing storage configuration? (Y/n): " -n 1 -r
+            echo
+            if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+                success "Using existing storage configuration"
+                log "Docker images and Ollama models will be preserved"
+                return 0
+            fi
+            log "User chose to reconfigure storage"
+        else
+            warning "Some storage mounts are not accessible"
+            warning "This may happen if drives were not mounted automatically"
+            echo ""
+            echo "You can either:"
+            echo "  1. Mount the existing partitions manually and re-run this script"
+            echo "  2. Reconfigure storage (may lose existing data)"
+            echo ""
+            read -p "Reconfigure storage? (y/N): " -n 1 -r
+            echo
+            if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+                error "Storage configuration cancelled"
+                error "Mount the drives manually and re-run this script"
+                return 1
+            fi
+        fi
+    fi
+
     # Detect available drives
     if ! detect_available_drives; then
         warning "No additional drives available"
@@ -673,30 +732,201 @@ EOF
     return 0
 }
 
-# Configure Docker to use bulk storage
+# Configure Docker to use bulk storage for images and containers
+# This should be run BEFORE pulling any Docker images to ensure
+# images are stored on the specified drive and survive OS reinstalls
 configure_docker_storage() {
-    local docker_path="${TIER_D_MOUNT:-/mnt/bulk}/docker"
+    # Load storage config if available
+    load_storage_config 2>/dev/null || true
 
-    if [ ! -d "$docker_path" ]; then
-        log "Docker will use default storage location (/var/lib/docker)"
+    local docker_path="${TIER_D_MOUNT:-/mnt/bulk}/docker"
+    local current_data_root=""
+
+    log "Configuring Docker storage location..."
+
+    # Check if mount point exists
+    if [ ! -d "${TIER_D_MOUNT:-/mnt/bulk}" ]; then
+        warning "Storage mount point not found: ${TIER_D_MOUNT:-/mnt/bulk}"
+        warning "Docker will use default storage location (/var/lib/docker)"
+        warning "Run storage configuration first to use external drives"
+        return 0
+    fi
+
+    # Create docker directory on the target drive
+    log "Creating Docker data directory: $docker_path"
+    sudo mkdir -p "$docker_path" || {
+        error "Failed to create Docker directory: $docker_path"
+        return 1
+    }
+    sudo chown root:root "$docker_path"
+    sudo chmod 711 "$docker_path"
+
+    # Check current Docker data-root configuration
+    if [ -f /etc/docker/daemon.json ]; then
+        current_data_root=$(grep -oP '"data-root"\s*:\s*"\K[^"]+' /etc/docker/daemon.json 2>/dev/null || echo "")
+    fi
+
+    # Check if already configured correctly
+    if [ "$current_data_root" = "$docker_path" ]; then
+        log "Docker already configured to use: $docker_path"
         return 0
     fi
 
     log "Configuring Docker to use: $docker_path"
 
-    # Create daemon.json
+    # Stop Docker before changing data-root
+    log "Stopping Docker service..."
+    sudo systemctl stop docker || true
+    sudo systemctl stop docker.socket || true
+
+    # Check if there are existing images in /var/lib/docker
+    local old_docker_path="/var/lib/docker"
+    if [ -d "$old_docker_path" ] && [ "$(sudo ls -A $old_docker_path 2>/dev/null)" ]; then
+        log "Existing Docker data found in $old_docker_path"
+
+        # Check if target already has data
+        if [ "$(sudo ls -A $docker_path 2>/dev/null)" ]; then
+            log "Target directory already has data, preserving existing data"
+        else
+            log "Moving existing Docker data to new location..."
+            log "This may take a while depending on the amount of data..."
+            sudo rsync -aP "$old_docker_path/" "$docker_path/" || {
+                warning "Failed to move existing Docker data"
+                warning "Starting fresh at new location"
+            }
+        fi
+    fi
+
+    # Create or update daemon.json
     sudo mkdir -p /etc/docker
-    echo '{
+
+    # Preserve existing daemon.json settings if present
+    if [ -f /etc/docker/daemon.json ] && [ -s /etc/docker/daemon.json ]; then
+        # Backup existing config
+        sudo cp /etc/docker/daemon.json /etc/docker/daemon.json.backup
+
+        # Update data-root in existing config using jq if available, otherwise replace
+        if command -v jq &> /dev/null; then
+            sudo jq --arg path "$docker_path" '. + {"data-root": $path}' /etc/docker/daemon.json.backup | sudo tee /etc/docker/daemon.json > /dev/null
+        else
+            # Simple replacement - create new config with data-root
+            echo '{
   "data-root": "'$docker_path'"
 }' | sudo tee /etc/docker/daemon.json > /dev/null
+        fi
+    else
+        echo '{
+  "data-root": "'$docker_path'"
+}' | sudo tee /etc/docker/daemon.json > /dev/null
+    fi
 
-    # Restart Docker
-    sudo systemctl restart docker || {
-        warning "Failed to restart Docker with new storage location"
+    # Start Docker with new configuration
+    log "Starting Docker with new storage location..."
+    sudo systemctl start docker.socket || true
+    sudo systemctl start docker || {
+        error "Failed to start Docker with new storage location"
+        error "Restoring previous configuration..."
+        if [ -f /etc/docker/daemon.json.backup ]; then
+            sudo mv /etc/docker/daemon.json.backup /etc/docker/daemon.json
+        else
+            sudo rm -f /etc/docker/daemon.json
+        fi
+        sudo systemctl start docker
         return 1
     }
 
-    success "Docker configured to use $docker_path"
+    # Verify Docker is using the new location
+    local actual_root=$(sudo docker info 2>/dev/null | grep "Docker Root Dir" | awk '{print $4}')
+    if [ "$actual_root" = "$docker_path" ]; then
+        success "Docker configured to use $docker_path"
+        log "Docker images and containers will now be stored on your bulk storage drive"
+        log "This data will persist across OS reinstalls"
+    else
+        warning "Docker data-root verification failed"
+        warning "Expected: $docker_path, Actual: $actual_root"
+    fi
+
+    return 0
+}
+
+# Configure Ollama model storage on model tier
+# This should be run BEFORE pulling any Ollama models to ensure
+# models are stored on the specified drive and survive OS reinstalls
+configure_ollama_storage() {
+    # Load storage config if available
+    load_storage_config 2>/dev/null || true
+
+    local ollama_path="${TIER_C_MOUNT:-/mnt/models}/ollama"
+
+    log "Configuring Ollama model storage location..."
+
+    # Check if mount point exists
+    if [ ! -d "${TIER_C_MOUNT:-/mnt/models}" ]; then
+        warning "Model storage mount point not found: ${TIER_C_MOUNT:-/mnt/models}"
+        warning "Ollama will use default storage location"
+        warning "Run storage configuration first to use external drives"
+        return 0
+    fi
+
+    # Create ollama directory on the target drive
+    log "Creating Ollama data directory: $ollama_path"
+    mkdir -p "$ollama_path" || {
+        error "Failed to create Ollama directory: $ollama_path"
+        return 1
+    }
+
+    # Check if ollama container is already running with different volume
+    if sudo docker ps -a | grep -q ollama; then
+        log "Ollama container exists, checking configuration..."
+
+        # Get current volume mount
+        local current_mount=$(sudo docker inspect ollama 2>/dev/null | grep -A1 '"Source":' | grep -oP '(?<="Source": ")[^"]+' | head -1 || echo "")
+
+        if [ -n "$current_mount" ] && [ "$current_mount" != "$ollama_path" ]; then
+            log "Ollama currently using: $current_mount"
+
+            # Check if there's existing model data to migrate
+            if [ -d "$current_mount" ] && [ "$(sudo ls -A $current_mount 2>/dev/null)" ]; then
+                # Check if target already has data
+                if [ "$(ls -A $ollama_path 2>/dev/null)" ]; then
+                    log "Target directory already has model data, preserving existing data"
+                else
+                    log "Migrating existing Ollama models to new location..."
+                    log "This may take a while for large models..."
+
+                    # Stop ollama container before migration
+                    sudo docker stop ollama 2>/dev/null || true
+
+                    sudo rsync -aP "$current_mount/" "$ollama_path/" || {
+                        warning "Failed to migrate existing Ollama models"
+                        warning "Models will need to be re-downloaded"
+                    }
+                fi
+            fi
+
+            # Remove old container to recreate with new volume
+            log "Removing old Ollama container to apply new storage location..."
+            sudo docker rm -f ollama 2>/dev/null || true
+        fi
+    fi
+
+    # Update docker-compose.override.yml to use the new path
+    # This is handled by update_docker_compose_storage, but we ensure the path is set
+    export MODEL_STORAGE_PATH="${TIER_C_MOUNT:-/mnt/models}"
+
+    # Save the path to storage config for later use
+    if [ -f "$HOME/.homelab-storage.conf" ]; then
+        if ! grep -q "OLLAMA_MODELS_PATH=" "$HOME/.homelab-storage.conf"; then
+            echo "" >> "$HOME/.homelab-storage.conf"
+            echo "# Ollama models path" >> "$HOME/.homelab-storage.conf"
+            echo "export OLLAMA_MODELS_PATH=\"$ollama_path\"" >> "$HOME/.homelab-storage.conf"
+        fi
+    fi
+
+    success "Ollama model storage configured: $ollama_path"
+    log "Ollama models will now be stored on your model storage drive"
+    log "This data will persist across OS reinstalls"
+
     return 0
 }
 
