@@ -152,12 +152,133 @@ install_nvidia_gpu_support() {
 
     # Verify nvidia-smi works
     if ! nvidia-smi &> /dev/null; then
-        error "nvidia-smi command exists but failed to run"
-        error "This usually means:"
-        error "  1. NVIDIA drivers were just installed and system needs reboot"
-        error "  2. Driver/kernel version mismatch"
-        warning "Try rebooting the system and re-running this script"
-        return 1
+        warning "nvidia-smi command exists but failed to run"
+        log "Running diagnostics to identify the issue..."
+
+        # Diagnostic 1: Check if NVIDIA kernel module is loaded
+        local nvidia_module_loaded=false
+        if lsmod | grep -q "^nvidia"; then
+            nvidia_module_loaded=true
+            log "  ✓ NVIDIA kernel module is loaded"
+        else
+            warning "  ✗ NVIDIA kernel module is NOT loaded"
+        fi
+
+        # Diagnostic 2: Check Secure Boot status
+        local secure_boot_enabled=false
+        if command -v mokutil &> /dev/null; then
+            if mokutil --sb-state 2>/dev/null | grep -qi "SecureBoot enabled"; then
+                secure_boot_enabled=true
+                warning "  ⚠ Secure Boot is ENABLED"
+                warning "    Secure Boot can block loading unsigned NVIDIA kernel modules"
+            else
+                log "  ✓ Secure Boot is disabled or not applicable"
+            fi
+        else
+            log "  - mokutil not available (cannot check Secure Boot status)"
+        fi
+
+        # Diagnostic 3: Check dmesg for NVIDIA errors
+        local dmesg_errors=$(dmesg 2>/dev/null | grep -i nvidia | grep -iE "(error|fail|unable)" | tail -5)
+        if [ -n "$dmesg_errors" ]; then
+            warning "  NVIDIA errors in dmesg:"
+            echo "$dmesg_errors" | while read line; do
+                echo "    $line"
+            done
+        fi
+
+        # Diagnostic 4: Check installed NVIDIA packages
+        local nvidia_packages=$(dpkg -l | grep -i nvidia | grep "^ii" | awk '{print $2}' | head -10)
+        if [ -n "$nvidia_packages" ]; then
+            log "  Installed NVIDIA packages:"
+            echo "$nvidia_packages" | while read pkg; do
+                echo "    - $pkg"
+            done
+        fi
+
+        # Diagnostic 5: Check kernel version vs DKMS
+        local running_kernel=$(uname -r)
+        log "  Running kernel: $running_kernel"
+
+        # Recovery attempt 1: Try to load NVIDIA module manually
+        if [ "$nvidia_module_loaded" = false ]; then
+            log "Attempting to load NVIDIA kernel module..."
+            if sudo modprobe nvidia 2>/dev/null; then
+                success "  ✓ Successfully loaded nvidia module"
+                # Try nvidia-smi again
+                if nvidia-smi &> /dev/null; then
+                    success "nvidia-smi now works after loading module"
+                else
+                    warning "  Module loaded but nvidia-smi still fails"
+                fi
+            else
+                warning "  ✗ Failed to load nvidia module"
+            fi
+        fi
+
+        # Recovery attempt 2: Rebuild DKMS modules (only if nvidia-smi still fails)
+        if ! nvidia-smi &> /dev/null && command -v dkms &> /dev/null; then
+            log "Checking DKMS status for NVIDIA modules..."
+            local dkms_status=$(dkms status 2>/dev/null | grep -i nvidia)
+            if [ -n "$dkms_status" ]; then
+                log "  DKMS status: $dkms_status"
+
+                # Check if module needs rebuilding for current kernel
+                if ! echo "$dkms_status" | grep -q "$running_kernel"; then
+                    log "Attempting to rebuild NVIDIA DKMS modules for kernel $running_kernel..."
+
+                    # Get nvidia-dkms version
+                    local nvidia_dkms_version=$(echo "$dkms_status" | head -1 | grep -oP '\d+\.\d+(\.\d+)?')
+                    if [ -n "$nvidia_dkms_version" ]; then
+                        if sudo dkms install nvidia/"$nvidia_dkms_version" -k "$running_kernel" 2>/dev/null; then
+                            success "  ✓ DKMS rebuild successful"
+
+                            # Try loading module again
+                            sudo modprobe nvidia 2>/dev/null
+                            if nvidia-smi &> /dev/null; then
+                                success "nvidia-smi now works after DKMS rebuild!"
+                            fi
+                        else
+                            warning "  ✗ DKMS rebuild failed"
+                        fi
+                    fi
+                fi
+            fi
+        fi
+
+        # If we still can't get nvidia-smi working, provide detailed guidance
+        if ! nvidia-smi &> /dev/null; then
+            echo ""
+            error "Could not get NVIDIA drivers working. Recommended actions:"
+            echo ""
+
+            if [ "$secure_boot_enabled" = true ]; then
+                error "  OPTION 1 - Disable Secure Boot (recommended):"
+                error "    1. Reboot and enter BIOS/UEFI settings"
+                error "    2. Find 'Secure Boot' option and disable it"
+                error "    3. Save and exit, then re-run this script"
+                echo ""
+                error "  OPTION 2 - Sign the NVIDIA module (advanced):"
+                error "    1. Run: sudo mokutil --import /var/lib/shim-signed/mok/MOK.der"
+                error "    2. Reboot and enroll the MOK key when prompted"
+                error "    3. Re-run this script"
+            else
+                error "  OPTION 1 - Reinstall NVIDIA drivers:"
+                error "    sudo apt-get purge 'nvidia-*'"
+                error "    sudo apt-get autoremove"
+                error "    sudo ubuntu-drivers autoinstall"
+                error "    sudo reboot"
+                echo ""
+                error "  OPTION 2 - Install specific driver version:"
+                error "    sudo apt-get install nvidia-driver-535"
+                error "    sudo reboot"
+            fi
+
+            echo ""
+            warning "Continuing without GPU support. You can fix this later and re-run the script."
+            warning "GPU-dependent containers (Ollama, Plex transcoding) will use CPU only."
+            return 1
+        fi
     fi
 
     # Display GPU information
