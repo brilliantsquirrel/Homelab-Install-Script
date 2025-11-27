@@ -320,9 +320,15 @@ install_nvidia_gpu_support() {
 
     log "Installing NVIDIA Container Toolkit for ${ID} ${VERSION_ID}..."
 
+    # Clean up old/deprecated NVIDIA repository files that may cause conflicts
+    # The old nvidia-docker repository doesn't support Ubuntu 24.04
+    if [ -f /etc/apt/sources.list.d/nvidia-docker.list ]; then
+        log "Removing deprecated nvidia-docker repository..."
+        sudo rm -f /etc/apt/sources.list.d/nvidia-docker.list
+    fi
+
     # Use the new NVIDIA Container Toolkit repository (supports Ubuntu 24.04)
     # Reference: https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html
-    local nvidia_gpg_key="/tmp/nvidia-container-toolkit.gpg"
     local nvidia_keyring="/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg"
 
     debug "Downloading NVIDIA Container Toolkit GPG key"
